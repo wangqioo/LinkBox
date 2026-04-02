@@ -294,13 +294,15 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
 router.post('/:id/summarize', async (req, res) => {
   const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: '不存在' });
-  if (!['link', 'text'].includes(link.type)) {
+  if (!['link', 'text', 'file'].includes(link.type)) {
     return res.status(400).json({ error: '该类型不支持摘要' });
   }
 
   let textToSummarize = '';
   if (link.type === 'text') {
     textToSummarize = [link.title, link.content].filter(Boolean).join('\n\n');
+  } else if (link.type === 'file') {
+    textToSummarize = link.content_md || [link.title, link.description].filter(Boolean).join('\n');
   } else {
     // For links: combine title + description; if too short, note the URL
     textToSummarize = [link.title, link.description].filter(Boolean).join('\n') || link.url;
