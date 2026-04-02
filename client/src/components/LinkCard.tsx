@@ -183,8 +183,8 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
     } finally { setExtracting(false); }
   };
 
-  const canSummarize = onSummarize && (itemType === 'link' || itemType === 'text');
-  const canExtract = onExtract && itemType === 'link';
+  const canSummarize = onSummarize && (itemType === 'link' || itemType === 'text' || itemType === 'file');
+  const canExtract = onExtract && (itemType === 'link' || itemType === 'file');
   const hasMarkdown = !!link.content_md;
 
   const actionButtons = !editing && (
@@ -278,7 +278,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
     </div>
   );
 
-  const markdownBadge = !editing && hasMarkdown && itemType === 'link' && (
+  const markdownBadge = !editing && hasMarkdown && (itemType === 'link' || itemType === 'file') && (
     <button onClick={() => setShowMarkdown(true)}
       className="mt-2 inline-flex items-center gap-1 text-xs text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20 rounded-lg px-2.5 py-1.5 hover:bg-teal-100 transition-colors">
       <BookOpen className="w-3 h-3" />
@@ -383,34 +383,53 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
   if (itemType === 'file') {
     return (
-      <div className="relative card overflow-hidden group hover:shadow-md transition-shadow">
-        {selectOverlay}
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <Paperclip className="w-3.5 h-3.5 text-violet-500 shrink-0" />
-                <span className="font-medium text-sm truncate">{link.title || '未命名文件'}</span>
+      <>
+        {showMarkdown && link.content_md && (
+          <MarkdownModal content={link.content_md} title={link.title || '文件正文'} onClose={() => setShowMarkdown(false)} />
+        )}
+        {showNote && (
+          <LearningNoteModal
+            linkId={link.id}
+            linkTitle={link.title || '文件正文'}
+            linkUrl={link.url}
+            initialHtml={link.html_note}
+            onClose={() => setShowNote(false)}
+            onUpdated={(html) => { onNoteUpdated?.(link.id, html); }}
+          />
+        )}
+        <div className="relative card overflow-hidden group hover:shadow-md transition-shadow">
+          {selectOverlay}
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <Paperclip className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+                  <span className="font-medium text-sm truncate">{link.title || '未命名文件'}</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded text-[10px]">
+                    {typeLabel}
+                  </span>
+                  <span className="ml-1.5">{link.description}</span>
+                  <span className="ml-1.5">{formatDate(link.imported_at)}</span>
+                </p>
               </div>
-              <p className="text-xs text-gray-400 mt-0.5">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded text-[10px]">
-                  {typeLabel}
-                </span>
-                <span className="ml-1.5">{link.description}</span>
-                <span className="ml-1.5">{formatDate(link.imported_at)}</span>
-              </p>
+              {actionButtons}
             </div>
-            {actionButtons}
+            {link.image_path && !editing && (
+              <a href={link.image_path} download
+                className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-lg text-xs font-medium hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors">
+                <Download className="w-3.5 h-3.5" /> 下载文件
+              </a>
+            )}
+            {extractingIndicator}
+            {markdownBadge}
+            {summarizingIndicator}
+            {summaryDisplay}
+            {tagsDisplay}{commentDisplay}{editSection}
           </div>
-          {link.image_path && !editing && (
-            <a href={link.image_path} download
-              className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-lg text-xs font-medium hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors">
-              <Download className="w-3.5 h-3.5" /> 下载文件
-            </a>
-          )}
-          {tagsDisplay}{commentDisplay}{editSection}
         </div>
-      </div>
+      </>
     );
   }
 
