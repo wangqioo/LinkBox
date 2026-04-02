@@ -75,6 +75,53 @@ export default function MarkdownRenderer({ content, className = '', maxLines = 0
       continue;
     }
 
+    // Image + description block: ![...](url) followed by > 图片描述：...
+    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imgMatch) {
+      const imgUrl = proxyImg(imgMatch[2].trim());
+      const imgAlt = imgMatch[1].trim();
+      // Look ahead for a description blockquote after optional blank lines
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === '') j++;
+      const descLine = j < lines.length ? lines[j] : '';
+      const descMatch = descLine.match(/^>\s*图片描述[：:]\s*(.*)/);
+
+      if (descMatch) {
+        // Collect multi-line description
+        const descParts = [descMatch[1]];
+        let k = j + 1;
+        while (k < lines.length && lines[k].startsWith('> ')) {
+          descParts.push(lines[k].slice(2));
+          k++;
+        }
+        const description = descParts.join(' ').trim();
+
+        nodes.push(
+          <div key={key++} className="flex flex-col items-center my-3">
+            <img src={imgUrl} alt={imgAlt}
+              className="max-w-full rounded shadow-sm" loading="lazy"
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 italic text-center max-w-[90%]">
+              图片描述：{description}
+            </p>
+          </div>
+        );
+        i = k;
+        continue;
+      } else {
+        // Standalone image without description - render centered
+        nodes.push(
+          <div key={key++} className="flex flex-col items-center my-3">
+            <img src={imgUrl} alt={imgAlt}
+              className="max-w-full rounded shadow-sm" loading="lazy"
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          </div>
+        );
+        i++;
+        continue;
+      }
+    }
+
     if (line.startsWith('> ')) {
       const qLines: string[] = [];
       while (i < lines.length && lines[i].startsWith('> ')) { qLines.push(lines[i].slice(2)); i++; }
@@ -118,6 +165,54 @@ export default function MarkdownRenderer({ content, className = '', maxLines = 0
       continue;
     }
 
+    // Markdown table: consecutive lines starting and ending with |
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      if (tableLines.length >= 2) {
+        const parseRow = (row: string) =>
+          row.trim().slice(1, -1).split('|').map(c => c.trim());
+        const headerCells = parseRow(tableLines[0]);
+        // Check if second line is separator (| --- | --- |)
+        const isSep = /^\|[\s\-:|]+\|$/.test(tableLines[1].trim());
+        const bodyStart = isSep ? 2 : 1;
+        const bodyRows = tableLines.slice(bodyStart).map(parseRow);
+
+        nodes.push(
+          <div key={key++} className="my-2 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-gray-50 dark:bg-gray-800">
+                  {headerCells.map((cell, ci) => (
+                    <th key={ci} className="px-3 py-2 text-left font-semibold text-xs text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
+                      {parseInline(cell, `th-${key}-${ci}`)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {bodyRows.map((row, ri) => (
+                  <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/50'}>
+                    {row.map((cell, ci) => (
+                      <td key={ci} className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-800">
+                        {parseInline(cell, `td-${key}-${ri}-${ci}`)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
+      // Less than 2 lines - rewind and treat as paragraph
+      i -= tableLines.length;
+    }
+
     if (line.trim() === '') { i++; continue; }
 
     const paraLines: string[] = [];
@@ -125,7 +220,8 @@ export default function MarkdownRenderer({ content, className = '', maxLines = 0
       const l = lines[i];
       if (l.trim() === '' || l.match(/^#{1,6}\s/) || l.startsWith('```') ||
           l.startsWith('> ') || l.match(/^[\-\*\+]\s/) || l.match(/^\d+\.\s/) ||
-          l.match(/^[-*_]{3,}\s*$/)) break;
+          l.match(/^[-*_]{3,}\s*$/) || (l.trim().startsWith('|') && l.trim().endsWith('|')) ||
+          l.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)) break;
       paraLines.push(l);
       i++;
     }
