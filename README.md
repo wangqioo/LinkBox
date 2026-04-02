@@ -1,6 +1,6 @@
 # LinkBox
 
-一个为个人知识管理设计的全栈收藏夹应用，支持链接、文本、图片、音频、文件的统一收集与管理，内置 AI 内容理解能力。
+一个为个人知识管理设计的全栈收藏夹应用，支持链接、文本、图片、音频、Office 文件、HTML 网页的统一收集与管理，内置 AI 内容理解能力。
 
 ---
 
@@ -14,19 +14,51 @@
 | 文本 | 快速记录文字笔记 |
 | 图片 | 上传本地图片，支持实时进度显示 |
 | 音频 | 网页端录音（HTTPS 环境）或 iOS/Android 原生录音（HTTP 环境自动降级） |
-| 文件 | 上传任意文件（PDF、视频、压缩包等） |
+| 文件 | 上传 Office 文档、PDF 等，自动提取正文并生成摘要 |
+| 网页 | 上传 HTML 文件，沙箱 iframe 完整渲染，自动提取文本生成摘要 |
 
 ### 智能内容处理（AI 自动流水线）
 
-保存链接后，后台自动依次执行三个步骤：
+保存链接或上传文件后，后台自动依次执行：
 
+**链接：**
 ```
 保存 → ① 抓取页面元数据（标题/描述/封面图）
       → ② 提取正文并转为 Markdown
       → ③ 本地 AI 生成中文摘要（Qwen2.5-VL-3B）
 ```
 
-无需手动触发，打开卡片即可看到已生成的摘要和正文。
+**Office / PDF / HTML 文件：**
+```
+上传 → ① 提取正文转为 Markdown（HTML 文件另存原始内容用于渲染）
+      → ② 本地 AI 生成中文摘要
+```
+
+无需手动触发，上传完成后自动处理，卡片上实时显示进度。
+
+### 文件格式支持
+
+| 格式 | 正文提取 | 图片提取 + AI 视觉描述 | 网页渲染 |
+|------|---------|----------------------|---------|
+| `.docx` | ✅ | ✅ | — |
+| `.pptx` | ✅ | ✅ | — |
+| `.xlsx` | ✅（转 Markdown 表格）| — | — |
+| `.pdf` | ✅ | — | — |
+| `.doc` / `.ppt` / `.xls` | ✅（LibreOffice 转换）| — | — |
+| `.txt` / `.md` | ✅ | — | — |
+| `.html` / `.htm` | ✅（提取纯文本）| — | ✅ |
+
+`.docx` / `.pptx` 内嵌图片会自动提取，并由视觉 AI 生成一句中文描述嵌入正文。
+
+### 文件卡片样式
+
+- 有图片内容：自动提取首图作为卡片缩略图（与链接卡片风格一致）
+- 无图片内容：显示格式专属彩色图标
+  - Word → 蓝色文档图标
+  - Excel → 绿色表格图标
+  - PPT → 橙色演示图标
+  - PDF → 红色代码图标
+  - HTML → 青色地球图标
 
 ### Markdown 正文阅读
 
@@ -34,14 +66,20 @@
 - 正文内图片通过服务端代理加载，绕过微信公众号等防盗链限制
 - 支持「复制 Markdown 原文」一键导出
 
+### HTML 网页预览
+
+- 上传 `.html` / `.htm` 文件后，点击地球图标在弹窗中完整渲染网页
+- 使用沙箱 `<iframe>`（`sandbox="allow-same-origin allow-scripts"`），隔离脚本执行
+
 ### AI 摘要 / 手动触发
 
+- 链接、文本、文件卡片均支持 AI 摘要
 - 每张卡片右上角 ✦ 图标可手动重新生成摘要
-- 摘要以紫色卡片样式展示在正文预览下方
+- 摘要以紫色卡片样式展示
 
 ### AI 学习笔记
 
-- 对已提取正文的链接，可生成结构化学习笔记
+- 对已提取正文的链接或文件，可生成结构化学习笔记
 - 包含：核心结论 → 关键要点 → 概念解释 → 交互式 SVG 知识导图
 - 笔记以 HTML 渲染，可在浏览器中直接阅读
 
@@ -75,13 +113,15 @@
 client/          React 18 + TypeScript + Vite + Tailwind CSS
 server/          Express + better-sqlite3（单文件 SQLite）
 server/utils/
-  ├─ fetchMeta.js           网页元数据抓取（title/description/og:image）
-  ├─ aiSummarize.js         AI 摘要（本地 Qwen2.5-VL-3B）
-  └─ generateLearningNote.js  AI 学习笔记 + SVG 知识导图生成
+  ├─ fetchMeta.js              网页元数据抓取（title/description/og:image）
+  ├─ extractContent.js         网页正文提取（微信公众号 + 通用 Readability）
+  ├─ fileToMarkdown.js         Office/PDF/HTML 文件转 Markdown + 图片视觉描述
+  ├─ aiSummarize.js            AI 摘要（本地 Qwen2.5-VL-3B）
+  └─ generateLearningNote.js   AI 学习笔记 + SVG 知识导图生成
 server/routes/
-  ├─ auth.js                登录 / 注册
-  ├─ links.js               CRUD + 图片代理 + AI 接口
-  └─ tags.js                标签管理
+  ├─ auth.js                   登录 / 注册
+  ├─ links.js                  CRUD + 图片代理 + AI 接口
+  └─ tags.js                   标签管理
 ```
 
 **AI 模型**：llama.cpp 本地部署的 `Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf`，通过 OpenAI 兼容 API（`/v1/chat/completions`）调用，默认地址 `http://localhost:8081/v1`。
@@ -97,6 +137,9 @@ server/routes/
 ### 环境要求
 
 - Node.js 18+
+- `unzip`（用于解压 Office 文件）
+- `pdftotext`（poppler-utils，用于 PDF 提取）
+- `libreoffice`（用于旧格式 .doc/.xls/.ppt 转换，可选）
 - （可选）llama.cpp server，加载 Qwen2.5-VL-3B 模型，监听 8081 端口
 
 ### 安装与启动
@@ -198,7 +241,7 @@ journalctl -u linkbox -f   # 查看日志
 | POST | `/api/links/text` | 新增文本 |
 | POST | `/api/links/image` | 上传图片 |
 | POST | `/api/links/audio` | 上传音频 |
-| POST | `/api/links/file` | 上传文件 |
+| POST | `/api/links/file` | 上传文件（Office/PDF/HTML，自动提取正文和摘要） |
 | PUT | `/api/links/:id` | 编辑 |
 | DELETE | `/api/links/:id` | 删除 |
 | POST | `/api/links/:id/summarize` | 手动重新生成摘要 |
@@ -217,10 +260,11 @@ journalctl -u linkbox -f   # 查看日志
 links (
   id, user_id, type,         -- 基础信息
   url, title, description,   -- 链接元数据
-  thumbnail,                 -- 封面图 URL
+  thumbnail,                 -- 封面图 / 文件首图 URL
   content, content_md,       -- 正文（原始/Markdown）
   summary,                   -- AI 生成摘要
   comment,                   -- 用户备注
+  html_note,                 -- AI 学习笔记 HTML / 原始 HTML 文件内容
   file_path, file_name,      -- 上传文件路径
   imported_at                -- 保存时间
 )
