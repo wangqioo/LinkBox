@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Paperclip, Download, Sparkles, Loader2, BookOpen, Copy, GraduationCap } from 'lucide-react';
+import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Paperclip, Download, Sparkles, Loader2, BookOpen, Copy, GraduationCap, FileSpreadsheet, Presentation, FileCode, File } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import LearningNoteModal from './LearningNoteModal';
 
@@ -382,6 +382,23 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   }
 
   if (itemType === 'file') {
+    const fileExt = (link.title || link.description || '').match(/\.(\w+)/)?.[1]?.toLowerCase() || '';
+    const FileIcon = ['xlsx', 'xls', 'csv'].includes(fileExt) ? FileSpreadsheet
+      : ['pptx', 'ppt'].includes(fileExt) ? Presentation
+      : ['docx', 'doc'].includes(fileExt) ? FileText
+      : ['pdf'].includes(fileExt) ? FileCode
+      : File;
+    const iconColor = ['xlsx', 'xls', 'csv'].includes(fileExt) ? 'text-emerald-500'
+      : ['pptx', 'ppt'].includes(fileExt) ? 'text-orange-500'
+      : ['docx', 'doc'].includes(fileExt) ? 'text-blue-500'
+      : ['pdf'].includes(fileExt) ? 'text-red-500'
+      : 'text-violet-500';
+    const iconBg = ['xlsx', 'xls', 'csv'].includes(fileExt) ? 'bg-emerald-50 dark:bg-emerald-900/20'
+      : ['pptx', 'ppt'].includes(fileExt) ? 'bg-orange-50 dark:bg-orange-900/20'
+      : ['docx', 'doc'].includes(fileExt) ? 'bg-blue-50 dark:bg-blue-900/20'
+      : ['pdf'].includes(fileExt) ? 'bg-red-50 dark:bg-red-900/20'
+      : 'bg-violet-50 dark:bg-violet-900/20';
+
     return (
       <>
         {showMarkdown && link.content_md && (
@@ -399,35 +416,44 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
         )}
         <div className="relative card overflow-hidden group hover:shadow-md transition-shadow">
           {selectOverlay}
-          <div className="p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <Paperclip className="w-3.5 h-3.5 text-violet-500 shrink-0" />
-                  <span className="font-medium text-sm truncate">{link.title || '未命名文件'}</span>
-                </div>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded text-[10px]">
-                    {typeLabel}
-                  </span>
-                  <span className="ml-1.5">{link.description}</span>
-                  <span className="ml-1.5">{formatDate(link.imported_at)}</span>
-                </p>
+          <div className="flex">
+            {link.thumbnail ? (
+              <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 bg-gray-100 dark:bg-gray-800">
+                <img src={link.thumbnail} alt="" className="w-full h-full object-cover"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               </div>
-              {actionButtons}
-            </div>
-            {link.image_path && !editing && (
-              <a href={link.image_path} download
-                className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-lg text-xs font-medium hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors">
-                <Download className="w-3.5 h-3.5" /> 下载文件
-              </a>
+            ) : (
+              <div className={`w-24 h-24 sm:w-32 sm:h-32 shrink-0 flex items-center justify-center ${iconBg}`}>
+                <FileIcon className={`w-10 h-10 ${iconColor}`} />
+              </div>
             )}
-            {autoProcessingBanner}
-            {extractingIndicator}
-            {markdownBadge}
-            {summarizingIndicator}
-            {summaryDisplay}
-            {tagsDisplay}{commentDisplay}{editSection}
+            <div className="flex-1 p-4 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="font-medium text-sm truncate block">{link.title || '未命名文件'}</span>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded text-[10px]">
+                      {typeLabel}
+                    </span>
+                    <span className="ml-1.5">{link.description}</span>
+                    <span className="ml-1.5">{formatDate(link.imported_at)}</span>
+                  </p>
+                </div>
+                {actionButtons}
+              </div>
+              {!editing && link.image_path && (
+                <a href={link.image_path} download
+                  className="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-lg text-xs font-medium hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors">
+                  <Download className="w-3 h-3" /> 下载文件
+                </a>
+              )}
+              {autoProcessingBanner}
+              {extractingIndicator}
+              {markdownBadge}
+              {summarizingIndicator}
+              {summaryDisplay}
+              {tagsDisplay}{commentDisplay}{editSection}
+            </div>
           </div>
         </div>
       </>

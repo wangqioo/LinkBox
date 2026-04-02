@@ -281,7 +281,10 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
       try {
         const markdown = await fileToMarkdown(diskPath, originalName, uploadsDir);
         if (markdown) {
-          db.prepare('UPDATE links SET content_md = ? WHERE id = ?').run(markdown, linkId);
+          // Extract first image from markdown as thumbnail
+          const imgMatch = markdown.match(/!\[.*?\]\((\/uploads\/[^)]+)\)/);
+          const thumbnail = imgMatch ? imgMatch[1] : null;
+          db.prepare('UPDATE links SET content_md = ?, thumbnail = ? WHERE id = ?').run(markdown, thumbnail, linkId);
           // Step 2: auto summarize after extraction
           try {
             const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
