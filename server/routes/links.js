@@ -248,7 +248,7 @@ router.post('/audio', uploadAudio.single('audio'), (req, res) => {
   res.json({ ...link, tags: attachTags(link.id) });
 });
 
-const SUPPORTED_EXTS = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.xls', '.ppt', '.txt', '.md']);
+const SUPPORTED_EXTS = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.xls', '.ppt', '.txt', '.md', '.html', '.htm']);
 
 // Upload file (any format)
 router.post('/file', uploadFile.single('file'), (req, res) => {
@@ -279,6 +279,13 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
     const uploadsDir = join(__dirname, '../uploads');
     (async () => {
       try {
+        const isHtml = ['.html', '.htm'].includes(ext);
+        if (isHtml) {
+          // Store raw HTML in html_note for iframe rendering
+          const { readFileSync } = await import('fs');
+          const rawHtml = readFileSync(diskPath, 'utf-8');
+          db.prepare('UPDATE links SET html_note = ? WHERE id = ?').run(rawHtml, linkId);
+        }
         const markdown = await fileToMarkdown(diskPath, originalName, uploadsDir);
         if (markdown) {
           // Extract first image from markdown as thumbnail

@@ -499,6 +499,17 @@ export async function fileToMarkdown(filePath, originalName, uploadsDir = null) 
 
   if (['.txt', '.md'].includes(ext)) {
     return readFileSync(filePath, 'utf-8');
+  } else if (ext === '.html' || ext === '.htm') {
+    // For HTML files, extract plain text for summarization
+    const html = readFileSync(filePath, 'utf-8');
+    // Strip tags and extract readable text
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return text || '*HTML 文件内容为空*';
   } else if (ext === '.pdf') {
     markdown = extractPdf(filePath);
   } else if (ext === '.docx') {

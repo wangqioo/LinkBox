@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Paperclip, Download, Sparkles, Loader2, BookOpen, Copy, GraduationCap, FileSpreadsheet, Presentation, FileCode, File } from 'lucide-react';
+import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Paperclip, Download, Sparkles, Loader2, BookOpen, Copy, GraduationCap, FileSpreadsheet, Presentation, FileCode, File, Globe } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import LearningNoteModal from './LearningNoteModal';
+import HtmlModal from './HtmlModal';
 
 
 const proxyImage = (url: string) => {
@@ -75,6 +76,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   const [extracting, setExtracting] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [showNote, setShowNote] = useState(false);
+  const [showHtml, setShowHtml] = useState(false);
 
   const itemType = link.type || 'link';
 
@@ -183,13 +185,23 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
     } finally { setExtracting(false); }
   };
 
+  const fileExt0 = (link.title || '').match(/\.(\w+)$/)?.[1]?.toLowerCase() || '';
+  const isHtmlFile = itemType === 'file' && ['html', 'htm'].includes(fileExt0);
   const canSummarize = onSummarize && (itemType === 'link' || itemType === 'text' || itemType === 'file');
   const canExtract = onExtract && (itemType === 'link' || itemType === 'file');
   const hasMarkdown = !!link.content_md;
+  const hasHtml = isHtmlFile && !!link.html_note;
 
   const actionButtons = !editing && (
     <div className="flex items-center gap-1 shrink-0">
-      {canExtract && (
+      {isHtmlFile ? (
+        <button onClick={() => setShowHtml(true)}
+          disabled={!hasHtml}
+          title={hasHtml ? '预览网页' : '正在处理...'}
+          className={`btn-ghost p-1.5 opacity-0 group-hover:opacity-100 disabled:opacity-50 ${hasHtml ? 'text-teal-500' : 'text-gray-400'}`}>
+          <Globe className="w-3.5 h-3.5" />
+        </button>
+      ) : canExtract && (
         <button onClick={hasMarkdown ? () => setShowMarkdown(true) : handleExtract}
           disabled={extracting}
           title={hasMarkdown ? '查看正文 Markdown' : '提取正文'}
@@ -197,7 +209,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
           {extracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookOpen className="w-3.5 h-3.5" />}
         </button>
       )}
-      {hasMarkdown && (
+      {hasMarkdown && !isHtmlFile && (
         <button onClick={() => setShowNote(true)}
           title="AI 学习笔记"
           className={`btn-ghost p-1.5 opacity-0 group-hover:opacity-100 ${link.html_note ? 'text-violet-500' : 'text-gray-400'}`}>
@@ -387,20 +399,26 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
       : ['pptx', 'ppt'].includes(fileExt) ? Presentation
       : ['docx', 'doc'].includes(fileExt) ? FileText
       : ['pdf'].includes(fileExt) ? FileCode
+      : ['html', 'htm'].includes(fileExt) ? Globe
       : File;
     const iconColor = ['xlsx', 'xls', 'csv'].includes(fileExt) ? 'text-emerald-500'
       : ['pptx', 'ppt'].includes(fileExt) ? 'text-orange-500'
       : ['docx', 'doc'].includes(fileExt) ? 'text-blue-500'
       : ['pdf'].includes(fileExt) ? 'text-red-500'
+      : ['html', 'htm'].includes(fileExt) ? 'text-cyan-500'
       : 'text-violet-500';
     const iconBg = ['xlsx', 'xls', 'csv'].includes(fileExt) ? 'bg-emerald-50 dark:bg-emerald-900/20'
       : ['pptx', 'ppt'].includes(fileExt) ? 'bg-orange-50 dark:bg-orange-900/20'
       : ['docx', 'doc'].includes(fileExt) ? 'bg-blue-50 dark:bg-blue-900/20'
       : ['pdf'].includes(fileExt) ? 'bg-red-50 dark:bg-red-900/20'
+      : ['html', 'htm'].includes(fileExt) ? 'bg-cyan-50 dark:bg-cyan-900/20'
       : 'bg-violet-50 dark:bg-violet-900/20';
 
     return (
       <>
+        {showHtml && link.html_note && (
+          <HtmlModal html={link.html_note} title={link.title || '网页预览'} onClose={() => setShowHtml(false)} />
+        )}
         {showMarkdown && link.content_md && (
           <MarkdownModal content={link.content_md} title={link.title || '文件正文'} onClose={() => setShowMarkdown(false)} />
         )}
