@@ -282,6 +282,14 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
         const markdown = await fileToMarkdown(diskPath, originalName, uploadsDir);
         if (markdown) {
           db.prepare('UPDATE links SET content_md = ? WHERE id = ?').run(markdown, linkId);
+          // Step 2: auto summarize after extraction
+          try {
+            const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
+            const summary = await summarizeMarkdown(markdown, currentLink?.title || originalName);
+            if (summary) {
+              db.prepare('UPDATE links SET summary = ? WHERE id = ?').run(summary, linkId);
+            }
+          } catch (e) { console.error('[bg] file summarize failed:', e.message); }
         }
       } catch (e) {
         console.error('[bg] fileToMarkdown failed:', e.message);
