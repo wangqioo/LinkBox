@@ -6,8 +6,8 @@ import { execSync } from 'child_process';
 const TMP_DIR = '/tmp/file2md';
 mkdirSync(TMP_DIR, { recursive: true });
 
-// Vision LLM endpoint (llm service in docker-compose)
-const LLM_URL = process.env.LLM_URL || 'http://llm:8081/v1/chat/completions';
+// Vision LLM endpoint (consistent with aiSummarize.js / generateLearningNote.js)
+const LLM_URL = (process.env.LOCAL_LLM_URL || 'http://localhost:8081/v1') + '/chat/completions';
 
 // Decode XML entities: &#12345; -> char, &amp; &lt; &gt; &quot; &apos;
 function decodeXmlEntities(str) {

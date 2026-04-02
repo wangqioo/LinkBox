@@ -10,6 +10,7 @@ import { fetchLinkMeta } from '../utils/fetchMeta.js';
 import { summarizeContent, summarizeMarkdown } from '../utils/aiSummarize.js';
 import { generateLearningNote } from '../utils/generateLearningNote.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
+import { fileToMarkdown } from '../utils/fileToMarkdown.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const storage = multer.diskStorage({
@@ -247,6 +248,8 @@ router.post('/audio', uploadAudio.single('audio'), (req, res) => {
   res.json({ ...link, tags: attachTags(link.id) });
 });
 
+const SUPPORTED_EXTS = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.xls', '.ppt']);
+
 // Upload file (any format)
 router.post('/file', uploadFile.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '请上传文件' });
@@ -267,6 +270,24 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
   if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
   res.json({ ...link, tags: attachTags(link.id) });
+
+  // Background: extract content from supported file types
+  const ext = extname(originalName).toLowerCase();
+  if (SUPPORTED_EXTS.has(ext)) {
+    const linkId = result.lastInsertRowid;
+    const diskPath = join(__dirname, '../uploads', req.file.filename);
+    const uploadsDir = join(__dirname, '../uploads');
+    (async () => {
+      try {
+        const markdown = await fileToMarkdown(diskPath, originalName, uploadsDir);
+        if (markdown) {
+          db.prepare('UPDATE links SET content_md = ? WHERE id = ?').run(markdown, linkId);
+        }
+      } catch (e) {
+        console.error('[bg] fileToMarkdown failed:', e.message);
+      }
+    })();
+  }
 });
 
 // AI summarize item (calls Spark 1 vLLM)
