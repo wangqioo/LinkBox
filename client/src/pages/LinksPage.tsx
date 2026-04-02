@@ -118,9 +118,10 @@ export default function LinksPage() {
   };
 
   const handleAddFile = async (formData: FormData, onProgress?: (p: UploadProgress) => void) => {
-    await api.addFile(formData, onProgress);
+    const added = await api.addFile(formData, onProgress);
     fetchLinks();
     fetchTags();
+    if (added?.id) startPolling(added.id);
   };
 
   const handleUpdate = async (id: number, data: Record<string, any>) => {

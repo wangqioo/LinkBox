@@ -422,6 +422,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
                 <Download className="w-3.5 h-3.5" /> 下载文件
               </a>
             )}
+            {autoProcessingBanner}
             {extractingIndicator}
             {markdownBadge}
             {summarizingIndicator}
