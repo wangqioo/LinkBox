@@ -223,7 +223,7 @@ router.post('/image', upload.single('image'), (req, res) => {
   const result = db.prepare(`
     INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at)
     VALUES (?, 'image', '', ?, ?, ?, ?, ?)
-  `).run(req.userId, title || req.file.originalname, imagePath, imagePath, comment || '', imported_at || new Date().toISOString());
+  `).run(req.userId, title || Buffer.from(req.file.originalname, 'latin1').toString('utf8'), imagePath, imagePath, comment || '', imported_at || new Date().toISOString());
 
   if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
@@ -259,7 +259,7 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
   const parsedTags = tag_ids ? JSON.parse(tag_ids) : [];
 
   const fileSize = req.file.size;
-  const originalName = req.file.originalname;
+  const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
   const desc = `${originalName} (${fileSize > 1048576 ? (fileSize / 1048576).toFixed(1) + ' MB' : (fileSize / 1024).toFixed(0) + ' KB'})`;
 
   const result = db.prepare(`
