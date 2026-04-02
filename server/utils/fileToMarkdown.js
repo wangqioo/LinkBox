@@ -497,7 +497,9 @@ export async function fileToMarkdown(filePath, originalName, uploadsDir = null) 
   let markdown = '';
   let images = [];
 
-  if (ext === '.pdf') {
+  if (['.txt', '.md'].includes(ext)) {
+    return readFileSync(filePath, 'utf-8');
+  } else if (ext === '.pdf') {
     markdown = extractPdf(filePath);
   } else if (ext === '.docx') {
     const result = extractDocxRaw(filePath, uploadsDir);

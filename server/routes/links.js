@@ -248,7 +248,7 @@ router.post('/audio', uploadAudio.single('audio'), (req, res) => {
   res.json({ ...link, tags: attachTags(link.id) });
 });
 
-const SUPPORTED_EXTS = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.xls', '.ppt']);
+const SUPPORTED_EXTS = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.xls', '.ppt', '.txt', '.md']);
 
 // Upload file (any format)
 router.post('/file', uploadFile.single('file'), (req, res) => {
