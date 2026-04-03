@@ -2,46 +2,60 @@
 # 部署 LinkBox 到 Spark2
 # 用法：bash deploy.sh
 
-HOST="43.153.150.70"
-PORT="6002"
-USER="wq"
-REMOTE_DIR="~/LinkBox"
-BRANCH="main"
-
 set -e
 
-echo "=== 1. 连接服务器，拉取最新代码 ==="
-ssh -p $PORT $USER@$HOST "
-  set -e
-  cd $REMOTE_DIR
+HOST="43.153.150.70"
+SSH_PORT="6002"
+USER="wq"
+PASS="152535"
+REMOTE_UPLOADS="/home/wq/linkbox-uploads"
 
-  echo '--- git status ---'
-  git status
+echo "=== 1. 构建前端 ==="
+cd "$(dirname "$0")/client"
+npm install --silent
+npm run build
 
-  echo '--- git pull origin $BRANCH ---'
-  git pull origin $BRANCH
+echo "=== 2. 打包（排除 node_modules / uploads / db / certs）==="
+cd ..
+tar --exclude='node_modules' \
+    --exclude='.git' \
+    --exclude='server/linkbox.db' \
+    --exclude='server/uploads' \
+    --exclude='server/certs' \
+    -czf /tmp/linkbox-update.tar.gz .
 
-  echo '--- 安装服务端依赖 ---'
-  cd server && npm install --omit=dev
-  cd ..
+echo "=== 3. 上传到服务器 ==="
+sshpass -p "$PASS" scp -P "$SSH_PORT" -o StrictHostKeyChecking=no \
+    /tmp/linkbox-update.tar.gz "$USER@$HOST:/home/wq/linkbox-update.tar.gz"
 
-  echo '--- 安装前端依赖并构建 ---'
-  cd client && npm install && npm run build
-  cd ..
-"
+echo "=== 4. 解压、保留数据、创建软链接、重启 ==="
+sshpass -p "$PASS" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no "$USER@$HOST" "
+set -e
 
-echo "=== 2. 重启服务 ==="
-ssh -p $PORT $USER@$HOST "
-  if systemctl is-active --quiet linkbox 2>/dev/null; then
-    sudo systemctl restart linkbox
-    echo 'systemd service restarted'
-  elif pm2 list 2>/dev/null | grep -q linkbox; then
-    pm2 restart linkbox
-    echo 'pm2 process restarted'
-  else
-    echo 'WARNING: 未找到 linkbox 服务，请手动重启'
-    echo '可以运行：cd ~/LinkBox/server && node index.js'
-  fi
+# 解压到临时目录
+mkdir -p ~/linkbox-new
+tar -xzf ~/linkbox-update.tar.gz -C ~/linkbox-new 2>/dev/null || true
+
+# 保留数据库和证书
+cp ~/linkbox/server/linkbox.db ~/linkbox-new/server/linkbox.db 2>/dev/null || true
+cp -r ~/linkbox/server/certs ~/linkbox-new/server/certs 2>/dev/null || true
+
+# 保留 node_modules（避免重复安装）
+cp -r ~/linkbox/server/node_modules ~/linkbox-new/server/node_modules 2>/dev/null || true
+
+# 软链接 uploads -> 外部永久目录
+mkdir -p $REMOTE_UPLOADS
+ln -sfn $REMOTE_UPLOADS ~/linkbox-new/server/uploads
+
+# 替换旧目录
+rm -rf ~/linkbox-old
+mv ~/linkbox ~/linkbox-old
+mv ~/linkbox-new ~/linkbox
+
+# 重启服务
+sudo systemctl restart linkbox
+sleep 2
+sudo systemctl status linkbox --no-pager | head -5
 "
 
 echo "=== 部署完成 ==="
