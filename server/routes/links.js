@@ -13,8 +13,9 @@ import { extractPageMarkdown } from '../utils/extractContent.js';
 import { fileToMarkdown } from '../utils/fileToMarkdown.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
 const storage = multer.diskStorage({
-  destination: join(__dirname, '../uploads'),
+  destination: UPLOADS_DIR,
   filename: (req, file, cb) => {
     const id = randomBytes(8).toString('hex');
     cb(null, `${id}${extname(file.originalname)}`);
@@ -275,8 +276,8 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
   const ext = extname(originalName).toLowerCase();
   if (SUPPORTED_EXTS.has(ext)) {
     const linkId = result.lastInsertRowid;
-    const diskPath = join(__dirname, '../uploads', req.file.filename);
-    const uploadsDir = join(__dirname, '../uploads');
+    const diskPath = join(UPLOADS_DIR, req.file.filename);
+    const uploadsDir = UPLOADS_DIR;
     (async () => {
       try {
         const isHtml = ['.html', '.htm'].includes(ext);

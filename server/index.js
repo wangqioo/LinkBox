@@ -22,7 +22,8 @@ app.use('/api/links', linkRoutes);
 app.use('/api/tags', tagRoutes);
 
 // Serve uploaded files
-app.use('/uploads', express.static(join(__dirname, 'uploads')));
+const uploadsDir = process.env.UPLOADS_DIR || join(__dirname, 'uploads');
+app.use('/uploads', express.static(uploadsDir));
 
 // Global error handler for API (returns JSON, not HTML)
 app.use((err, req, res, next) => {
