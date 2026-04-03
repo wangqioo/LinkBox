@@ -156,8 +156,8 @@ router.post('/', (req, res) => {
 
   // Save immediately with URL as fallback title
   const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at)
-    VALUES (?, 'link', ?, ?, '', '', ?, ?)
+    INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at, status)
+    VALUES (?, 'link', ?, ?, '', '', ?, ?, 'processing')
   `).run(req.userId, url, title || url, comment || '', imported_at || new Date().toISOString());
 
   if (tag_ids?.length) setTags(result.lastInsertRowid, tag_ids);
@@ -190,11 +190,21 @@ router.post('/', (req, res) => {
           const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
           const summary = await summarizeMarkdown(extracted.markdown, currentLink?.title || url);
           if (summary) {
-            db.prepare(`UPDATE links SET summary = ? WHERE id = ?`).run(summary, linkId);
+            db.prepare(`UPDATE links SET summary = ?, status = 'done' WHERE id = ?`).run(summary, linkId);
+          } else {
+            db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
           }
-        } catch (e) { console.error('[bg] summarize failed:', e.message); }
+        } catch (e) {
+          console.error('[bg] summarize failed:', e.message);
+          db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
+        }
+      } else {
+        db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
       }
-    } catch (e) { console.error('[bg] extract failed:', e.message); }
+    } catch (e) {
+      console.error('[bg] extract failed:', e.message);
+      db.prepare(`UPDATE links SET status = 'error' WHERE id = ?`).run(linkId);
+    }
   })();
 });
 
@@ -263,17 +273,18 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
   const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
   const desc = `${originalName} (${fileSize > 1048576 ? (fileSize / 1048576).toFixed(1) + ' MB' : (fileSize / 1024).toFixed(0) + ' KB'})`;
 
+  const ext = extname(originalName).toLowerCase();
+  const initialStatus = SUPPORTED_EXTS.has(ext) ? 'processing' : 'done';
   const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, description, image_path, comment, imported_at)
-    VALUES (?, 'file', '', ?, ?, ?, ?, ?)
-  `).run(req.userId, title || originalName, desc, filePath, comment || '', imported_at || new Date().toISOString());
+    INSERT INTO links (user_id, type, url, title, description, image_path, comment, imported_at, status)
+    VALUES (?, 'file', '', ?, ?, ?, ?, ?, ?)
+  `).run(req.userId, title || originalName, desc, filePath, comment || '', imported_at || new Date().toISOString(), initialStatus);
 
   if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
   res.json({ ...link, tags: attachTags(link.id) });
 
   // Background: extract content from supported file types
-  const ext = extname(originalName).toLowerCase();
   if (SUPPORTED_EXTS.has(ext)) {
     const linkId = result.lastInsertRowid;
     const diskPath = join(UPLOADS_DIR, req.file.filename);
@@ -282,28 +293,33 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
       try {
         const isHtml = ['.html', '.htm'].includes(ext);
         if (isHtml) {
-          // Store raw HTML in html_note for iframe rendering
           const { readFileSync } = await import('fs');
           const rawHtml = readFileSync(diskPath, 'utf-8');
           db.prepare('UPDATE links SET html_note = ? WHERE id = ?').run(rawHtml, linkId);
         }
         const markdown = await fileToMarkdown(diskPath, originalName, uploadsDir);
         if (markdown) {
-          // Extract first image from markdown as thumbnail
           const imgMatch = markdown.match(/!\[.*?\]\((\/uploads\/[^)]+)\)/);
           const thumbnail = imgMatch ? imgMatch[1] : null;
           db.prepare('UPDATE links SET content_md = ?, thumbnail = ? WHERE id = ?').run(markdown, thumbnail, linkId);
-          // Step 2: auto summarize after extraction
           try {
             const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
             const summary = await summarizeMarkdown(markdown, currentLink?.title || originalName);
             if (summary) {
-              db.prepare('UPDATE links SET summary = ? WHERE id = ?').run(summary, linkId);
+              db.prepare('UPDATE links SET summary = ?, status = ? WHERE id = ?').run(summary, 'done', linkId);
+            } else {
+              db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
             }
-          } catch (e) { console.error('[bg] file summarize failed:', e.message); }
+          } catch (e) {
+            console.error('[bg] file summarize failed:', e.message);
+            db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
+          }
+        } else {
+          db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
         }
       } catch (e) {
         console.error('[bg] fileToMarkdown failed:', e.message);
+        db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
       }
     })();
   }

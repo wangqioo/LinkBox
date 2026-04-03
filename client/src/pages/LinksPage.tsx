@@ -59,6 +59,15 @@ export default function LinksPage() {
   useEffect(() => { fetchTags(); }, []);
   useEffect(() => { fetchLinks(); }, [fetchLinks]);
 
+  // Resume polling for any items still processing after page load
+  useEffect(() => {
+    links.forEach(l => {
+      if (l.status === 'processing' && !processingIds.has(l.id)) {
+        startPolling(l.id);
+      }
+    });
+  }, [links.map(l => l.id).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-select all when filtered results change (only when filter panel is open)
   useEffect(() => {
     if (showFilters) setSelectedIds(new Set(links.map(l => l.id)));
@@ -74,17 +83,11 @@ export default function LinksPage() {
 
   const startPolling = (id: number) => {
     setProcessingIds(prev => new Set(prev).add(id));
-    const deadline = Date.now() + 120000; // 2 min timeout
     const interval = setInterval(async () => {
-      if (Date.now() > deadline) {
-        clearInterval(interval);
-        setProcessingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
-        return;
-      }
       try {
         const updated = await api.getLink(id);
         setLinks(prev => prev.map(l => l.id === id ? { ...l, ...updated } : l));
-        if (updated.summary) {
+        if (updated.status === 'done' || updated.status === 'error') {
           clearInterval(interval);
           setProcessingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
         }
