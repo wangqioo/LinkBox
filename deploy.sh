@@ -28,7 +28,7 @@ echo "=== 3. 上传到服务器 ==="
 sshpass -p "$PASS" scp -P "$SSH_PORT" -o StrictHostKeyChecking=no \
     /tmp/linkbox-update.tar.gz "$USER@$HOST:/home/wq/linkbox-update.tar.gz"
 
-echo "=== 4. 解压、保留数据、创建软链接、重启 ==="
+echo "=== 4. 解压、软链接数据、重启 ==="
 sshpass -p "$PASS" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no "$USER@$HOST" "
 set -e
 
@@ -36,16 +36,16 @@ set -e
 mkdir -p ~/linkbox-new
 tar -xzf ~/linkbox-update.tar.gz -C ~/linkbox-new 2>/dev/null || true
 
-# 保留数据库和证书
-cp ~/linkbox/server/linkbox.db ~/linkbox-new/server/linkbox.db 2>/dev/null || true
-cp -r ~/linkbox/server/certs ~/linkbox-new/server/certs 2>/dev/null || true
-
 # 保留 node_modules（避免重复安装）
 cp -r ~/linkbox/server/node_modules ~/linkbox-new/server/node_modules 2>/dev/null || true
 
-# 软链接 uploads -> 外部永久目录
+# 保留证书
+cp -r ~/linkbox/server/certs ~/linkbox-new/server/certs 2>/dev/null || true
+
+# 软链接 uploads 和 db -> 外部永久目录（永远不会被部署覆盖）
 mkdir -p $REMOTE_UPLOADS
 ln -sfn $REMOTE_UPLOADS ~/linkbox-new/server/uploads
+ln -sfn /home/wq/linkbox-data.db ~/linkbox-new/server/linkbox.db
 
 # 替换旧目录
 rm -rf ~/linkbox-old
