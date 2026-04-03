@@ -165,6 +165,21 @@ export default function MarkdownRenderer({ content, className = '', maxLines = 0
       continue;
     }
 
+    // HTML block: lines starting with an HTML tag — collect until blank line or end
+    if (line.match(/^<[a-zA-Z]/)) {
+      const htmlLines: string[] = [];
+      while (i < lines.length && lines[i].trim() !== '') {
+        htmlLines.push(lines[i]);
+        i++;
+      }
+      const html = htmlLines.join('\n');
+      nodes.push(
+        <div key={key++} className="my-2 overflow-x-auto [&_table]:w-full [&_table]:text-sm [&_table]:border-collapse [&_td]:px-3 [&_td]:py-2 [&_td]:border [&_td]:border-gray-200 dark:[&_td]:border-gray-700 [&_th]:px-3 [&_th]:py-2 [&_th]:border [&_th]:border-gray-200 [&_th]:bg-gray-50 [&_th]:font-semibold dark:[&_th]:border-gray-700 dark:[&_th]:bg-gray-800"
+          dangerouslySetInnerHTML={{ __html: html }} />
+      );
+      continue;
+    }
+
     // Markdown table: consecutive lines starting and ending with |
     if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
       const tableLines: string[] = [];
