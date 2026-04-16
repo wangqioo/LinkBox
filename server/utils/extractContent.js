@@ -206,7 +206,9 @@ async function extractWeixin(url, withVision) {
   } else {
     // Video/mixed article type (page_type=2): content encoded in JS as JsDecode('...')
     console.log('[extract] #js_content not found, trying JS-encoded content...');
-    const jsMatch = html.match(/\bcontent\s*:\s*JsDecode\('([^']+)'\)/);
+    // Prefer content_noencode (page_type=2 video articles), fall back to content field
+    const jsMatch = html.match(/\bcontent_noencode\s*:\s*JsDecode\('([^']+)'\)/) ||
+                    html.match(/\bcontent\s*:\s*JsDecode\('([^']+)'\)/);
     if (jsMatch) {
       const decoded = decodeWxJsDecode(jsMatch[1]);
       // Content is text with \n linebreaks and occasional inline HTML (<a> tags etc.)
