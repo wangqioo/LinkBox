@@ -8,6 +8,7 @@ import { dirname, join } from 'path';
 import authRoutes from './routes/auth.js';
 import linkRoutes from './routes/links.js';
 import tagRoutes from './routes/tags.js';
+import settingsRoutes from './routes/settings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -20,6 +21,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/links', linkRoutes);
 app.use('/api/tags', tagRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Serve uploaded files with long-term caching (filenames are random hex = immutable content)
 const uploadsDir = process.env.UPLOADS_DIR || join(__dirname, 'uploads');

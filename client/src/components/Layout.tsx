@@ -1,7 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
-import { Link2, Bookmark, Tags, Download, Upload, LogOut, Moon, Sun, Menu, X } from 'lucide-react';
+import { Link2, Bookmark, Tags, Settings, LogOut, Moon, Sun, Menu } from 'lucide-react';
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
@@ -22,6 +22,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const navItems = [
     { to: '/', icon: Bookmark, label: '我的链接' },
     { to: '/tags', icon: Tags, label: '标签管理' },
+    ...(user?.id === 1 ? [{ to: '/settings', icon: Settings, label: '系统设置' }] : []),
   ];
 
   const NavContent = () => (

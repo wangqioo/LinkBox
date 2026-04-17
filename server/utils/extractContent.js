@@ -3,6 +3,7 @@ import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
 import TurndownService from 'turndown';
 import { gfm, tables, strikethrough } from 'turndown-plugin-gfm';
+import db from '../db.js';
 
 const td = new TurndownService({
   headingStyle: 'atx',
@@ -149,7 +150,16 @@ function decodeWxJsDecode(str) {
   return decoded;
 }
 
-async function fetchHtml(url, ua) {
+function getSiteCookie(domain) {
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('cookie:' + domain);
+    return row?.value || '';
+  } catch {
+    return '';
+  }
+}
+
+async function fetchHtml(url, ua, extraHeaders = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25000);
   try {
@@ -160,6 +170,7 @@ async function fetchHtml(url, ua) {
         'Accept': 'text/html,application/xhtml+xml,*/*;q=0.9',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Referer': 'https://mp.weixin.qq.com/',
+        ...extraHeaders,
       },
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -231,9 +242,45 @@ async function extractWeixin(url, withVision) {
   return { title, author, publishTime, siteName: '微信公众号', markdown, wordCount: markdown.length };
 }
 
+async function extractZhihu(url, withVision) {
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const cookie = getSiteCookie('zhihu.com');
+  if (!cookie) {
+    throw new Error('知乎需要登录才能访问。请在"设置 → 站点Cookie"中添加知乎的 z_c0 Cookie，即可正常提取知乎文章。');
+  }
+  const html = await fetchHtml(url, UA, {
+    'Cookie': cookie,
+    'Referer': 'https://www.zhihu.com/',
+    'x-requested-with': 'fetch',
+  });
+  const $ = cheerio.load(html);
+  const title = $('h1.Post-Title, .QuestionHeader-title, h1').first().text().trim() ||
+    $('meta[property="og:title"]').attr('content') || '';
+  const author = $('.AuthorInfo-name, .UserLink-link').first().text().trim() ||
+    $('meta[name="author"]').attr('content') || '';
+  const contentEl = $('.Post-RichTextContainer, .RichContent-inner, .ztext');
+  if (!contentEl.length || !contentEl.text().trim()) {
+    // Check if redirected to login
+    if (html.includes('请您登录') || html.includes('安全验证') || html.includes('"code":40362')) {
+      throw new Error('知乎 Cookie 已失效，请在"设置 → 站点Cookie"中更新知乎的 z_c0 Cookie。');
+    }
+    throw new Error('无法提取知乎正文，页面结构可能已变化');
+  }
+  contentEl.find('script,style,.Reward,.FollowButton,.ContentItem-actions').remove();
+  let markdown = fixMarkdownImages(td.turndown(contentEl.html() || ''));
+  if (withVision) markdown = await addImageDescriptions(markdown, url);
+  return { title, author, siteName: '知乎', markdown, wordCount: markdown.length };
+}
+
 async function extractGeneric(url, withVision) {
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-  const html = await fetchHtml(url, UA);
+  // Check for site-specific cookie
+  let cookie = '';
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    cookie = getSiteCookie(host);
+  } catch { /* ignore */ }
+  const html = await fetchHtml(url, UA, cookie ? { 'Cookie': cookie } : {});
   const dom = new JSDOM(html, { url });
   const reader = new Readability(dom.window.document);
   const article = reader.parse();
@@ -248,6 +295,8 @@ export { addImageDescriptions };
 export async function extractPageMarkdown(url, opts = {}) {
   const withVision = opts.vision !== false;
   const isWeixin = url.includes('mp.weixin.qq.com') || url.includes('weixin.qq.com');
+  const isZhihu = url.includes('zhihu.com/p/') || url.includes('zhuanlan.zhihu.com');
   if (isWeixin) return await extractWeixin(url, withVision);
+  if (isZhihu) return await extractZhihu(url, withVision);
   return await extractGeneric(url, withVision);
 }

@@ -108,6 +108,11 @@ export const api = {
     request('/links/import', { method: 'POST', body: JSON.stringify({ links }) }),
   exportLinks: () => request('/links/export/all'),
 
+  // Settings (admin only)
+  getSettings: () => request('/settings'),
+  updateSettings: (data: Record<string, string>) =>
+    request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+
   // Tags
   getTags: () => request('/tags'),
   addTag: (name: string, color: string) =>

@@ -79,6 +79,14 @@ try {
   db.exec(`ALTER TABLE links ADD COLUMN status TEXT DEFAULT ''`);
 } catch { /* column already exists */ }
 
+// Settings table: global key-value store (admin-managed)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT DEFAULT ''
+  );
+`);
+
 // Ensure uploads directory exists
 import { mkdirSync } from 'fs';
 mkdirSync(join(__dirname, 'uploads'), { recursive: true });

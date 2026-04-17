@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import LinksPage from './pages/LinksPage';
 import TagsPage from './pages/TagsPage';
+import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -23,6 +24,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LinksPage />} />
         <Route path="/tags" element={<TagsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
