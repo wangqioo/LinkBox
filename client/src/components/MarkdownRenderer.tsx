@@ -1,5 +1,5 @@
-import { Fragment } from 'react';
-
+import { useMemo, useState, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 
 const proxyImg = (url: string) => {
   const u = url.trim();
@@ -12,8 +12,165 @@ interface Props {
   maxLines?: number;
 }
 
-function parseInline(text: string, keyBase: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = [];
+// ---------------------------------------------------------------------------
+// Block types (plain data, no React)
+// ---------------------------------------------------------------------------
+type Block =
+  | { kind: 'heading'; level: number; text: string }
+  | { kind: 'code'; lang: string; lines: string[] }
+  | { kind: 'image'; url: string; alt: string; description?: string }
+  | { kind: 'blockquote'; lines: string[] }
+  | { kind: 'ul'; items: string[] }
+  | { kind: 'ol'; items: string[] }
+  | { kind: 'hr' }
+  | { kind: 'html'; html: string }
+  | { kind: 'table'; header: string[]; rows: string[][] }
+  | { kind: 'paragraph'; lines: string[] };
+
+// ---------------------------------------------------------------------------
+// Parse all lines into blocks (pure data, cheap, no React)
+// ---------------------------------------------------------------------------
+function parseBlocks(content: string): Block[] {
+  const lines = content.split('\n');
+  const blocks: Block[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Heading
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)/);
+    if (headingMatch) {
+      blocks.push({ kind: 'heading', level: headingMatch[1].length, text: headingMatch[2] });
+      i++;
+      continue;
+    }
+
+    // Fenced code block
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++; }
+      blocks.push({ kind: 'code', lang, lines: codeLines });
+      i++;
+      continue;
+    }
+
+    // Standalone image (possibly with caption)
+    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imgMatch) {
+      const imgUrl = proxyImg(imgMatch[2].trim());
+      const imgAlt = imgMatch[1].trim();
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === '') j++;
+      const descLine = j < lines.length ? lines[j] : '';
+      const descMatch = descLine.match(/^>\s*图片描述[：:]\s*(.*)/);
+      if (descMatch) {
+        const descParts = [descMatch[1]];
+        let k = j + 1;
+        while (k < lines.length && lines[k].startsWith('> ')) {
+          descParts.push(lines[k].slice(2));
+          k++;
+        }
+        blocks.push({ kind: 'image', url: imgUrl, alt: imgAlt, description: descParts.join(' ').trim() });
+        i = k;
+      } else {
+        blocks.push({ kind: 'image', url: imgUrl, alt: imgAlt });
+        i++;
+      }
+      continue;
+    }
+
+    // Blockquote
+    if (line.startsWith('> ')) {
+      const qLines: string[] = [];
+      while (i < lines.length && lines[i].startsWith('> ')) { qLines.push(lines[i].slice(2)); i++; }
+      blocks.push({ kind: 'blockquote', lines: qLines });
+      continue;
+    }
+
+    // Unordered list
+    if (line.match(/^[\-\*\+]\s/)) {
+      const items: string[] = [];
+      while (i < lines.length && lines[i].match(/^[\-\*\+]\s/)) {
+        items.push(lines[i].replace(/^[\-\*\+]\s/, '')); i++;
+      }
+      blocks.push({ kind: 'ul', items });
+      continue;
+    }
+
+    // Ordered list
+    if (line.match(/^\d+\.\s/)) {
+      const items: string[] = [];
+      while (i < lines.length && lines[i].match(/^\d+\.\s/)) {
+        items.push(lines[i].replace(/^\d+\.\s/, '')); i++;
+      }
+      blocks.push({ kind: 'ol', items });
+      continue;
+    }
+
+    // Horizontal rule
+    if (line.match(/^[-*_]{3,}\s*$/)) {
+      blocks.push({ kind: 'hr' });
+      i++;
+      continue;
+    }
+
+    // HTML block
+    if (line.match(/^<[a-zA-Z]/)) {
+      const htmlLines: string[] = [];
+      while (i < lines.length && lines[i].trim() !== '') { htmlLines.push(lines[i]); i++; }
+      blocks.push({ kind: 'html', html: htmlLines.join('\n') });
+      continue;
+    }
+
+    // Markdown table
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+        tableLines.push(lines[i]); i++;
+      }
+      if (tableLines.length >= 2) {
+        const parseRow = (row: string) => row.trim().slice(1, -1).split('|').map(c => c.trim());
+        const header = parseRow(tableLines[0]);
+        const isSep = /^\|[\s\-:|]+\|$/.test(tableLines[1].trim());
+        const bodyStart = isSep ? 2 : 1;
+        const rows = tableLines.slice(bodyStart).map(parseRow);
+        blocks.push({ kind: 'table', header, rows });
+        continue;
+      }
+      // rewind — treat as paragraph
+      i -= tableLines.length;
+    }
+
+    // Blank line
+    if (line.trim() === '') { i++; continue; }
+
+    // Paragraph
+    const paraLines: string[] = [];
+    while (i < lines.length) {
+      const l = lines[i];
+      if (l.trim() === '' || l.match(/^#{1,6}\s/) || l.startsWith('```') ||
+          l.startsWith('> ') || l.match(/^[\-\*\+]\s/) || l.match(/^\d+\.\s/) ||
+          l.match(/^[-*_]{3,}\s*$/) || (l.trim().startsWith('|') && l.trim().endsWith('|')) ||
+          l.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)) break;
+      paraLines.push(l);
+      i++;
+    }
+    if (paraLines.length > 0) {
+      blocks.push({ kind: 'paragraph', lines: paraLines });
+    }
+  }
+
+  return blocks;
+}
+
+// ---------------------------------------------------------------------------
+// Inline parser (unchanged)
+// ---------------------------------------------------------------------------
+function parseInline(text: string, keyBase: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
   const pattern = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
   let last = 0;
   let m: RegExpExecArray | null;
@@ -41,213 +198,141 @@ function parseInline(text: string, keyBase: string): React.ReactNode[] {
   return nodes;
 }
 
-export default function MarkdownRenderer({ content, className = '', maxLines = 0 }: Props) {
-  const lines = content.split('\n');
-  const nodes: React.ReactNode[] = [];
-  let i = 0;
-  let key = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    const headingMatch = line.match(/^(#{1,6})\s+(.*)/);
-    if (headingMatch) {
-      const level = headingMatch[1].length;
-      const cls = level === 1 ? 'text-lg font-bold mt-3 mb-1' :
-        level === 2 ? 'text-base font-bold mt-2 mb-1' : 'text-sm font-semibold mt-2 mb-0.5';
-      nodes.push(<div key={key++} className={cls}>{parseInline(headingMatch[2], String(key))}</div>);
-      i++;
-      continue;
+// ---------------------------------------------------------------------------
+// Render a single block to a React node
+// ---------------------------------------------------------------------------
+function renderBlock(block: Block, key: number): ReactNode {
+  const k = String(key);
+  switch (block.kind) {
+    case 'heading': {
+      const cls = block.level === 1 ? 'text-lg font-bold mt-3 mb-1' :
+        block.level === 2 ? 'text-base font-bold mt-2 mb-1' : 'text-sm font-semibold mt-2 mb-0.5';
+      return <div key={key} className={cls}>{parseInline(block.text, k)}</div>;
     }
-
-    if (line.startsWith('```')) {
-      const lang = line.slice(3).trim();
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++; }
-      nodes.push(
-        <pre key={key++} className="bg-gray-100 dark:bg-gray-800 rounded p-3 my-2 overflow-x-auto text-xs font-mono whitespace-pre">
-          {lang && <span className="text-gray-400 text-[10px] block mb-1">{lang}</span>}
-          {codeLines.join('\n')}
+    case 'code':
+      return (
+        <pre key={key} className="bg-gray-100 dark:bg-gray-800 rounded p-3 my-2 overflow-x-auto text-xs font-mono whitespace-pre">
+          {block.lang && <span className="text-gray-400 text-[10px] block mb-1">{block.lang}</span>}
+          {block.lines.join('\n')}
         </pre>
       );
-      i++;
-      continue;
-    }
-
-    // Image + description block: ![...](url) followed by > 图片描述：...
-    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-    if (imgMatch) {
-      const imgUrl = proxyImg(imgMatch[2].trim());
-      const imgAlt = imgMatch[1].trim();
-      // Look ahead for a description blockquote after optional blank lines
-      let j = i + 1;
-      while (j < lines.length && lines[j].trim() === '') j++;
-      const descLine = j < lines.length ? lines[j] : '';
-      const descMatch = descLine.match(/^>\s*图片描述[：:]\s*(.*)/);
-
-      if (descMatch) {
-        // Collect multi-line description
-        const descParts = [descMatch[1]];
-        let k = j + 1;
-        while (k < lines.length && lines[k].startsWith('> ')) {
-          descParts.push(lines[k].slice(2));
-          k++;
-        }
-        const description = descParts.join(' ').trim();
-
-        nodes.push(
-          <div key={key++} className="flex flex-col items-center my-3">
-            <img src={imgUrl} alt={imgAlt}
-              className="max-w-full rounded shadow-sm" loading="lazy"
-              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+    case 'image':
+      return (
+        <div key={key} className="flex flex-col items-center my-3">
+          <img src={block.url} alt={block.alt}
+            className="max-w-full rounded shadow-sm" loading="lazy"
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          {block.description && (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 italic text-center max-w-[90%]">
-              图片描述：{description}
+              图片描述：{block.description}
             </p>
-          </div>
-        );
-        i = k;
-        continue;
-      } else {
-        // Standalone image without description - render centered
-        nodes.push(
-          <div key={key++} className="flex flex-col items-center my-3">
-            <img src={imgUrl} alt={imgAlt}
-              className="max-w-full rounded shadow-sm" loading="lazy"
-              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-          </div>
-        );
-        i++;
-        continue;
-      }
-    }
-
-    if (line.startsWith('> ')) {
-      const qLines: string[] = [];
-      while (i < lines.length && lines[i].startsWith('> ')) { qLines.push(lines[i].slice(2)); i++; }
-      nodes.push(
-        <blockquote key={key++} className="border-l-4 border-gray-300 dark:border-gray-600 pl-3 my-1.5 text-gray-500 dark:text-gray-400 italic text-sm">
-          {qLines.join(' ')}
+          )}
+        </div>
+      );
+    case 'blockquote':
+      return (
+        <blockquote key={key} className="border-l-4 border-gray-300 dark:border-gray-600 pl-3 my-1.5 text-gray-500 dark:text-gray-400 italic text-sm">
+          {block.lines.join(' ')}
         </blockquote>
       );
-      continue;
-    }
-
-    if (line.match(/^[\-\*\+]\s/)) {
-      const items: string[] = [];
-      while (i < lines.length && lines[i].match(/^[\-\*\+]\s/)) {
-        items.push(lines[i].replace(/^[\-\*\+]\s/, '')); i++;
-      }
-      nodes.push(
-        <ul key={key++} className="list-disc list-inside my-1.5 space-y-0.5">
-          {items.map((item, j) => <li key={j} className="text-sm">{parseInline(item, `ul-${key}-${j}`)}</li>)}
+    case 'ul':
+      return (
+        <ul key={key} className="list-disc list-inside my-1.5 space-y-0.5">
+          {block.items.map((item, j) => <li key={j} className="text-sm">{parseInline(item, `ul-${k}-${j}`)}</li>)}
         </ul>
       );
-      continue;
-    }
-
-    if (line.match(/^\d+\.\s/)) {
-      const items: string[] = [];
-      while (i < lines.length && lines[i].match(/^\d+\.\s/)) {
-        items.push(lines[i].replace(/^\d+\.\s/, '')); i++;
-      }
-      nodes.push(
-        <ol key={key++} className="list-decimal list-inside my-1.5 space-y-0.5">
-          {items.map((item, j) => <li key={j} className="text-sm">{parseInline(item, `ol-${key}-${j}`)}</li>)}
+    case 'ol':
+      return (
+        <ol key={key} className="list-decimal list-inside my-1.5 space-y-0.5">
+          {block.items.map((item, j) => <li key={j} className="text-sm">{parseInline(item, `ol-${k}-${j}`)}</li>)}
         </ol>
       );
-      continue;
-    }
-
-    if (line.match(/^[-*_]{3,}\s*$/)) {
-      nodes.push(<hr key={key++} className="my-3 border-gray-200 dark:border-gray-700" />);
-      i++;
-      continue;
-    }
-
-    // HTML block: lines starting with an HTML tag — collect until blank line or end
-    if (line.match(/^<[a-zA-Z]/)) {
-      const htmlLines: string[] = [];
-      while (i < lines.length && lines[i].trim() !== '') {
-        htmlLines.push(lines[i]);
-        i++;
-      }
-      const html = htmlLines.join('\n');
-      nodes.push(
-        <div key={key++} className="my-2 overflow-x-auto [&_table]:w-full [&_table]:text-sm [&_table]:border-collapse [&_td]:px-3 [&_td]:py-2 [&_td]:border [&_td]:border-gray-200 dark:[&_td]:border-gray-700 [&_th]:px-3 [&_th]:py-2 [&_th]:border [&_th]:border-gray-200 [&_th]:bg-gray-50 [&_th]:font-semibold dark:[&_th]:border-gray-700 dark:[&_th]:bg-gray-800"
-          dangerouslySetInnerHTML={{ __html: html }} />
+    case 'hr':
+      return <hr key={key} className="my-3 border-gray-200 dark:border-gray-700" />;
+    case 'html':
+      return (
+        <div key={key} className="my-2 overflow-x-auto [&_table]:w-full [&_table]:text-sm [&_table]:border-collapse [&_td]:px-3 [&_td]:py-2 [&_td]:border [&_td]:border-gray-200 dark:[&_td]:border-gray-700 [&_th]:px-3 [&_th]:py-2 [&_th]:border [&_th]:border-gray-200 [&_th]:bg-gray-50 [&_th]:font-semibold dark:[&_th]:border-gray-700 dark:[&_th]:bg-gray-800"
+          dangerouslySetInnerHTML={{ __html: block.html }} />
       );
-      continue;
-    }
-
-    // Markdown table: consecutive lines starting and ending with |
-    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
-      const tableLines: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
-        tableLines.push(lines[i]);
-        i++;
-      }
-      if (tableLines.length >= 2) {
-        const parseRow = (row: string) =>
-          row.trim().slice(1, -1).split('|').map(c => c.trim());
-        const headerCells = parseRow(tableLines[0]);
-        // Check if second line is separator (| --- | --- |)
-        const isSep = /^\|[\s\-:|]+\|$/.test(tableLines[1].trim());
-        const bodyStart = isSep ? 2 : 1;
-        const bodyRows = tableLines.slice(bodyStart).map(parseRow);
-
-        nodes.push(
-          <div key={key++} className="my-2 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-gray-50 dark:bg-gray-800">
-                  {headerCells.map((cell, ci) => (
-                    <th key={ci} className="px-3 py-2 text-left font-semibold text-xs text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
-                      {parseInline(cell, `th-${key}-${ci}`)}
-                    </th>
+    case 'table':
+      return (
+        <div key={key} className="my-2 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-gray-50 dark:bg-gray-800">
+                {block.header.map((cell, ci) => (
+                  <th key={ci} className="px-3 py-2 text-left font-semibold text-xs text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
+                    {parseInline(cell, `th-${k}-${ci}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, ri) => (
+                <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/50'}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-800">
+                      {parseInline(cell, `td-${k}-${ri}-${ci}`)}
+                    </td>
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {bodyRows.map((row, ri) => (
-                  <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/50'}>
-                    {row.map((cell, ci) => (
-                      <td key={ci} className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-800">
-                        {parseInline(cell, `td-${key}-${ri}-${ci}`)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
-        continue;
-      }
-      // Less than 2 lines - rewind and treat as paragraph
-      i -= tableLines.length;
-    }
-
-    if (line.trim() === '') { i++; continue; }
-
-    const paraLines: string[] = [];
-    while (i < lines.length) {
-      const l = lines[i];
-      if (l.trim() === '' || l.match(/^#{1,6}\s/) || l.startsWith('```') ||
-          l.startsWith('> ') || l.match(/^[\-\*\+]\s/) || l.match(/^\d+\.\s/) ||
-          l.match(/^[-*_]{3,}\s*$/) || (l.trim().startsWith('|') && l.trim().endsWith('|')) ||
-          l.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)) break;
-      paraLines.push(l);
-      i++;
-    }
-    if (paraLines.length > 0) {
-      nodes.push(
-        <p key={key++} className="text-sm leading-relaxed my-1">
-          {parseInline(paraLines.join('\n'), `p-${key}`)}
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    case 'paragraph':
+      return (
+        <p key={key} className="text-sm leading-relaxed my-1">
+          {parseInline(block.lines.join('\n'), `p-${k}`)}
         </p>
       );
-    }
   }
+}
+
+// ---------------------------------------------------------------------------
+// How many blocks to render per animation frame batch
+// ---------------------------------------------------------------------------
+const INITIAL_BATCH = 80;
+const SUBSEQUENT_BATCH = 80;
+
+export default function MarkdownRenderer({ content, className = '', maxLines = 0 }: Props) {
+  // Parse blocks once (cheap — pure string ops, no React)
+  const blocks = useMemo(() => parseBlocks(content), [content]);
+
+  // For truncated preview (maxLines > 0) just render all blocks immediately
+  // — the CSS clamp handles display. Only progressive rendering for full view.
+  const needsProgressive = maxLines === 0 && blocks.length > INITIAL_BATCH;
+
+  const [visibleCount, setVisibleCount] = useState(() =>
+    needsProgressive ? INITIAL_BATCH : blocks.length
+  );
+
+  // Reset when content changes
+  const prevContent = useRef(content);
+  useEffect(() => {
+    if (prevContent.current !== content) {
+      prevContent.current = content;
+      setVisibleCount(needsProgressive ? INITIAL_BATCH : blocks.length);
+    }
+  }, [content, blocks.length, needsProgressive]);
+
+  // Progressive rendering via rAF
+  useEffect(() => {
+    if (!needsProgressive) return;
+    if (visibleCount >= blocks.length) return;
+
+    let rafId: number;
+    const step = () => {
+      setVisibleCount(prev => {
+        const next = prev + SUBSEQUENT_BATCH;
+        return next >= blocks.length ? blocks.length : next;
+      });
+      rafId = requestAnimationFrame(step);
+    };
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, [needsProgressive, visibleCount, blocks.length]);
 
   const style = maxLines > 0 ? {
     display: '-webkit-box',
@@ -256,9 +341,18 @@ export default function MarkdownRenderer({ content, className = '', maxLines = 0
     overflow: 'hidden',
   } : {};
 
+  const visibleBlocks = needsProgressive ? blocks.slice(0, visibleCount) : blocks;
+  const isLoading = needsProgressive && visibleCount < blocks.length;
+
   return (
     <div className={`markdown-body text-gray-700 dark:text-gray-300 ${className}`} style={style}>
-      {nodes}
+      {visibleBlocks.map((block, i) => renderBlock(block, i))}
+      {isLoading && (
+        <div className="flex items-center gap-2 py-3 text-xs text-gray-400 dark:text-gray-600">
+          <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+          <span>加载中… {visibleCount} / {blocks.length} 段</span>
+        </div>
+      )}
     </div>
   );
 }
