@@ -28,7 +28,7 @@ type Block =
   | { kind: 'paragraph'; lines: string[] };
 
 // ---------------------------------------------------------------------------
-// Parse all lines into blocks (pure data, cheap, no React)
+// Parse all lines into blocks — pure string ops, no React, runs once
 // ---------------------------------------------------------------------------
 function parseBlocks(content: string): Block[] {
   const lines = content.split('\n');
@@ -140,14 +140,13 @@ function parseBlocks(content: string): Block[] {
         blocks.push({ kind: 'table', header, rows });
         continue;
       }
-      // rewind — treat as paragraph
-      i -= tableLines.length;
+      i -= tableLines.length; // rewind — treat as paragraph
     }
 
     // Blank line
     if (line.trim() === '') { i++; continue; }
 
-    // Paragraph
+    // Paragraph: collect consecutive non-special lines
     const paraLines: string[] = [];
     while (i < lines.length) {
       const l = lines[i];
@@ -167,7 +166,7 @@ function parseBlocks(content: string): Block[] {
 }
 
 // ---------------------------------------------------------------------------
-// Inline parser (unchanged)
+// Inline markdown parser
 // ---------------------------------------------------------------------------
 function parseInline(text: string, keyBase: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -199,7 +198,7 @@ function parseInline(text: string, keyBase: string): ReactNode[] {
 }
 
 // ---------------------------------------------------------------------------
-// Render a single block to a React node
+// Render a single block — called ONCE per block, result stored in cache
 // ---------------------------------------------------------------------------
 function renderBlock(block: Block, key: number): ReactNode {
   const k = String(key);
@@ -291,48 +290,63 @@ function renderBlock(block: Block, key: number): ReactNode {
 }
 
 // ---------------------------------------------------------------------------
-// How many blocks to render per animation frame batch
+// How many blocks to add per animation frame
 // ---------------------------------------------------------------------------
-const INITIAL_BATCH = 80;
-const SUBSEQUENT_BATCH = 80;
+const BATCH_SIZE = 80;
 
 export default function MarkdownRenderer({ content, className = '', maxLines = 0 }: Props) {
-  // Parse blocks once (cheap — pure string ops, no React)
+  // Parse all blocks once (cheap string ops, memoized)
   const blocks = useMemo(() => parseBlocks(content), [content]);
 
-  // For truncated preview (maxLines > 0) just render all blocks immediately
-  // — the CSS clamp handles display. Only progressive rendering for full view.
-  const needsProgressive = maxLines === 0 && blocks.length > INITIAL_BATCH;
-
-  const [visibleCount, setVisibleCount] = useState(() =>
-    needsProgressive ? INITIAL_BATCH : blocks.length
+  // For truncated preview (maxLines > 0): render all blocks immediately,
+  // CSS clip handles display. Content is always small in preview context.
+  const previewNodes = useMemo(
+    () => maxLines > 0 ? blocks.map((b, i) => renderBlock(b, i)) : null,
+    [blocks, maxLines]
   );
 
-  // Reset when content changes
+  // For full view: accumulate rendered nodes progressively.
+  // Each block is rendered ONCE and stored — never re-rendered on subsequent steps.
+  const [nodeCache, setNodeCache] = useState<ReactNode[]>([]);
+
+  // Reset cache when content changes
   const prevContent = useRef(content);
   useEffect(() => {
     if (prevContent.current !== content) {
       prevContent.current = content;
-      setVisibleCount(needsProgressive ? INITIAL_BATCH : blocks.length);
+      setNodeCache([]);
     }
-  }, [content, blocks.length, needsProgressive]);
+  }, [content]);
 
-  // Progressive rendering via rAF
+  // Progressive rendering: append one batch per animation frame
   useEffect(() => {
-    if (!needsProgressive) return;
-    if (visibleCount >= blocks.length) return;
+    if (maxLines > 0) return;
+    if (nodeCache.length >= blocks.length) return;
 
-    let rafId: number;
-    const step = () => {
-      setVisibleCount(prev => {
-        const next = prev + SUBSEQUENT_BATCH;
-        return next >= blocks.length ? blocks.length : next;
+    const startIdx = nodeCache.length; // captured from this render
+
+    const appendBatch = () => {
+      const endIdx = Math.min(startIdx + BATCH_SIZE, blocks.length);
+      const newNodes = blocks.slice(startIdx, endIdx).map((b, i) => renderBlock(b, startIdx + i));
+      setNodeCache(prev => {
+        // Guard: only append if no reset happened between scheduling and execution
+        if (prev.length !== startIdx) return prev;
+        return [...prev, ...newNodes];
       });
-      rafId = requestAnimationFrame(step);
     };
-    rafId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(rafId);
-  }, [needsProgressive, visibleCount, blocks.length]);
+
+    if (startIdx === 0) {
+      // First batch: run immediately so content appears without rAF delay
+      appendBatch();
+      return;
+    }
+
+    // Subsequent batches: yield to browser between frames
+    const id = requestAnimationFrame(appendBatch);
+    return () => cancelAnimationFrame(id);
+  }, [nodeCache.length, blocks, maxLines]);
+
+  const isLoading = maxLines === 0 && nodeCache.length < blocks.length;
 
   const style = maxLines > 0 ? {
     display: '-webkit-box',
@@ -341,16 +355,13 @@ export default function MarkdownRenderer({ content, className = '', maxLines = 0
     overflow: 'hidden',
   } : {};
 
-  const visibleBlocks = needsProgressive ? blocks.slice(0, visibleCount) : blocks;
-  const isLoading = needsProgressive && visibleCount < blocks.length;
-
   return (
     <div className={`markdown-body text-gray-700 dark:text-gray-300 ${className}`} style={style}>
-      {visibleBlocks.map((block, i) => renderBlock(block, i))}
+      {maxLines > 0 ? previewNodes : nodeCache}
       {isLoading && (
         <div className="flex items-center gap-2 py-3 text-xs text-gray-400 dark:text-gray-600">
           <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-          <span>加载中… {visibleCount} / {blocks.length} 段</span>
+          <span>加载中… {nodeCache.length} / {blocks.length} 段</span>
         </div>
       )}
     </div>
