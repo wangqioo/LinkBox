@@ -138,9 +138,10 @@ function parseBlocks(content: string): Block[] {
         const bodyStart = isSep ? 2 : 1;
         const rows = tableLines.slice(bodyStart).map(parseRow);
         blocks.push({ kind: 'table', header, rows });
-        continue;
       }
-      i -= tableLines.length; // rewind — treat as paragraph
+      // If < 2 rows: just skip those pipe-lines (don't rewind — rewinding causes infinite loop
+      // when subsequent paragraph check also breaks on pipe-lines)
+      continue;
     }
 
     // Blank line
@@ -159,6 +160,8 @@ function parseBlocks(content: string): Block[] {
     }
     if (paraLines.length > 0) {
       blocks.push({ kind: 'paragraph', lines: paraLines });
+    } else {
+      i++; // safety: prevent infinite loop if no handler matched and no lines were collected
     }
   }
 
