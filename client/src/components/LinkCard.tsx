@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Paperclip, Download, Sparkles, Loader2, BookOpen, Copy, GraduationCap, FileSpreadsheet, Presentation, FileCode, File, Globe } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import LearningNoteModal from './LearningNoteModal';
 import HtmlModal from './HtmlModal';
+import { api } from '../api/client';
 
 
 const proxyImage = (url: string) => {
@@ -14,7 +15,9 @@ interface Tag { id: number; name: string; color: string; }
 interface LinkItem {
   id: number; type?: string; url: string; title: string; description: string;
   thumbnail: string; comment: string; content?: string; image_path?: string;
-  summary?: string; content_md?: string; html_note?: string; imported_at: string; tags: Tag[]; status?: string;
+  summary?: string; content_md?: string; html_note?: string;
+  has_content_md?: number; has_html_note?: number;
+  imported_at: string; tags: Tag[]; status?: string;
 }
 
 interface Props {
@@ -31,14 +34,45 @@ interface Props {
   onToggleSelect?: (id: number) => void;
 }
 
-function MarkdownModal({ content, title, onClose }: { content: string; title: string; onClose: () => void }) {
+function LazyHtmlModal({ linkId, title, onClose }: { linkId: number; title: string; onClose: () => void }) {
+  const [html, setHtml] = useState<string | null>(null);
+  useEffect(() => {
+    api.getLink(linkId).then((data: any) => setHtml(data.html_note || '')).catch(() => setHtml(''));
+  }, [linkId]);
+  if (html === null) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <Loader2 className="w-8 h-8 animate-spin text-white" />
+    </div>
+  );
+  return <HtmlModal html={html} title={title} onClose={onClose} />;
+}
+
+function MarkdownModal({ linkId, title, onClose }: { linkId: number; title: string; onClose: () => void }) {
+  const [content, setContent] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    api.getLink(linkId)
+      .then((data: any) => setContent(data.content_md || ''))
+      .catch(() => setError('加载失败，请重试'));
+  }, [linkId]);
+
   const copy = () => {
-    navigator.clipboard.writeText(content).then(() => {
+    if (!content) return;
+    const stripped = content
+      .split('\n')
+      .filter((line: string) => !line.match(/^!\[([^\]]*)\]\([^)]+\)$/))
+      .map((line: string) => line.replace(/^>\s*图片描述[\uff1a:]\s*/, '图片描述：'))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    navigator.clipboard.writeText(stripped).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
@@ -48,18 +82,28 @@ function MarkdownModal({ content, title, onClose }: { content: string; title: st
             <span className="font-semibold text-sm truncate">{title}</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={copy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 hover:bg-teal-100 transition-colors">
-              <Copy className="w-3 h-3" />
-              {copied ? '已复制' : '复制 Markdown'}
-            </button>
+            {content && (
+              <button onClick={copy}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 hover:bg-teal-100 transition-colors">
+                <Copy className="w-3 h-3" />
+                {copied ? '已复制' : '复制 Markdown'}
+              </button>
+            )}
             <button onClick={onClose} className="btn-ghost p-1.5">
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
-          <MarkdownRenderer content={content} className="text-sm" />
+          {error ? (
+            <p className="text-sm text-red-500">{error}</p>
+          ) : content === null ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
+            </div>
+          ) : (
+            <MarkdownRenderer content={content} className="text-sm" />
+          )}
         </div>
       </div>
     </div>
@@ -189,8 +233,9 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   const isHtmlFile = itemType === 'file' && ['html', 'htm'].includes(fileExt0);
   const canSummarize = onSummarize && (itemType === 'link' || itemType === 'text' || itemType === 'file');
   const canExtract = onExtract && (itemType === 'link' || itemType === 'file');
-  const hasMarkdown = !!link.content_md;
-  const hasHtml = isHtmlFile && !!link.html_note;
+  // Use flag columns from list API (content_md not included in list response)
+  const hasMarkdown = !!(link.has_content_md || link.content_md);
+  const hasHtml = isHtmlFile && !!(link.has_html_note || link.html_note);
 
   const actionButtons = !editing && (
     <div className="flex items-center gap-1 shrink-0">
@@ -267,8 +312,8 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   const getAutoStatus = () => {
     if (link.status === 'error') return { text: '处理失败', step: 0, error: true };
     if (link.status !== 'processing' && !isProcessing) return null;
-    if (!link.content_md && !link.summary) return { text: '正在提取正文...', step: 1, error: false };
-    if (link.content_md && !link.summary) return { text: '正在生成摘要...', step: 2, error: false };
+    if (!hasMarkdown && !link.summary) return { text: '正在提取正文...', step: 1, error: false };
+    if (hasMarkdown && !link.summary) return { text: '正在生成摘要...', step: 2, error: false };
     return null;
   };
   const autoStatus = getAutoStatus();
@@ -423,18 +468,18 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
     return (
       <>
-        {showHtml && link.html_note && (
-          <HtmlModal html={link.html_note} title={link.title || '网页预览'} onClose={() => setShowHtml(false)} />
+        {showHtml && hasHtml && (
+          <LazyHtmlModal linkId={link.id} title={link.title || '网页预览'} onClose={() => setShowHtml(false)} />
         )}
-        {showMarkdown && link.content_md && (
-          <MarkdownModal content={link.content_md} title={link.title || '文件正文'} onClose={() => setShowMarkdown(false)} />
+        {showMarkdown && (
+          <MarkdownModal linkId={link.id} title={link.title || '文件正文'} onClose={() => setShowMarkdown(false)} />
         )}
         {showNote && (
           <LearningNoteModal
             linkId={link.id}
             linkTitle={link.title || '文件正文'}
             linkUrl={link.url}
-            initialHtml={link.html_note}
+            initialHtml={link.html_note || null}
             onClose={() => setShowNote(false)}
             onUpdated={(html) => { onNoteUpdated?.(link.id, html); }}
           />
@@ -487,8 +532,8 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
   return (
     <>
-      {showMarkdown && link.content_md && (
-        <MarkdownModal content={link.content_md} title={link.title || link.url} onClose={() => setShowMarkdown(false)} />
+      {showMarkdown && (
+        <MarkdownModal linkId={link.id} title={link.title || link.url} onClose={() => setShowMarkdown(false)} />
       )}
       {showNote && (
         <LearningNoteModal

@@ -105,7 +105,14 @@ function setTags(linkId, tagIds) {
 // List items with filters
 router.get('/', (req, res) => {
   const { tag, search, from, to, type, page = 1, limit = 50 } = req.query;
-  let sql = `SELECT DISTINCT l.* FROM links l`;
+  // Exclude large text columns (content_md, html_note) from list to keep response small.
+  // Use flag columns instead; client fetches full content on demand via GET /:id
+  let sql = `SELECT DISTINCT l.id, l.user_id, l.type, l.url, l.title, l.description,
+    l.thumbnail, l.comment, l.content, l.image_path, l.imported_at, l.created_at,
+    l.summary, l.status,
+    CASE WHEN l.content_md IS NOT NULL AND l.content_md != '' THEN 1 ELSE 0 END AS has_content_md,
+    CASE WHEN l.html_note IS NOT NULL AND l.html_note != '' THEN 1 ELSE 0 END AS has_html_note
+    FROM links l`;
   let countSql = `SELECT COUNT(DISTINCT l.id) as total FROM links l`;
   const params = [];
   const conditions = ['l.user_id = ?'];
