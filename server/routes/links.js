@@ -340,20 +340,21 @@ router.post('/:id/summarize', async (req, res) => {
     return res.status(400).json({ error: '该类型不支持摘要' });
   }
 
-  let textToSummarize = '';
-  if (link.type === 'text') {
-    textToSummarize = [link.title, link.content].filter(Boolean).join('\n\n');
-  } else if (link.type === 'file') {
-    textToSummarize = link.content_md || [link.title, link.description].filter(Boolean).join('\n');
-  } else {
-    // For links: combine title + description; if too short, note the URL
-    textToSummarize = [link.title, link.description].filter(Boolean).join('\n') || link.url;
-  }
-
-  if (!textToSummarize.trim()) return res.status(400).json({ error: '没有可摘要的内容' });
-
   try {
-    const summary = await summarizeContent(textToSummarize, link.type);
+    let summary = '';
+    if (link.type === 'text') {
+      const text = [link.title, link.content].filter(Boolean).join('\n\n');
+      if (!text.trim()) return res.status(400).json({ error: '没有可摘要的内容' });
+      summary = await summarizeContent(text, 'text');
+    } else if (link.content_md && link.content_md.trim()) {
+      // link or file with extracted content — use full markdown (image descriptions included)
+      summary = await summarizeMarkdown(link.content_md, link.title || '');
+    } else {
+      // link with no extracted content yet: use title + description
+      const text = [link.title, link.description].filter(Boolean).join('\n') || link.url;
+      summary = await summarizeContent(text, 'link');
+    }
+    if (!summary) return res.status(400).json({ error: '没有可摘要的内容' });
     db.prepare("UPDATE links SET summary = ? WHERE id = ?").run(summary, link.id);
     const updated = db.prepare("SELECT * FROM links WHERE id = ?").get(link.id);
     res.json({ ...updated, tags: attachTags(updated.id) });

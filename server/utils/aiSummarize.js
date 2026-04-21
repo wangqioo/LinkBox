@@ -39,10 +39,33 @@ export async function summarizeContent(text, type = 'link') {
 }
 
 /**
+ * Convert markdown to plain text suitable for LLM input:
+ * - Image description blockquotes (> 图片描述：xxx) → [图：xxx]
+ * - Bare image lines (![alt](url)) → dropped
+ * Ensures image descriptions are treated as first-class content.
+ */
+export function markdownToSummaryText(markdown) {
+  return markdown
+    .split('\n')
+    .map(line => {
+      const descMatch = line.match(/^>\s*图片描述[：:]\s*(.+)/);
+      if (descMatch) return `[图：${descMatch[1].trim()}]`;
+      if (/^!\[.*?\]\(https?:\/\/[^)]+\)$/.test(line.trim())) return '';
+      return line;
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
  * Summarize extracted markdown content (used after auto-extraction).
  */
 export async function summarizeMarkdown(markdown, title = '') {
-  const truncated = markdown.slice(0, 3000);
+  const plainText = markdownToSummaryText(markdown);
+  // If article is image-only (no real text), use all image descriptions
+  const truncated = plainText.slice(0, 3000);
+  if (!truncated.trim()) return '';
   const systemPrompt = '你是内容摘要助手。直接输出摘要，不要解释。';
   const userPrompt = `文章标题：${title}\n\n正文内容：\n${truncated}\n\n请用中文写一段100字以内的摘要：`;
   return callLLM(systemPrompt, userPrompt, 250);

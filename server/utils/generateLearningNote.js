@@ -1,5 +1,6 @@
 // Generates a structured HTML learning note from article markdown
 // Uses Spark 2 local Qwen2.5-VL-3B (port 8081)
+import { markdownToSummaryText } from './aiSummarize.js';
 
 const LOCAL_LLM = process.env.LOCAL_LLM_URL || 'http://localhost:8081/v1';
 const MODEL = 'Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf';
@@ -22,7 +23,9 @@ async function callLLM(prompt, maxTokens = 800) {
 }
 
 export async function generateLearningNote(markdown, title = '', summary = '') {
-  const truncated = markdown.slice(0, 4000);
+  // Convert to LLM-friendly text: image descriptions become [图：xxx], bare image URLs dropped
+  const plainText = markdownToSummaryText(markdown);
+  const truncated = plainText.slice(0, 4000);
 
   // Step 1: Extract key takeaways
   const takeawaysRaw = await callLLM(

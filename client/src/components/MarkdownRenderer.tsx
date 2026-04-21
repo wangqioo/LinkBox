@@ -28,6 +28,125 @@ type Block =
   | { kind: 'paragraph'; lines: string[] };
 
 // ---------------------------------------------------------------------------
+// WeChat multi-line table helpers
+// ---------------------------------------------------------------------------
+
+/** Extract non-empty cells from lines[startI..endI), treating lone | as separators. */
+function extractCells(lines: string[], startI: number, endI: number): string[] {
+  const cells: string[] = [];
+  let current: string[] = [];
+  const SEP_RE = /^\|[\s\-:|]+\|$/;
+
+  for (let j = startI; j < endI; j++) {
+    const t = lines[j].trim();
+    if (t === '') continue;
+
+    if (t === '|') {
+      const txt = current.join(' ').trim();
+      if (txt) cells.push(txt);
+      current = [];
+      continue;
+    }
+
+    // Inline "| cell1 | cell2 |" line (not a separator)
+    if (t.startsWith('|') && t.endsWith('|') && t.length > 1 && !SEP_RE.test(t)) {
+      const txt = current.join(' ').trim();
+      if (txt) cells.push(txt);
+      current = [];
+      t.slice(1, -1).split('|').map(s => s.trim()).filter(Boolean).forEach(p => cells.push(p));
+      continue;
+    }
+
+    current.push(t);
+  }
+  const last = current.join(' ').trim();
+  if (last) cells.push(last);
+  return cells;
+}
+
+/** Collect one row starting at lines[startI] (lone pipe), up to maxCells cells. */
+function extractRow(
+  lines: string[],
+  startI: number,
+  maxCells: number,
+): { cells: string[]; nextI: number } | null {
+  if (lines[startI].trim() !== '|') return null;
+  const SEP_RE = /^\|[\s\-:|]+\|$/;
+  const cells: string[] = [];
+  let current: string[] = [];
+  let j = startI + 1;
+  const limit = startI + 80;
+
+  while (j < lines.length && j < limit) {
+    const t = lines[j].trim();
+
+    if (t === '') { j++; continue; }
+
+    if (t === '|') {
+      const txt = current.join(' ').trim();
+      if (txt) cells.push(txt);
+      current = [];
+      j++;
+      if (cells.length >= maxCells) break;
+      continue;
+    }
+
+    if (t.startsWith('|') && t.endsWith('|') && t.length > 1 && !SEP_RE.test(t)) {
+      const txt = current.join(' ').trim();
+      if (txt) cells.push(txt);
+      current = [];
+      t.slice(1, -1).split('|').map(s => s.trim()).filter(Boolean).forEach(p => cells.push(p));
+      j++;
+      if (cells.length >= maxCells) break;
+      continue;
+    }
+
+    current.push(t);
+    j++;
+  }
+
+  const last = current.join(' ').trim();
+  if (last) cells.push(last);
+  return { cells, nextI: j };
+}
+
+/**
+ * Try to parse a WeChat-style multi-line table where lone | lines act as
+ * cell delimiters and a standard "| --- |" separator separates header from body.
+ */
+function tryMultilineTable(
+  lines: string[],
+  startI: number,
+): { block: Block; nextI: number } | null {
+  if (lines[startI].trim() !== '|') return null;
+
+  // Look for the separator row within the next 80 lines
+  let sepIdx = -1;
+  for (let j = startI + 1; j < Math.min(startI + 80, lines.length); j++) {
+    if (/^\s*\|[\s\-:|]+\|\s*$/.test(lines[j])) { sepIdx = j; break; }
+  }
+  if (sepIdx === -1) return null;
+
+  const header = extractCells(lines, startI, sepIdx);
+  if (header.length === 0) return null;
+
+  const rows: string[][] = [];
+  let i = sepIdx + 1;
+
+  while (i < lines.length && rows.length < 100) {
+    while (i < lines.length && lines[i].trim() === '') i++;
+    if (i >= lines.length || lines[i].trim() !== '|') break;
+
+    const result = extractRow(lines, i, header.length);
+    if (!result || result.cells.length === 0) break;
+    rows.push(result.cells);
+    i = result.nextI;
+  }
+
+  return { block: { kind: 'table', header, rows }, nextI: i };
+}
+
+// ---------------------------------------------------------------------------
 // Parse all lines into blocks — pure string ops, no React, runs once
 // ---------------------------------------------------------------------------
 function parseBlocks(content: string): Block[] {
@@ -125,22 +244,40 @@ function parseBlocks(content: string): Block[] {
       continue;
     }
 
-    // Markdown table
-    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
-      const tableLines: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
-        tableLines.push(lines[i]); i++;
+    // Pipe line: multi-line WeChat table OR standard markdown table
+    if (line.trim().startsWith('|')) {
+      // Lone pipe → try WeChat multi-line table first
+      if (line.trim() === '|') {
+        const mlResult = tryMultilineTable(lines, i);
+        if (mlResult) {
+          blocks.push(mlResult.block);
+          i = mlResult.nextI;
+          continue;
+        }
+        // Lone pipe with no separator nearby: skip to avoid infinite loop
+        i++;
+        continue;
       }
-      if (tableLines.length >= 2) {
-        const parseRow = (row: string) => row.trim().slice(1, -1).split('|').map(c => c.trim());
-        const header = parseRow(tableLines[0]);
-        const isSep = /^\|[\s\-:|]+\|$/.test(tableLines[1].trim());
-        const bodyStart = isSep ? 2 : 1;
-        const rows = tableLines.slice(bodyStart).map(parseRow);
-        blocks.push({ kind: 'table', header, rows });
+
+      // Standard single-line markdown table (each row on one line)
+      if (line.trim().endsWith('|')) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+          tableLines.push(lines[i]); i++;
+        }
+        if (tableLines.length >= 2) {
+          const parseRow = (row: string) => row.trim().slice(1, -1).split('|').map(c => c.trim());
+          const header = parseRow(tableLines[0]);
+          const isSep = /^\|[\s\-:|]+\|$/.test(tableLines[1].trim());
+          const bodyStart = isSep ? 2 : 1;
+          const rows = tableLines.slice(bodyStart).map(parseRow);
+          blocks.push({ kind: 'table', header, rows });
+        }
+        continue;
       }
-      // If < 2 rows: just skip those pipe-lines (don't rewind — rewinding causes infinite loop
-      // when subsequent paragraph check also breaks on pipe-lines)
+
+      // Starts with | but doesn't end with | — skip to avoid stall
+      i++;
       continue;
     }
 

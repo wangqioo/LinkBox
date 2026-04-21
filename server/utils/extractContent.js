@@ -209,7 +209,7 @@ async function extractWeixin(url, withVision) {
   let markdown;
   const contentEl = $('#js_content');
 
-  if (contentEl.length && contentEl.text().trim()) {
+  if (contentEl.length && (contentEl.text().trim() || contentEl.find('img[src]').length > 0)) {
     // Standard article type: content in #js_content div
     contentEl.find('script,style,svg,.qr_code_pc_outer,.tips_global,.weapp_text_link').remove();
     const contentHtml = contentEl.html() || '';
