@@ -3,7 +3,9 @@ import { api, type UploadProgress } from '../api/client';
 import LinkCard from '../components/LinkCard';
 import AddLinkModal from '../components/AddLinkModal';
 import ImportModal from '../components/ImportModal';
-import { Plus, Search, Upload, Download, Filter, X, Loader2, Link2, Image, FileText, Mic, Paperclip, CheckSquare, Square } from 'lucide-react';
+import { Plus, Search, Upload, Download, Filter, X, Loader2, Link2, Image, FileText, Mic, Paperclip, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const PAGE_SIZE = 50;
 
 interface Tag { id: number; name: string; color: string; link_count: number; }
 interface LinkItem {
@@ -25,6 +27,7 @@ export default function LinksPage() {
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeTag, setActiveTag] = useState('');
@@ -39,7 +42,7 @@ export default function LinksPage() {
   const fetchLinks = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = { page: String(page), limit: String(PAGE_SIZE) };
       if (search) params.search = search;
       if (activeTag) params.tag = activeTag;
       if (activeType) params.type = activeType;
@@ -50,7 +53,10 @@ export default function LinksPage() {
       setTotal(data.total);
     } catch { /* ignore */ }
     setLoading(false);
-  }, [search, activeTag, activeType, dateFrom, dateTo]);
+  }, [search, activeTag, activeType, dateFrom, dateTo, page]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [search, activeTag, activeType, dateFrom, dateTo]);
 
   const fetchTags = async () => {
     try { setTags(await api.getTags()); } catch { /* ignore */ }
@@ -217,7 +223,7 @@ export default function LinksPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl font-bold">我的收藏</h1>
-          <p className="text-sm text-gray-500">{total} 条收藏</p>
+          <p className="text-sm text-gray-500">{total} 条收藏{total > PAGE_SIZE ? `，第 ${page} / ${Math.ceil(total / PAGE_SIZE)} 页` : ''}</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowImport(true)} className="btn-secondary text-xs">
@@ -358,6 +364,43 @@ export default function LinksPage() {
               onExtract={handleExtract} onNoteUpdated={handleNoteUpdated} isProcessing={processingIds.has(link.id)}
               selectMode={showFilters} selected={selectedIds.has(link.id)} onToggleSelect={toggleSelect} />
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <button
+            onClick={() => { setPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
+            disabled={page === 1}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm border border-gray-200 dark:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            <ChevronLeft className="w-4 h-4" /> 上一页
+          </button>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.ceil(total / PAGE_SIZE) }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === Math.ceil(total / PAGE_SIZE) || Math.abs(p - page) <= 2)
+              .reduce<(number | '...')[]>((acc, p, idx, arr) => {
+                if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('...');
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, idx) =>
+                p === '...'
+                  ? <span key={`ellipsis-${idx}`} className="px-1 text-gray-400 text-sm">…</span>
+                  : <button key={p} onClick={() => { setPage(p as number); window.scrollTo(0, 0); }}
+                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
+                        page === p
+                          ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
+                      }`}>{p}</button>
+              )}
+          </div>
+          <button
+            onClick={() => { setPage(p => Math.min(Math.ceil(total / PAGE_SIZE), p + 1)); window.scrollTo(0, 0); }}
+            disabled={page === Math.ceil(total / PAGE_SIZE)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm border border-gray-200 dark:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            下一页 <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       )}
 
