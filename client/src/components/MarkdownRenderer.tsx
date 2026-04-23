@@ -422,7 +422,7 @@ function renderBlock(block: Block, key: number): ReactNode {
       );
     case 'paragraph':
       return (
-        <p key={key} className="text-sm leading-relaxed my-1">
+        <p key={key} className="text-sm leading-relaxed my-1 break-words">
           {parseInline(block.lines.join('\n'), `p-${k}`)}
         </p>
       );
@@ -496,7 +496,7 @@ export default function MarkdownRenderer({ content, className = '', maxLines = 0
   } : {};
 
   return (
-    <div className={`markdown-body text-gray-700 dark:text-gray-300 ${className}`} style={style}>
+    <div className={`markdown-body text-gray-700 dark:text-gray-300 break-words min-w-0 ${className}`} style={style}>
       {maxLines > 0 ? previewNodes : nodeCache}
       {isLoading && (
         <div className="flex items-center gap-2 py-3 text-xs text-gray-400 dark:text-gray-600">

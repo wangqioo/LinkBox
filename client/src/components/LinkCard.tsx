@@ -94,7 +94,7 @@ function MarkdownModal({ linkId, title, onClose }: { linkId: number; title: stri
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-5">
           {error ? (
             <p className="text-sm text-red-500">{error}</p>
           ) : content === null ? (
