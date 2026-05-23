@@ -6,8 +6,10 @@ import { execSync } from 'child_process';
 const TMP_DIR = '/tmp/file2md';
 mkdirSync(TMP_DIR, { recursive: true });
 
-// Vision LLM endpoint (consistent with aiSummarize.js / generateLearningNote.js)
-const LLM_URL = (process.env.LOCAL_LLM_URL || 'http://localhost:8081/v1') + '/chat/completions';
+// Vision/text LLM endpoint (OpenAI-compatible). If no separate vision model is
+// configured, fall back to the same local model used for summaries.
+const LLM_URL = (process.env.LOCAL_LLM_URL || 'http://localhost:8000/v1') + '/chat/completions';
+const VISION_MODEL = process.env.LOCAL_VISION_MODEL || process.env.LOCAL_LLM_MODEL || 'Qwen3.5-4B';
 
 // Decode XML entities: &#12345; -> char, &amp; &lt; &gt; &quot; &apos;
 function decodeXmlEntities(str) {
@@ -46,7 +48,7 @@ async function describeImage(localPath) {
     const b64 = imgBuf.toString('base64');
 
     const payload = {
-      model: 'qwen',
+      model: VISION_MODEL,
       messages: [{
         role: 'user',
         content: [
@@ -55,7 +57,8 @@ async function describeImage(localPath) {
         ]
       }],
       max_tokens: 80,
-      temperature: 0.3
+      temperature: 0.3,
+      chat_template_kwargs: { enable_thinking: false }
     };
 
     const resp = await fetch(LLM_URL, {

@@ -1,0 +1,14 @@
+node_modules
+client/node_modules
+server/node_modules
+client/dist
+server/linkbox.db
+server/linkbox.db-*
+server/uploads
+.git
+.gitignore
+Dockerfile*
+docker-compose*.yml
+*.log
+.env
+.DS_Store

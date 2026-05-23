@@ -1,0 +1,19 @@
+services:
+  linkbox:
+    build: .
+    image: linkbox:latest
+    container_name: linkbox
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      NODE_ENV: production
+      PORT: "3100"
+      DATA_DIR: /data
+      UPLOADS_DIR: /data/uploads
+      DB_PATH: /data/linkbox.db
+      LOCAL_LLM_URL: http://127.0.0.1:8000/v1
+      LOCAL_LLM_MODEL: Qwen3.5-4B
+      LOCAL_VISION_MODEL: Qwen3.5-4B
+      TZ: Asia/Shanghai
+    volumes:
+      - /home/wq/linkbox-data:/data

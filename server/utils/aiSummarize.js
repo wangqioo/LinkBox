@@ -1,6 +1,6 @@
-// Uses Spark 2 local llama-server (Qwen2.5-VL-3B) on port 8081
-const LOCAL_LLM = process.env.LOCAL_LLM_URL || 'http://localhost:8081/v1';
-const MODEL = 'Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf';
+// OpenAI-compatible local LLM endpoint, e.g. vLLM on the home server.
+const LOCAL_LLM = process.env.LOCAL_LLM_URL || 'http://localhost:8000/v1';
+const MODEL = process.env.LOCAL_LLM_MODEL || 'Qwen3.5-4B';
 
 async function callLLM(systemPrompt, userPrompt, maxTokens = 200) {
   const response = await fetch(`${LOCAL_LLM}/chat/completions`, {
@@ -14,6 +14,7 @@ async function callLLM(systemPrompt, userPrompt, maxTokens = 200) {
       ],
       max_tokens: maxTokens,
       temperature: 0.3,
+      chat_template_kwargs: { enable_thinking: false },
     }),
     signal: AbortSignal.timeout(60000),
   });

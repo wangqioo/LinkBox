@@ -1,9 +1,9 @@
 // Generates a structured HTML learning note from article markdown
-// Uses Spark 2 local Qwen2.5-VL-3B (port 8081)
+// Uses an OpenAI-compatible local LLM endpoint.
 import { markdownToSummaryText } from './aiSummarize.js';
 
-const LOCAL_LLM = process.env.LOCAL_LLM_URL || 'http://localhost:8081/v1';
-const MODEL = 'Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf';
+const LOCAL_LLM = process.env.LOCAL_LLM_URL || 'http://localhost:8000/v1';
+const MODEL = process.env.LOCAL_LLM_MODEL || 'Qwen3.5-4B';
 
 async function callLLM(prompt, maxTokens = 800) {
   const response = await fetch(`${LOCAL_LLM}/chat/completions`, {
@@ -14,6 +14,7 @@ async function callLLM(prompt, maxTokens = 800) {
       messages: [{ role: 'user', content: prompt }],
       max_tokens: maxTokens,
       temperature: 0.4,
+      chat_template_kwargs: { enable_thinking: false },
     }),
     signal: AbortSignal.timeout(90000),
   });
@@ -147,7 +148,7 @@ export async function generateLearningNote(markdown, title = '', summary = '') {
     <div id="mindmap-container"></div>
   </div>
 
-  <div class="footer">由 Qwen2.5-VL-3B 生成 · LinkBox</div>
+  <div class="footer">由 ${escapeHtml(MODEL)} 生成 · LinkBox</div>
 </div>
 <script>
 (function() {

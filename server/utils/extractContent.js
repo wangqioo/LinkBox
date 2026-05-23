@@ -33,7 +33,8 @@ ${text.trim()}
   }
 });
 
-const LLM_URL = (process.env.LOCAL_LLM_URL || 'http://localhost:8081/v1') + '/chat/completions';
+const LLM_URL = (process.env.LOCAL_LLM_URL || 'http://localhost:8000/v1') + '/chat/completions';
+const VISION_MODEL = process.env.LOCAL_VISION_MODEL || process.env.LOCAL_LLM_MODEL || 'Qwen3.5-4B';
 const MIN_IMAGE_BYTES = 5000;
 
 async function fetchImageAsBase64(url, referer) {
@@ -66,7 +67,7 @@ async function describeWebImage(imageUrl, referer) {
   if (!img) return null;
   try {
     const payload = {
-      model: 'qwen',
+      model: VISION_MODEL,
       messages: [{
         role: 'user',
         content: [
@@ -76,6 +77,7 @@ async function describeWebImage(imageUrl, referer) {
       }],
       max_tokens: 80,
       temperature: 0.2,
+      chat_template_kwargs: { enable_thinking: false },
     };
     const resp = await fetch(LLM_URL, {
       method: 'POST',
