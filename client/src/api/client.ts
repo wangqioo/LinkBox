@@ -22,6 +22,16 @@ export interface UploadProgress {
   speed: number; // bytes per second
 }
 
+export interface AIConfig {
+  baseUrl: string;
+  model: string;
+  visionModel: string;
+  temperature: number;
+  enableThinking: boolean;
+  apiKeyConfigured: boolean;
+  apiKey?: string;
+}
+
 function uploadWithProgress(
   path: string,
   formData: FormData,
@@ -112,6 +122,11 @@ export const api = {
   getSettings: () => request('/settings'),
   updateSettings: (data: Record<string, string>) =>
     request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  getAIConfig: (): Promise<AIConfig> => request('/settings/ai'),
+  updateAIConfig: (data: Partial<AIConfig>) =>
+    request('/settings/ai', { method: 'PUT', body: JSON.stringify(data) }),
+  testAIConfig: (data: Partial<AIConfig>) =>
+    request('/settings/ai/test', { method: 'POST', body: JSON.stringify(data) }),
 
   // Tags
   getTags: () => request('/tags'),

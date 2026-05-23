@@ -2,14 +2,10 @@
 import { readFileSync, mkdirSync, readdirSync, copyFileSync, existsSync } from 'fs';
 import { extname, join } from 'path';
 import { execSync } from 'child_process';
+import { getAIConfig } from './aiConfig.js';
 
 const TMP_DIR = '/tmp/file2md';
 mkdirSync(TMP_DIR, { recursive: true });
-
-// Vision/text LLM endpoint (OpenAI-compatible). If no separate vision model is
-// configured, fall back to the same local model used for summaries.
-const LLM_URL = (process.env.LOCAL_LLM_URL || 'http://localhost:8000/v1') + '/chat/completions';
-const VISION_MODEL = process.env.LOCAL_VISION_MODEL || process.env.LOCAL_LLM_MODEL || 'Qwen3.5-4B';
 
 // Decode XML entities: &#12345; -> char, &amp; &lt; &gt; &quot; &apos;
 function decodeXmlEntities(str) {
@@ -47,8 +43,9 @@ async function describeImage(localPath) {
     const mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
     const b64 = imgBuf.toString('base64');
 
+    const aiConfig = getAIConfig({ includeSecret: true });
     const payload = {
-      model: VISION_MODEL,
+      model: aiConfig.visionModel || aiConfig.model,
       messages: [{
         role: 'user',
         content: [
@@ -57,13 +54,16 @@ async function describeImage(localPath) {
         ]
       }],
       max_tokens: 80,
-      temperature: 0.3,
-      chat_template_kwargs: { enable_thinking: false }
+      temperature: aiConfig.temperature,
+      chat_template_kwargs: { enable_thinking: aiConfig.enableThinking }
     };
 
-    const resp = await fetch(LLM_URL, {
+    const resp = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(aiConfig.apiKey ? { Authorization: `Bearer ${aiConfig.apiKey}` } : {}),
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000)
     });

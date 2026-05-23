@@ -1,26 +1,14 @@
 // Generates a structured HTML learning note from article markdown
-// Uses an OpenAI-compatible local LLM endpoint.
+// Uses the OpenAI-compatible endpoint configured in settings.
 import { markdownToSummaryText } from './aiSummarize.js';
-
-const LOCAL_LLM = process.env.LOCAL_LLM_URL || 'http://localhost:8000/v1';
-const MODEL = process.env.LOCAL_LLM_MODEL || 'Qwen3.5-4B';
+import { callAIChat, getAIConfig } from './aiConfig.js';
 
 async function callLLM(prompt, maxTokens = 800) {
-  const response = await fetch(`${LOCAL_LLM}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: maxTokens,
-      temperature: 0.4,
-      chat_template_kwargs: { enable_thinking: false },
-    }),
-    signal: AbortSignal.timeout(90000),
+  return callAIChat({
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens,
+    timeoutMs: 90000,
   });
-  if (!response.ok) throw new Error(`LLM error ${response.status}`);
-  const data = await response.json();
-  return (data.choices?.[0]?.message?.content || '').trim();
 }
 
 export async function generateLearningNote(markdown, title = '', summary = '') {
@@ -148,7 +136,7 @@ export async function generateLearningNote(markdown, title = '', summary = '') {
     <div id="mindmap-container"></div>
   </div>
 
-  <div class="footer">由 ${escapeHtml(MODEL)} 生成 · LinkBox</div>
+  <div class="footer">由 ${escapeHtml(getAIConfig().model)} 生成 · LinkBox</div>
 </div>
 <script>
 (function() {

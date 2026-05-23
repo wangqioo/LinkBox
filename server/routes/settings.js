@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getAIConfig, updateAIConfig, testAIConfig } from '../utils/aiConfig.js';
 
 const router = Router();
 
@@ -10,9 +11,38 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function isReservedSettingKey(key) {
+  return String(key).startsWith('ai:');
+}
+
+// GET /api/settings/ai - return AI config without secrets
+router.get('/ai', authMiddleware, requireAdmin, (req, res) => {
+  res.json(getAIConfig());
+});
+
+// PUT /api/settings/ai - update AI config
+router.put('/ai', authMiddleware, requireAdmin, (req, res) => {
+  try {
+    const config = updateAIConfig(req.body || {});
+    res.json({ ok: true, config });
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'AI 配置无效' });
+  }
+});
+
+// POST /api/settings/ai/test - verify AI endpoint/model connectivity
+router.post('/ai/test', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const result = await testAIConfig(req.body || {});
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message || 'AI 接口测试失败' });
+  }
+});
+
 // GET /api/settings - return all settings (admin only)
 router.get('/', authMiddleware, requireAdmin, (req, res) => {
-  const rows = db.prepare('SELECT key, value FROM settings').all();
+  const rows = db.prepare('SELECT key, value FROM settings WHERE key NOT LIKE ?').all('ai:%');
   const settings = Object.fromEntries(rows.map(r => [r.key, r.value]));
   res.json(settings);
 });
@@ -22,6 +52,9 @@ router.put('/', authMiddleware, requireAdmin, (req, res) => {
   const updates = req.body;
   if (!updates || typeof updates !== 'object') {
     return res.status(400).json({ error: '参数格式错误' });
+  }
+  if (Object.keys(updates).some(isReservedSettingKey)) {
+    return res.status(400).json({ error: 'AI 配置请使用专用接口 /api/settings/ai' });
   }
   const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
   const tx = db.transaction((entries) => {

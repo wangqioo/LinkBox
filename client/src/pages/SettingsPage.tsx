@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { api } from '../api/client';
+import { api, type AIConfig } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Save, ExternalLink } from 'lucide-react';
+import { Save, ExternalLink, PlugZap } from 'lucide-react';
 
 interface SiteCookieEntry {
   domain: string;
@@ -21,11 +21,24 @@ const SITE_COOKIES: SiteCookieEntry[] = [
   },
 ];
 
+const DEFAULT_AI_CONFIG: AIConfig = {
+  baseUrl: '',
+  model: '',
+  visionModel: '',
+  temperature: 0.3,
+  enableThinking: false,
+  apiKeyConfigured: false,
+  apiKey: '',
+};
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [aiConfig, setAIConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
   const [saving, setSaving] = useState(false);
+  const [testingAI, setTestingAI] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [aiTestResult, setAITestResult] = useState('');
   const [error, setError] = useState('');
 
   const isAdmin = user?.id === 1;
@@ -33,13 +46,21 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!isAdmin) return;
     api.getSettings().then(setSettings).catch(() => {});
+    api.getAIConfig()
+      .then((config) => setAIConfig({ ...DEFAULT_AI_CONFIG, ...config, apiKey: '' }))
+      .catch(() => {});
   }, [isAdmin]);
 
   const handleSave = async () => {
     setSaving(true);
     setError('');
+    setAITestResult('');
     try {
       await api.updateSettings(settings);
+      const payload: Partial<AIConfig> = { ...aiConfig };
+      if (!payload.apiKey) delete payload.apiKey;
+      const result = await api.updateAIConfig(payload);
+      setAIConfig({ ...DEFAULT_AI_CONFIG, ...result.config, apiKey: '' });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e: any) {
@@ -47,6 +68,27 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleTestAI = async () => {
+    setTestingAI(true);
+    setError('');
+    setAITestResult('');
+    try {
+      const payload: Partial<AIConfig> = { ...aiConfig };
+      if (!payload.apiKey) delete payload.apiKey;
+      const result = await api.testAIConfig(payload);
+      const count = result.models?.length ? `，发现 ${result.models.length} 个模型` : '';
+      setAITestResult(`连接成功：${result.model}${count}`);
+    } catch (e: any) {
+      setError(e.message || 'AI 接口测试失败');
+    } finally {
+      setTestingAI(false);
+    }
+  };
+
+  const updateAIField = <K extends keyof AIConfig>(key: K, value: AIConfig[K]) => {
+    setAIConfig((prev) => ({ ...prev, [key]: value }));
   };
 
   if (!isAdmin) {
@@ -101,6 +143,96 @@ export default function SettingsPage() {
             </p>
           </div>
         ))}
+      </div>
+
+      {/* AI Configuration */}
+      <div className="rounded-xl border p-5 space-y-4">
+        <div>
+          <h2 className="font-semibold">AI 配置</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            配置 OpenAI 兼容接口。AI 摘要、学习笔记、图片/文件转 Markdown 会实时使用这里的配置；未填写时回退到服务端环境变量。
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2 space-y-1.5">
+            <label className="text-sm font-medium">接口地址</label>
+            <input
+              className="w-full rounded-lg border px-3 py-2 bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="http://127.0.0.1:8000/v1"
+              value={aiConfig.baseUrl}
+              onChange={(e) => updateAIField('baseUrl', e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">文本模型</label>
+            <input
+              className="w-full rounded-lg border px-3 py-2 bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="Qwen3.5-4B"
+              value={aiConfig.model}
+              onChange={(e) => updateAIField('model', e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">视觉模型</label>
+            <input
+              className="w-full rounded-lg border px-3 py-2 bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="留空时使用文本模型"
+              value={aiConfig.visionModel}
+              onChange={(e) => updateAIField('visionModel', e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">API Key</label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              className="w-full rounded-lg border px-3 py-2 bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder={aiConfig.apiKeyConfigured ? '已保存，留空则不修改' : '可选'}
+              value={aiConfig.apiKey || ''}
+              onChange={(e) => updateAIField('apiKey', e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">温度：{aiConfig.temperature}</label>
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.1"
+              className="w-full accent-indigo-600"
+              value={aiConfig.temperature}
+              onChange={(e) => updateAIField('temperature', Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            checked={aiConfig.enableThinking}
+            onChange={(e) => updateAIField('enableThinking', e.target.checked)}
+          />
+          启用模型思考模式（传递 enable_thinking=true）
+        </label>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleTestAI}
+            disabled={testingAI}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <PlugZap className="w-4 h-4" />
+            {testingAI ? '测试中…' : '测试连接'}
+          </button>
+          {aiTestResult && <span className="text-sm text-green-600">{aiTestResult}</span>}
+        </div>
       </div>
 
       {error && (

@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom';
 import TurndownService from 'turndown';
 import { gfm, tables, strikethrough } from 'turndown-plugin-gfm';
 import db from '../db.js';
+import { getAIConfig } from './aiConfig.js';
 
 const td = new TurndownService({
   headingStyle: 'atx',
@@ -33,8 +34,6 @@ ${text.trim()}
   }
 });
 
-const LLM_URL = (process.env.LOCAL_LLM_URL || 'http://localhost:8000/v1') + '/chat/completions';
-const VISION_MODEL = process.env.LOCAL_VISION_MODEL || process.env.LOCAL_LLM_MODEL || 'Qwen3.5-4B';
 const MIN_IMAGE_BYTES = 5000;
 
 async function fetchImageAsBase64(url, referer) {
@@ -66,8 +65,9 @@ async function describeWebImage(imageUrl, referer) {
   const img = await fetchImageAsBase64(imageUrl, referer);
   if (!img) return null;
   try {
+    const aiConfig = getAIConfig({ includeSecret: true });
     const payload = {
-      model: VISION_MODEL,
+      model: aiConfig.visionModel || aiConfig.model,
       messages: [{
         role: 'user',
         content: [
@@ -76,12 +76,15 @@ async function describeWebImage(imageUrl, referer) {
         ]
       }],
       max_tokens: 80,
-      temperature: 0.2,
-      chat_template_kwargs: { enable_thinking: false },
+      temperature: aiConfig.temperature,
+      chat_template_kwargs: { enable_thinking: aiConfig.enableThinking },
     };
-    const resp = await fetch(LLM_URL, {
+    const resp = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(aiConfig.apiKey ? { Authorization: `Bearer ${aiConfig.apiKey}` } : {}),
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
     });

@@ -1,29 +1,15 @@
-// OpenAI-compatible local LLM endpoint, e.g. vLLM on the home server.
-const LOCAL_LLM = process.env.LOCAL_LLM_URL || 'http://localhost:8000/v1';
-const MODEL = process.env.LOCAL_LLM_MODEL || 'Qwen3.5-4B';
+// OpenAI-compatible LLM helpers. Runtime configuration is stored in settings.
+import { callAIChat } from './aiConfig.js';
 
 async function callLLM(systemPrompt, userPrompt, maxTokens = 200) {
-  const response = await fetch(`${LOCAL_LLM}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: maxTokens,
-      temperature: 0.3,
-      chat_template_kwargs: { enable_thinking: false },
-    }),
-    signal: AbortSignal.timeout(60000),
+  return callAIChat({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    maxTokens,
+    timeoutMs: 60000,
   });
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`LLM error ${response.status}: ${err.slice(0, 200)}`);
-  }
-  const data = await response.json();
-  return (data.choices?.[0]?.message?.content || '').trim();
 }
 
 /**
