@@ -108,14 +108,35 @@ try {
 
   const defaults = await request('/api/settings/ai', {}, adminToken);
   assert.equal(defaults.res.status, 200);
+  assert.equal(defaults.data.provider, 'custom');
   assert.equal(defaults.data.baseUrl, 'http://127.0.0.1:1/v1');
   assert.equal(defaults.data.model, 'env-model');
   assert.equal(defaults.data.apiKeyConfigured, false);
   assert.equal(defaults.data.apiKey, undefined);
+  assert.ok(Array.isArray(defaults.data.providers));
+  const deepseekPreset = defaults.data.providers.find(provider => provider.id === 'deepseek');
+  assert.equal(deepseekPreset.baseUrl, 'https://api.deepseek.com/v1');
+  assert.equal(deepseekPreset.model, 'deepseek-chat');
+
+  const deepseekSave = await request('/api/settings/ai', {
+    method: 'PUT',
+    body: JSON.stringify({
+      provider: 'deepseek',
+      apiKey: 'sk-deepseek-only',
+    }),
+  }, adminToken);
+  assert.equal(deepseekSave.res.status, 200);
+  assert.equal(deepseekSave.data.config.provider, 'deepseek');
+  assert.equal(deepseekSave.data.config.baseUrl, 'https://api.deepseek.com/v1');
+  assert.equal(deepseekSave.data.config.model, 'deepseek-chat');
+  assert.equal(deepseekSave.data.config.visionModel, '');
+  assert.equal(deepseekSave.data.config.apiKeyConfigured, true);
+  assert.equal(deepseekSave.data.config.apiKey, undefined);
 
   const save = await request('/api/settings/ai', {
     method: 'PUT',
     body: JSON.stringify({
+      provider: 'custom',
       baseUrl: `http://127.0.0.1:${llmPort}/v1`,
       model: 'mock-model',
       visionModel: 'mock-vision',

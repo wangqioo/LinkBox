@@ -22,7 +22,21 @@ export interface UploadProgress {
   speed: number; // bytes per second
 }
 
+export interface AIProvider {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  visionModel: string;
+  apiKeyEnv?: string;
+  keyPlaceholder?: string;
+  description?: string;
+}
+
 export interface AIConfig {
+  provider: string;
+  providerName?: string;
+  providers?: AIProvider[];
   baseUrl: string;
   model: string;
   visionModel: string;

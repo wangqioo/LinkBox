@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api, type AIConfig } from '../api/client';
+import { api, type AIConfig, type AIProvider } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Save, ExternalLink, PlugZap } from 'lucide-react';
 
@@ -22,6 +22,9 @@ const SITE_COOKIES: SiteCookieEntry[] = [
 ];
 
 const DEFAULT_AI_CONFIG: AIConfig = {
+  provider: 'custom',
+  providerName: '自定义 / 本地 OpenAI 兼容',
+  providers: [],
   baseUrl: '',
   model: '',
   visionModel: '',
@@ -30,6 +33,19 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   apiKeyConfigured: false,
   apiKey: '',
 };
+
+function applyProviderPreset(config: AIConfig, providerId: string): AIConfig {
+  const provider = config.providers?.find((item) => item.id === providerId);
+  if (!provider) return { ...config, provider: providerId };
+  return {
+    ...config,
+    provider: provider.id,
+    providerName: provider.name,
+    baseUrl: provider.baseUrl,
+    model: provider.model,
+    visionModel: provider.visionModel || '',
+  };
+}
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -79,7 +95,7 @@ export default function SettingsPage() {
       if (!payload.apiKey) delete payload.apiKey;
       const result = await api.testAIConfig(payload);
       const count = result.models?.length ? `，发现 ${result.models.length} 个模型` : '';
-      setAITestResult(`连接成功：${result.model}${count}`);
+      setAITestResult(`连接成功：${result.provider || aiConfig.provider} / ${result.model}${count}`);
     } catch (e: any) {
       setError(e.message || 'AI 接口测试失败');
     } finally {
@@ -90,6 +106,13 @@ export default function SettingsPage() {
   const updateAIField = <K extends keyof AIConfig>(key: K, value: AIConfig[K]) => {
     setAIConfig((prev) => ({ ...prev, [key]: value }));
   };
+
+  const handleProviderChange = (providerId: string) => {
+    setAIConfig((prev) => applyProviderPreset(prev, providerId));
+    setAITestResult('');
+  };
+
+  const selectedProvider = aiConfig.providers?.find((item: AIProvider) => item.id === aiConfig.provider);
 
   if (!isAdmin) {
     return (
@@ -150,11 +173,27 @@ export default function SettingsPage() {
         <div>
           <h2 className="font-semibold">AI 配置</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            配置 OpenAI 兼容接口。AI 摘要、学习笔记、图片/文件转 Markdown 会实时使用这里的配置；未填写时回退到服务端环境变量。
+            像 Hermes 一样先选供应商，LinkBox 会自动填接口地址和默认模型；多数情况下你只需要粘贴 API Key 后保存。
           </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2 space-y-1.5">
+            <label className="text-sm font-medium">供应商</label>
+            <select
+              className="w-full rounded-lg border px-3 py-2 bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={aiConfig.provider}
+              onChange={(e) => handleProviderChange(e.target.value)}
+            >
+              {(aiConfig.providers || []).map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.name}</option>
+              ))}
+            </select>
+            {selectedProvider?.description && (
+              <p className="text-xs text-gray-400">{selectedProvider.description}</p>
+            )}
+          </div>
+
           <div className="md:col-span-2 space-y-1.5">
             <label className="text-sm font-medium">接口地址</label>
             <input
@@ -191,7 +230,7 @@ export default function SettingsPage() {
               type="password"
               autoComplete="new-password"
               className="w-full rounded-lg border px-3 py-2 bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder={aiConfig.apiKeyConfigured ? '已保存，留空则不修改' : '可选'}
+              placeholder={aiConfig.apiKeyConfigured ? '已保存，留空则不修改' : selectedProvider?.keyPlaceholder || '粘贴 API Key'}
               value={aiConfig.apiKey || ''}
               onChange={(e) => updateAIField('apiKey', e.target.value)}
             />
@@ -218,7 +257,7 @@ export default function SettingsPage() {
             checked={aiConfig.enableThinking}
             onChange={(e) => updateAIField('enableThinking', e.target.checked)}
           />
-          启用模型思考模式（传递 enable_thinking=true）
+          启用本地 Qwen 思考模式（仅自定义/本地接口会传 enable_thinking）
         </label>
 
         <div className="flex flex-wrap items-center gap-3">
