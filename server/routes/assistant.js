@@ -5,9 +5,10 @@ import { callAIChat, streamAIChat } from '../utils/aiConfig.js';
 import { indexAllMissingChunks, searchRelevantChunks, tokenizeQuery } from '../utils/chunkIndex.js';
 
 const router = Router();
-const MAX_SOURCES = 8;
-const MAX_CONTEXT_CHARS = 12000;
-const MAX_FIELD_CHARS = 5000;
+const MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
+const MAX_CONTEXT_CHARS = Number(process.env.ASSISTANT_MAX_CONTEXT_CHARS || 12000);
+const MAX_FIELD_CHARS = Number(process.env.ASSISTANT_MAX_FIELD_CHARS || 5000);
+const ASSISTANT_MAX_TOKENS = Number(process.env.ASSISTANT_MAX_TOKENS || 900);
 
 const TASKS = {
   ask: {
@@ -175,7 +176,7 @@ router.post('/chat', async (req, res) => {
 
   const answer = await callAIChat({
     messages: buildMessages(question, ranked, task),
-    maxTokens: 900,
+    maxTokens: ASSISTANT_MAX_TOKENS,
     timeoutMs: 90000,
   });
 
@@ -208,7 +209,7 @@ router.post('/chat/stream', async (req, res) => {
   try {
     await streamAIChat({
       messages: buildMessages(question, ranked, task),
-      maxTokens: 900,
+      maxTokens: ASSISTANT_MAX_TOKENS,
       enableThinking: false,
       timeoutMs: 90000,
       onToken: async text => writeSse(res, 'delta', { text }),

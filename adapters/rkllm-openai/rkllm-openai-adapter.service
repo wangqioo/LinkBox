@@ -1,0 +1,21 @@
+[Unit]
+Description=RKLLM OpenAI-compatible adapter for TaishanPi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lckfb
+Environment=RKLLM_ADAPTER_HOST=127.0.0.1
+Environment=RKLLM_ADAPTER_PORT=8000
+Environment=RKLLM_MODEL_ID=qwen3-vl-2b-rk3576
+Environment=QWEN_VL_CONTEXT=3072
+Environment=QWEN_VL_MAX_NEW_TOKENS=256
+Environment=QWEN_VL_RKNN_CORES=1
+Environment=RKLLM_REQUEST_TIMEOUT=90
+ExecStart=/usr/bin/python3 /opt/rkllm-openai-adapter/rkllm_openai_adapter.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
