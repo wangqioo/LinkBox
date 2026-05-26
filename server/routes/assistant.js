@@ -1,0 +1,225 @@
+import { Router } from 'express';
+import db from '../db.js';
+import { authMiddleware } from '../middleware/auth.js';
+import { callAIChat, streamAIChat } from '../utils/aiConfig.js';
+import { indexAllMissingChunks, searchRelevantChunks, tokenizeQuery } from '../utils/chunkIndex.js';
+
+const router = Router();
+const MAX_SOURCES = 8;
+const MAX_CONTEXT_CHARS = 12000;
+const MAX_FIELD_CHARS = 5000;
+
+const TASKS = {
+  ask: {
+    label: '问资料',
+    instruction: '回答用户问题。结论要直接，必要时给出依据和下一步建议。',
+  },
+  recent: {
+    label: '总结最近',
+    instruction: '总结最近资料的主题、关键结论、值得继续研究的内容和可能的下一步行动。',
+  },
+  report: {
+    label: '生成报告',
+    instruction: '把资料整理成结构化报告，包含背景、核心发现、机会、风险、建议和行动计划。',
+  },
+  organize: {
+    label: '整理标签',
+    instruction: '根据资料内容给出分类、建议标签、可合并主题、重复或相似资料，以及整理建议。',
+  },
+  todos: {
+    label: '提取待办',
+    instruction: '从资料中提取可执行待办，按优先级分组，并给出检查清单。',
+  },
+};
+
+router.use(authMiddleware);
+
+function tokenize(text) {
+  return tokenizeQuery(text);
+}
+
+function scoreItem(item, tokens) {
+  const title = String(item.title || '').toLowerCase();
+  const summary = String(item.summary || '').toLowerCase();
+  const comment = String(item.comment || '').toLowerCase();
+  const url = String(item.url || '').toLowerCase();
+  const content = String(item.content_md || item.content || '').toLowerCase();
+  let score = 0;
+
+  for (const token of tokens) {
+    if (title.includes(token)) score += 8;
+    if (summary.includes(token)) score += 5;
+    if (comment.includes(token)) score += 4;
+    if (url.includes(token)) score += 3;
+    if (content.includes(token)) score += 1;
+  }
+
+  if (item.summary) score += 1;
+  if (item.content_md) score += 1;
+  return score;
+}
+
+function textForItem(item) {
+  return [
+    item.title ? `标题：${item.title}` : '',
+    item.url ? `链接：${item.url}` : '',
+    item.summary ? `摘要：${item.summary}` : '',
+    item.chunk_text ? `相关片段：\n${item.chunk_text}` : (
+      item.content_md ? `正文 Markdown：\n${item.content_md}` : (item.content ? `内容：\n${item.content}` : '')
+    ),
+  ].filter(Boolean).join('\n');
+}
+
+function trimContext(sources) {
+  const blocks = [];
+  let total = 0;
+
+  for (const source of sources) {
+    const body = textForItem(source).slice(0, MAX_FIELD_CHARS);
+    const block = `资料 ${source.source_index}（ID: ${source.id}）\n${body}`;
+    if (total + block.length > MAX_CONTEXT_CHARS && blocks.length > 0) break;
+    blocks.push(block);
+    total += block.length;
+  }
+
+  return blocks.join('\n\n---\n\n');
+}
+
+function publicSource(item) {
+  return {
+    id: item.chunk_id || item.id,
+    link_id: item.id,
+    type: item.type,
+    title: item.chunk_index !== undefined
+      ? `${item.title || item.url || `资料 ${item.id}`} · 片段 ${item.chunk_index + 1}`
+      : (item.title || item.url || `资料 ${item.id}`),
+    url: item.url || '',
+    summary: item.summary || '',
+    imported_at: item.imported_at,
+  };
+}
+
+function normalizeTask(task) {
+  return TASKS[task] ? task : 'ask';
+}
+
+function retrieveSources(userId, question, task = 'ask') {
+  indexAllMissingChunks();
+  const chunks = searchRelevantChunks({ userId, query: question, task, limit: MAX_SOURCES });
+  if (chunks.length) {
+    return chunks.map((item, index) => ({ ...item, source_index: index + 1 }));
+  }
+
+  const rows = db.prepare(`
+    SELECT id, type, url, title, description, comment, content, content_md, summary, imported_at
+    FROM links
+    WHERE user_id = ?
+      AND (
+        COALESCE(content_md, '') != ''
+        OR COALESCE(summary, '') != ''
+        OR COALESCE(content, '') != ''
+        OR COALESCE(title, '') != ''
+      )
+    ORDER BY imported_at DESC
+    LIMIT 1000
+  `).all(userId);
+
+  if (task === 'recent') {
+    return rows.slice(0, MAX_SOURCES).map((item, index) => ({ ...item, source_index: index + 1 }));
+  }
+
+  const tokens = tokenize(question);
+  const ranked = rows
+    .map(item => ({ ...item, score: scoreItem(item, tokens) }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
+    .slice(0, MAX_SOURCES)
+    .map((item, index) => ({ ...item, source_index: index + 1 }));
+
+  if (ranked.length || task === 'ask') return ranked;
+  return rows.slice(0, MAX_SOURCES).map((item, index) => ({ ...item, source_index: index + 1 }));
+}
+
+function buildMessages(question, ranked, task = 'ask') {
+  const taskConfig = TASKS[normalizeTask(task)];
+  const context = trimContext(ranked);
+  return [
+    {
+      role: 'system',
+      content: `你是 LinkBox 私人资料助理。不要输出思考过程。只能基于用户提供的资料工作；资料不足时明确说明不足。回答要具体、可执行，使用 Markdown 组织结构，并在关键结论后用 [资料1] 这样的格式引用来源。当前任务：${taskConfig.label}。任务要求：${taskConfig.instruction}`,
+    },
+    {
+      role: 'user',
+      content: `用户问题：${question}\n\n可用资料：\n${context}\n\n请用中文回答，并附上你实际使用的资料编号。`,
+    },
+  ];
+}
+
+function writeSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+router.post('/chat', async (req, res) => {
+  const question = String(req.body?.question || '').trim();
+  if (!question) return res.status(400).json({ error: '问题不能为空' });
+  const task = normalizeTask(req.body?.task);
+
+  const ranked = retrieveSources(req.userId, question, task);
+  if (!ranked.length) {
+    return res.json({
+      answer: '没有在你的资料库里找到足够相关的内容。可以换个关键词，或先收藏/上传相关资料。',
+      sources: [],
+    });
+  }
+
+  const answer = await callAIChat({
+    messages: buildMessages(question, ranked, task),
+    maxTokens: 900,
+    timeoutMs: 90000,
+  });
+
+  res.json({
+    answer,
+    sources: ranked.map(publicSource),
+  });
+});
+
+router.post('/chat/stream', async (req, res) => {
+  const question = String(req.body?.question || '').trim();
+  if (!question) return res.status(400).json({ error: '问题不能为空' });
+  const task = normalizeTask(req.body?.task);
+
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const ranked = retrieveSources(req.userId, question, task);
+  const sources = ranked.map(publicSource);
+  writeSse(res, 'sources', { sources });
+
+  if (!ranked.length) {
+    writeSse(res, 'delta', { text: '没有在你的资料库里找到足够相关的内容。可以换个关键词，或先收藏/上传相关资料。' });
+    writeSse(res, 'done', {});
+    return res.end();
+  }
+
+  try {
+    await streamAIChat({
+      messages: buildMessages(question, ranked, task),
+      maxTokens: 900,
+      enableThinking: false,
+      timeoutMs: 90000,
+      onToken: async text => writeSse(res, 'delta', { text }),
+    });
+    writeSse(res, 'done', {});
+    res.end();
+  } catch (e) {
+    console.error('Assistant stream failed:', e.message);
+    writeSse(res, 'error', { error: e.message || '资料助理生成失败' });
+    res.end();
+  }
+});
+
+export default router;

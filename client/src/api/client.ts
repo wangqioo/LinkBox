@@ -46,6 +46,27 @@ export interface AIConfig {
   apiKey?: string;
 }
 
+export interface AssistantSource {
+  id: number;
+  link_id?: number;
+  type: string;
+  title: string;
+  url: string;
+  summary: string;
+  imported_at: string;
+}
+
+export interface AssistantAnswer {
+  answer: string;
+  sources: AssistantSource[];
+}
+
+export interface AssistantStreamHandlers {
+  onSources?: (sources: AssistantSource[]) => void;
+  onDelta?: (text: string) => void;
+  onDone?: () => void;
+}
+
 function uploadWithProgress(
   path: string,
   formData: FormData,
@@ -131,6 +152,53 @@ export const api = {
   importLinks: (links: Array<{ url: string; comment?: string; imported_at?: string }>) =>
     request('/links/import', { method: 'POST', body: JSON.stringify({ links }) }),
   exportLinks: () => request('/links/export/all'),
+
+  // Assistant
+  askAssistant: (question: string, task = 'ask'): Promise<AssistantAnswer> =>
+    request('/assistant/chat', { method: 'POST', body: JSON.stringify({ question, task }) }),
+  streamAssistant: async (question: string, task = 'ask', handlers: AssistantStreamHandlers = {}) => {
+    const token = localStorage.getItem('linkbox_token');
+    const res = await fetch(`${BASE}/assistant/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ question, task }),
+    });
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || '资料助理请求失败');
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const handleEvent = (raw: string) => {
+      const lines = raw.split('\n');
+      const event = lines.find(line => line.startsWith('event:'))?.slice(6).trim() || 'message';
+      const dataLine = lines.find(line => line.startsWith('data:'));
+      if (!dataLine) return;
+      const data = JSON.parse(dataLine.slice(5).trim());
+
+      if (event === 'sources') handlers.onSources?.(data.sources || []);
+      if (event === 'delta') handlers.onDelta?.(data.text || '');
+      if (event === 'done') handlers.onDone?.();
+      if (event === 'error') throw new Error(data.error || '资料助理生成失败');
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+      events.filter(Boolean).forEach(handleEvent);
+    }
+
+    if (buffer.trim()) handleEvent(buffer);
+  },
 
   // Settings (admin only)
   getSettings: () => request('/settings'),

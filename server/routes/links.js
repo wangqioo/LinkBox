@@ -10,7 +10,8 @@ import { fetchLinkMeta } from '../utils/fetchMeta.js';
 import { summarizeContent, summarizeMarkdown } from '../utils/aiSummarize.js';
 import { generateLearningNote } from '../utils/generateLearningNote.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
-import { fileToMarkdown } from '../utils/fileToMarkdown.js';
+import { describeImage, fileToMarkdown } from '../utils/fileToMarkdown.js';
+import { indexLinkContent } from '../utils/chunkIndex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -191,6 +192,7 @@ router.post('/', (req, res) => {
       if (extracted?.markdown) {
         db.prepare(`UPDATE links SET content_md = ? WHERE id = ?`)
           .run(extracted.markdown, linkId);
+        indexLinkContent(linkId);
 
         // Step 3: summarize using local AI (Qwen2.5-VL-3B)
         try {
@@ -226,6 +228,7 @@ router.post('/text', (req, res) => {
   `).run(req.userId, title || '', content || '', comment || '', imported_at || new Date().toISOString());
 
   if (tag_ids?.length) setTags(result.lastInsertRowid, tag_ids);
+  indexLinkContent(result.lastInsertRowid);
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
   res.json({ ...link, tags: attachTags(link.id) });
 });
@@ -246,6 +249,24 @@ router.post('/image', upload.single('image'), (req, res) => {
   if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
   res.json({ ...link, tags: attachTags(link.id) });
+
+  const linkId = result.lastInsertRowid;
+  const diskPath = join(UPLOADS_DIR, req.file.filename);
+  (async () => {
+    try {
+      db.prepare('UPDATE links SET status = ? WHERE id = ?').run('processing', linkId);
+      const description = await describeImage(diskPath);
+      const markdown = description
+        ? `![image](${imagePath})\n\n> 图片描述：${description}`
+        : `![image](${imagePath})`;
+      db.prepare('UPDATE links SET content_md = ?, summary = ?, status = ? WHERE id = ?')
+        .run(markdown, description || '', 'done', linkId);
+      indexLinkContent(linkId);
+    } catch (e) {
+      console.error('[bg] image describe failed:', e.message);
+      db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
+    }
+  })();
 });
 
 // Upload audio
@@ -309,6 +330,7 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
           const imgMatch = markdown.match(/!\[.*?\]\((\/uploads\/[^)]+)\)/);
           const thumbnail = imgMatch ? imgMatch[1] : null;
           db.prepare('UPDATE links SET content_md = ?, thumbnail = ? WHERE id = ?').run(markdown, thumbnail, linkId);
+          indexLinkContent(linkId);
           try {
             const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
             const summary = await summarizeMarkdown(markdown, currentLink?.title || originalName);
@@ -374,6 +396,7 @@ router.post("/:id/extract", async (req, res) => {
   try {
     const result = await extractPageMarkdown(link.url);
     db.prepare("UPDATE links SET content_md = ? WHERE id = ?").run(result.markdown, link.id);
+    indexLinkContent(link.id);
     res.json({ content_md: result.markdown, meta: {
       title: result.title, byline: result.byline,
       siteName: result.siteName, wordCount: result.wordCount

@@ -315,6 +315,74 @@ export async function callAIChat({ messages, model, maxTokens = 200, temperature
   return (data.choices?.[0]?.message?.content || '').trim();
 }
 
+export async function streamAIChat({ messages, model, maxTokens = 200, temperature, enableThinking, timeoutMs = 90000, onToken }) {
+  const config = getAIConfig({ includeSecret: true });
+  const effectiveConfig = {
+    ...config,
+    enableThinking: enableThinking !== undefined ? parseBool(enableThinking, config.enableThinking) : config.enableThinking,
+  };
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+    },
+    body: JSON.stringify(buildProviderSpecificPayload({
+      model: model || config.model,
+      messages,
+      max_tokens: maxTokens,
+      temperature: temperature ?? config.temperature,
+      stream: true,
+    }, effectiveConfig)),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!response.ok) {
+    const err = await response.text().catch(() => '');
+    throw new Error(`LLM error ${response.status}: ${err.slice(0, 200)}`);
+  }
+
+  if (!response.body) throw new Error('LLM stream is empty');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullText = '';
+
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() || '';
+
+    for (const part of parts) {
+      const lines = part.split('\n').map(line => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]') continue;
+
+        let parsed;
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          continue;
+        }
+
+        const delta = parsed.choices?.[0]?.delta?.content
+          ?? parsed.choices?.[0]?.delta?.reasoning_content
+          ?? parsed.choices?.[0]?.delta?.reasoning
+          ?? parsed.choices?.[0]?.message?.content
+          ?? '';
+        if (delta) {
+          fullText += delta;
+          await onToken?.(delta);
+        }
+      }
+    }
+  }
+
+  return fullText.trim();
+}
+
 export async function testAIConfig(input = {}) {
   const saved = getAIConfig({ includeSecret: true });
   const provider = input.provider !== undefined ? normalizeProvider(input.provider) : saved.provider;

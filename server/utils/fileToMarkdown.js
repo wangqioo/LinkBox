@@ -36,7 +36,7 @@ function saveExtractedImage(srcPath, uploadsDir) {
  * Call the vision LLM to describe an image.
  * Returns a short description string, or '' on failure.
  */
-async function describeImage(localPath) {
+export async function describeImage(localPath) {
   try {
     const imgBuf = readFileSync(localPath);
     const ext = extname(localPath).toLowerCase();

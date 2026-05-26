@@ -93,6 +93,20 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT DEFAULT ''
   );
+
+  CREATE TABLE IF NOT EXISTS link_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    link_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE,
+    UNIQUE(link_id, chunk_index)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_link_chunks_link ON link_chunks(link_id);
+  CREATE INDEX IF NOT EXISTS idx_link_chunks_user ON link_chunks(user_id);
 `);
 
 // Uploads directory is created above so multer/static serving can use a Docker volume.
