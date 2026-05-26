@@ -11,7 +11,10 @@ from __future__ import annotations
 import base64
 import json
 import os
+import pty
 import re
+import select
+import signal
 import subprocess
 import time
 import uuid
@@ -34,6 +37,7 @@ MAX_NEW_TOKENS = os.environ.get("QWEN_VL_MAX_NEW_TOKENS", "256")
 CONTEXT = os.environ.get("QWEN_VL_CONTEXT", "3072")
 RKNN_CORES = os.environ.get("QWEN_VL_RKNN_CORES", "1")
 REQUEST_TIMEOUT = int(os.environ.get("RKLLM_REQUEST_TIMEOUT", "90"))
+BOOT_TIMEOUT = int(os.environ.get("RKLLM_BOOT_TIMEOUT", "45"))
 TMP_DIR = Path(os.environ.get("RKLLM_ADAPTER_TMP", "/tmp/rkllm-openai-adapter"))
 
 REQUEST_LOCK = Lock()
@@ -136,9 +140,13 @@ def save_data_url(url: str) -> Path | None:
 
 
 def run_rkllm(prompt: str, image_path: Path) -> str:
-    env = os.environ.copy()
-    env["LD_LIBRARY_PATH"] = f"{LIB_DIR}:{env.get('LD_LIBRARY_PATH', '')}"
-    cmd = [
+    if image_path != DEFAULT_IMAGE:
+        return run_one_shot(prompt, image_path)
+    return RESIDENT_DEMO.ask(prompt)
+
+
+def demo_cmd(image_path: Path) -> list[str]:
+    return [
         str(DEMO_BIN),
         str(image_path),
         str(VISION_MODEL),
@@ -148,13 +156,21 @@ def run_rkllm(prompt: str, image_path: Path) -> str:
         str(RKNN_CORES),
     ]
 
+
+def demo_env() -> dict:
+    env = os.environ.copy()
+    env["LD_LIBRARY_PATH"] = f"{LIB_DIR}:{env.get('LD_LIBRARY_PATH', '')}"
+    return env
+
+
+def run_one_shot(prompt: str, image_path: Path) -> str:
     with REQUEST_LOCK:
         try:
             proc = subprocess.run(
-                cmd,
+                demo_cmd(image_path),
                 input=prompt + "\n",
                 cwd=str(MODEL_DIR),
-                env=env,
+                env=demo_env(),
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -170,8 +186,84 @@ def run_rkllm(prompt: str, image_path: Path) -> str:
     return extract_first_answer(output)
 
 
+class ResidentDemo:
+    def __init__(self) -> None:
+        self.proc: subprocess.Popen | None = None
+        self.master_fd: int | None = None
+        self.booted = False
+
+    def start(self) -> None:
+        if self.proc and self.proc.poll() is None and self.master_fd is not None and self.booted:
+            return
+        self.stop()
+        master_fd, slave_fd = pty.openpty()
+        self.proc = subprocess.Popen(
+            demo_cmd(DEFAULT_IMAGE),
+            cwd=str(MODEL_DIR),
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=demo_env(),
+            close_fds=True,
+        )
+        os.close(slave_fd)
+        self.master_fd = master_fd
+        boot_output = self._read_until_prompt(BOOT_TIMEOUT)
+        self.booted = True
+        print(f"resident demo booted, {len(boot_output)} chars", flush=True)
+
+    def stop(self) -> None:
+        if self.master_fd is not None:
+            try:
+                os.close(self.master_fd)
+            except OSError:
+                pass
+            self.master_fd = None
+        if self.proc and self.proc.poll() is None:
+            try:
+                self.proc.terminate()
+                self.proc.wait(timeout=3)
+            except Exception:
+                try:
+                    os.kill(self.proc.pid, signal.SIGKILL)
+                except Exception:
+                    pass
+        self.proc = None
+        self.booted = False
+
+    def ask(self, prompt: str) -> str:
+        with REQUEST_LOCK:
+            self.start()
+            assert self.master_fd is not None
+            os.write(self.master_fd, (prompt + "\n").encode("utf-8"))
+            try:
+                output = self._read_until_prompt(REQUEST_TIMEOUT)
+            except Exception:
+                self.stop()
+                raise
+        return extract_first_answer(output)
+
+    def _read_until_prompt(self, timeout: int) -> str:
+        assert self.master_fd is not None
+        output = ""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([self.master_fd], [], [], 0.2)
+            if not ready:
+                if self.proc and self.proc.poll() is not None:
+                    raise RuntimeError("RKLLM resident demo exited unexpectedly")
+                continue
+            chunk = os.read(self.master_fd, 8192).decode("utf-8", errors="replace")
+            output += chunk
+            if re.search(r"\nuser:\s*$", output):
+                return output
+        raise TimeoutError("RKLLM resident demo timed out waiting for prompt")
+
+
 def extract_first_answer(output: str) -> str:
-    match = re.search(r"user:\s*robot:\s*(.*?)(?:\n\s*\nuser:|\Z)", output, re.S)
+    normalized = output.replace("\r\n", "\n")
+    matches = list(re.finditer(r"robot:\s*(.*?)(?:\n\s*\nuser:\s*$|\Z)", normalized, re.S))
+    match = matches[-1] if matches else None
     if not match:
         raise RuntimeError("RKLLM demo did not produce a parseable robot answer")
     text = match.group(1).strip()
@@ -236,9 +328,13 @@ def main() -> None:
     missing = [path for path in [DEMO_BIN, DEFAULT_IMAGE, VISION_MODEL, LLM_MODEL] if not path.exists()]
     if missing:
         raise SystemExit(f"missing RKLLM files: {', '.join(map(str, missing))}")
+    RESIDENT_DEMO.start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"rkllm-openai-adapter listening on http://{HOST}:{PORT}/v1", flush=True)
     server.serve_forever()
+
+
+RESIDENT_DEMO = ResidentDemo()
 
 
 if __name__ == "__main__":
