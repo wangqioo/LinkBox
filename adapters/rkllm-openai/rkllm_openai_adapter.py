@@ -9,6 +9,7 @@ be replaced by a resident RKLLM runtime server without changing LinkBox.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import pty
@@ -41,6 +42,8 @@ BOOT_TIMEOUT = int(os.environ.get("RKLLM_BOOT_TIMEOUT", "45"))
 TMP_DIR = Path(os.environ.get("RKLLM_ADAPTER_TMP", "/tmp/rkllm-openai-adapter"))
 
 REQUEST_LOCK = Lock()
+IMAGE_ANSWER_CACHE: dict[str, str] = {}
+MAX_IMAGE_CACHE_ITEMS = int(os.environ.get("RKLLM_IMAGE_CACHE_ITEMS", "128"))
 
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -133,16 +136,27 @@ def save_data_url(url: str) -> Path | None:
         "image/jpeg": ".jpg",
         "image/jpg": ".jpg",
     }.get(mime.lower(), ".jpg")
+    image_bytes = base64.b64decode(match.group(3))
+    digest = hashlib.sha256(image_bytes).hexdigest()
     TMP_DIR.mkdir(parents=True, exist_ok=True)
-    path = TMP_DIR / f"image-{uuid.uuid4().hex}{ext}"
-    path.write_bytes(base64.b64decode(match.group(3)))
+    path = TMP_DIR / f"image-{digest}{ext}"
+    if not path.exists():
+        path.write_bytes(image_bytes)
     return path
 
 
 def run_rkllm(prompt: str, image_path: Path) -> str:
     if image_path != DEFAULT_IMAGE:
-        return run_one_shot(prompt, image_path)
-    return RESIDENT_DEMO.ask(prompt)
+        cache_key = f"{image_path.name}:{hashlib.sha256(prompt.encode('utf-8')).hexdigest()}"
+        cached = IMAGE_ANSWER_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+        answer = RESIDENT_DEMO.ask(prompt, image_path)
+        if len(IMAGE_ANSWER_CACHE) >= MAX_IMAGE_CACHE_ITEMS:
+            IMAGE_ANSWER_CACHE.pop(next(iter(IMAGE_ANSWER_CACHE)))
+        IMAGE_ANSWER_CACHE[cache_key] = answer
+        return answer
+    return RESIDENT_DEMO.ask(prompt, image_path)
 
 
 def demo_cmd(image_path: Path) -> list[str]:
@@ -163,42 +177,27 @@ def demo_env() -> dict:
     return env
 
 
-def run_one_shot(prompt: str, image_path: Path) -> str:
-    with REQUEST_LOCK:
-        try:
-            proc = subprocess.run(
-                demo_cmd(image_path),
-                input=prompt + "\n",
-                cwd=str(MODEL_DIR),
-                env=demo_env(),
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                timeout=REQUEST_TIMEOUT,
-                check=False,
-            )
-            output = proc.stdout or ""
-        except subprocess.TimeoutExpired as exc:
-            output = exc.stdout or ""
-            if isinstance(output, bytes):
-                output = output.decode("utf-8", errors="replace")
-
-    return extract_first_answer(output)
-
-
 class ResidentDemo:
     def __init__(self) -> None:
         self.proc: subprocess.Popen | None = None
         self.master_fd: int | None = None
         self.booted = False
+        self.image_path: Path | None = None
 
-    def start(self) -> None:
-        if self.proc and self.proc.poll() is None and self.master_fd is not None and self.booted:
+    def start(self, image_path: Path = DEFAULT_IMAGE) -> None:
+        image_path = image_path.resolve()
+        if (
+            self.proc
+            and self.proc.poll() is None
+            and self.master_fd is not None
+            and self.booted
+            and self.image_path == image_path
+        ):
             return
         self.stop()
         master_fd, slave_fd = pty.openpty()
         self.proc = subprocess.Popen(
-            demo_cmd(DEFAULT_IMAGE),
+            demo_cmd(image_path),
             cwd=str(MODEL_DIR),
             stdin=slave_fd,
             stdout=slave_fd,
@@ -209,8 +208,9 @@ class ResidentDemo:
         os.close(slave_fd)
         self.master_fd = master_fd
         boot_output = self._read_until_prompt(BOOT_TIMEOUT)
+        self.image_path = image_path
         self.booted = True
-        print(f"resident demo booted, {len(boot_output)} chars", flush=True)
+        print(f"resident demo booted for {image_path}, {len(boot_output)} chars", flush=True)
 
     def stop(self) -> None:
         if self.master_fd is not None:
@@ -230,10 +230,11 @@ class ResidentDemo:
                     pass
         self.proc = None
         self.booted = False
+        self.image_path = None
 
-    def ask(self, prompt: str) -> str:
+    def ask(self, prompt: str, image_path: Path = DEFAULT_IMAGE) -> str:
         with REQUEST_LOCK:
-            self.start()
+            self.start(image_path)
             assert self.master_fd is not None
             os.write(self.master_fd, (prompt + "\n").encode("utf-8"))
             try:

@@ -43,12 +43,14 @@ The adapter is intentionally first-version:
 - OpenAI-compatible streaming is emulated by returning one SSE delta after the
   vendor demo finishes
 - one RKLLM request at a time
-- keeps one default-image vendor demo process resident for text requests, so the
-  RKLLM model is loaded once at service startup
+- keeps one vendor demo process resident for the current image path, so text
+  requests and repeated requests for the same image avoid reloading RKLLM
 - parses each answer between `robot:` and the next `user:` prompt
 - supports OpenAI-style base64 `image_url` by writing a temporary image file;
-  image requests still use a one-shot demo process because the demo binds the
-  image path at startup
+  switching to a different image restarts the resident demo because the vendor
+  demo binds the image path at startup
+- caches image answers by image hash and prompt, avoiding repeated inference
+  drift from the vendor demo's retained chat history
 
 A production-quality version should replace the shell-out path with a resident
 RKLLM runtime process.
