@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup LinkBox data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/linkbox-backup

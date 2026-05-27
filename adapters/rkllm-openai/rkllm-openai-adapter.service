@@ -13,6 +13,8 @@ Environment=QWEN_VL_CONTEXT=3072
 Environment=QWEN_VL_MAX_NEW_TOKENS=256
 Environment=QWEN_VL_RKNN_CORES=1
 Environment=RKLLM_REQUEST_TIMEOUT=90
+Environment=RKLLM_CACHE_DB=/var/lib/rkllm-openai-adapter/cache.sqlite
+Environment=RKLLM_IMAGE_CACHE_ITEMS=128
 ExecStart=/usr/bin/python3 /opt/rkllm-openai-adapter/rkllm_openai_adapter.py
 Restart=on-failure
 RestartSec=5

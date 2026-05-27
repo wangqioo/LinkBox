@@ -34,6 +34,8 @@ ASSISTANT_MAX_SOURCES=4
 ASSISTANT_MAX_CONTEXT_CHARS=6000
 ASSISTANT_MAX_FIELD_CHARS=2500
 ASSISTANT_MAX_TOKENS=400
+BACKGROUND_QUEUE_CONCURRENCY=1
+JWT_SECRET=<generate a local random secret>
 ```
 
 ## Adapter limits
@@ -54,3 +56,49 @@ The adapter is intentionally first-version:
 
 A production-quality version should replace the shell-out path with a resident
 RKLLM runtime process.
+
+## Current runtime improvements
+
+- LinkBox background import/image/file work is serialized by
+  `BACKGROUND_QUEUE_CONCURRENCY=1` so a small RK3576 board does not run several
+  AI jobs at once.
+- The adapter exposes `/health` and `/v1/health` with resident demo PID,
+  currently bound image, cache counts, request counters, last latency, and last
+  error.
+- Image answers are cached in SQLite at
+  `/var/lib/rkllm-openai-adapter/cache.sqlite`, so repeated image descriptions
+  survive adapter restarts.
+
+## Backups
+
+Install the backup helper and timer on the board:
+
+```sh
+install -m 0755 deploy/taishanpi/linkbox-backup /usr/local/bin/linkbox-backup
+install -m 0644 deploy/taishanpi/linkbox-backup.service /etc/systemd/system/
+install -m 0644 deploy/taishanpi/linkbox-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now linkbox-backup.timer
+```
+
+Backups are written to `/var/backups/linkbox` and retained for 14 days by
+default.
+
+## Runtime checks
+
+Useful checks on the board:
+
+```sh
+systemctl is-active linkbox rkllm-openai-adapter linkbox-backup.timer
+curl -s http://127.0.0.1:8000/v1/health
+systemctl list-timers linkbox-backup.timer --no-pager
+journalctl -u linkbox -u rkllm-openai-adapter -n 80 --no-pager
+```
+
+## RKLLM/RKNN SDK status
+
+The deployed model package currently contains the compiled demo and runtime
+libraries, but no headers, C/C++ sources, Python binding, or CMake examples.
+That blocks replacing the vendor demo wrapper with a true RKLLM/RKNN API server
+inside this repo. The next step for that work is obtaining the vendor SDK files
+for `librkllmrt` and `librknnrt` integration.

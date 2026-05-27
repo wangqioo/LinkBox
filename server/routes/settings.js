@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getAIConfig, updateAIConfig, testAIConfig } from '../utils/aiConfig.js';
+import { backgroundQueue } from '../utils/backgroundQueue.js';
 
 const router = Router();
 
@@ -45,6 +46,21 @@ router.get('/', authMiddleware, requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT key, value FROM settings WHERE key NOT LIKE ?').all('ai:%');
   const settings = Object.fromEntries(rows.map(r => [r.key, r.value]));
   res.json(settings);
+});
+
+// GET /api/settings/system - lightweight operational status
+router.get('/system', authMiddleware, requireAdmin, (req, res) => {
+  res.json({
+    queue: backgroundQueue.stats(),
+    env: {
+      backgroundQueueConcurrency: process.env.BACKGROUND_QUEUE_CONCURRENCY || '1',
+      localLlmUrl: process.env.LOCAL_LLM_URL || '',
+      assistantMaxSources: process.env.ASSISTANT_MAX_SOURCES || '',
+      assistantMaxContextChars: process.env.ASSISTANT_MAX_CONTEXT_CHARS || '',
+      assistantMaxTokens: process.env.ASSISTANT_MAX_TOKENS || '',
+    },
+    uptimeSeconds: Math.round(process.uptime()),
+  });
 });
 
 // PUT /api/settings - update one or more settings

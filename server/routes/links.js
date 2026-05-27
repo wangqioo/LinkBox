@@ -12,6 +12,7 @@ import { generateLearningNote } from '../utils/generateLearningNote.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
 import { describeImage, fileToMarkdown } from '../utils/fileToMarkdown.js';
 import { indexLinkContent } from '../utils/chunkIndex.js';
+import { backgroundQueue } from '../utils/backgroundQueue.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -173,7 +174,7 @@ router.post('/', (req, res) => {
   res.json({ ...link, tags: attachTags(link.id) });
 
   // Background pipeline: fetchMeta → extractContent → summarize
-  (async () => {
+  backgroundQueue.enqueue(`link:${result.lastInsertRowid}`, async () => {
     const linkId = result.lastInsertRowid;
     try {
       // Step 1: fetch page metadata
@@ -214,7 +215,7 @@ router.post('/', (req, res) => {
       console.error('[bg] extract failed:', e.message);
       db.prepare(`UPDATE links SET status = 'error' WHERE id = ?`).run(linkId);
     }
-  })();
+  });
 });
 
 // Add text note
@@ -252,7 +253,7 @@ router.post('/image', upload.single('image'), (req, res) => {
 
   const linkId = result.lastInsertRowid;
   const diskPath = join(UPLOADS_DIR, req.file.filename);
-  (async () => {
+  backgroundQueue.enqueue(`image:${linkId}`, async () => {
     try {
       db.prepare('UPDATE links SET status = ? WHERE id = ?').run('processing', linkId);
       const description = await describeImage(diskPath);
@@ -266,7 +267,7 @@ router.post('/image', upload.single('image'), (req, res) => {
       console.error('[bg] image describe failed:', e.message);
       db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
     }
-  })();
+  });
 });
 
 // Upload audio
@@ -317,7 +318,7 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
     const linkId = result.lastInsertRowid;
     const diskPath = join(UPLOADS_DIR, req.file.filename);
     const uploadsDir = UPLOADS_DIR;
-    (async () => {
+    backgroundQueue.enqueue(`file:${linkId}`, async () => {
       try {
         const isHtml = ['.html', '.htm'].includes(ext);
         if (isHtml) {
@@ -350,7 +351,7 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
         console.error('[bg] fileToMarkdown failed:', e.message);
         db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
       }
-    })();
+    });
   }
 });
 
@@ -451,13 +452,12 @@ router.post('/import', (req, res) => {
 
   // Background metadata fetch for all imported links
   for (const { id, url } of toFetch) {
-    fetchLinkMeta(url).then(meta => {
+    backgroundQueue.enqueue(`import-meta:${id}`, async () => {
+      const meta = await fetchLinkMeta(url);
       if (meta.title || meta.description || meta.thumbnail) {
         db.prepare(`UPDATE links SET title = ?, description = ?, thumbnail = ? WHERE id = ?`)
           .run(meta.title || url, meta.description || '', meta.thumbnail || '', id);
       }
-    }).catch(err => {
-      console.error('Background meta fetch failed for', url, err.message);
     });
   }
 });

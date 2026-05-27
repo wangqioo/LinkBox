@@ -16,6 +16,7 @@ import pty
 import re
 import select
 import signal
+import sqlite3
 import subprocess
 import time
 import uuid
@@ -40,10 +41,22 @@ RKNN_CORES = os.environ.get("QWEN_VL_RKNN_CORES", "1")
 REQUEST_TIMEOUT = int(os.environ.get("RKLLM_REQUEST_TIMEOUT", "90"))
 BOOT_TIMEOUT = int(os.environ.get("RKLLM_BOOT_TIMEOUT", "45"))
 TMP_DIR = Path(os.environ.get("RKLLM_ADAPTER_TMP", "/tmp/rkllm-openai-adapter"))
+CACHE_DB = Path(os.environ.get("RKLLM_CACHE_DB", "/var/lib/rkllm-openai-adapter/cache.sqlite"))
 
 REQUEST_LOCK = Lock()
 IMAGE_ANSWER_CACHE: dict[str, str] = {}
 MAX_IMAGE_CACHE_ITEMS = int(os.environ.get("RKLLM_IMAGE_CACHE_ITEMS", "128"))
+STARTED_AT = time.time()
+STATS = {
+    "requests_total": 0,
+    "chat_requests": 0,
+    "failures_total": 0,
+    "memory_cache_hits": 0,
+    "persistent_cache_hits": 0,
+    "demo_restarts": 0,
+    "last_latency_ms": None,
+    "last_error": "",
+}
 
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -91,6 +104,72 @@ def read_json(handler: BaseHTTPRequestHandler) -> dict:
     if not raw:
         return {}
     return json.loads(raw.decode("utf-8"))
+
+
+def init_cache_db() -> None:
+    CACHE_DB.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(CACHE_DB) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS image_answer_cache (
+              image_key TEXT NOT NULL,
+              prompt_hash TEXT NOT NULL,
+              model TEXT NOT NULL,
+              answer TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              last_hit_at TEXT,
+              hits INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY (image_key, prompt_hash, model)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_image_answer_cache_created ON image_answer_cache(created_at)")
+
+
+def cache_count() -> int:
+    try:
+        with sqlite3.connect(CACHE_DB) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM image_answer_cache").fetchone()
+            return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
+def persistent_cache_get(image_key: str, prompt_hash: str) -> str | None:
+    try:
+        with sqlite3.connect(CACHE_DB) as conn:
+            row = conn.execute(
+                "SELECT answer FROM image_answer_cache WHERE image_key = ? AND prompt_hash = ? AND model = ?",
+                (image_key, prompt_hash, MODEL_ID),
+            ).fetchone()
+            if not row:
+                return None
+            conn.execute(
+                """
+                UPDATE image_answer_cache
+                SET hits = hits + 1, last_hit_at = CURRENT_TIMESTAMP
+                WHERE image_key = ? AND prompt_hash = ? AND model = ?
+                """,
+                (image_key, prompt_hash, MODEL_ID),
+            )
+            STATS["persistent_cache_hits"] += 1
+            return str(row[0])
+    except Exception as exc:
+        STATS["last_error"] = f"cache get failed: {exc}"
+        return None
+
+
+def persistent_cache_put(image_key: str, prompt_hash: str, answer: str) -> None:
+    try:
+        with sqlite3.connect(CACHE_DB) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO image_answer_cache
+                  (image_key, prompt_hash, model, answer, created_at, last_hit_at, hits)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, 0)
+                """,
+                (image_key, prompt_hash, MODEL_ID, answer),
+            )
+    except Exception as exc:
+        STATS["last_error"] = f"cache put failed: {exc}"
 
 
 def message_text_and_image(messages: list[dict]) -> tuple[str, Path]:
@@ -147,14 +226,22 @@ def save_data_url(url: str) -> Path | None:
 
 def run_rkllm(prompt: str, image_path: Path) -> str:
     if image_path != DEFAULT_IMAGE:
-        cache_key = f"{image_path.name}:{hashlib.sha256(prompt.encode('utf-8')).hexdigest()}"
+        image_key = image_path.name
+        prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        cache_key = f"{image_key}:{prompt_hash}"
         cached = IMAGE_ANSWER_CACHE.get(cache_key)
         if cached is not None:
+            STATS["memory_cache_hits"] += 1
+            return cached
+        cached = persistent_cache_get(image_key, prompt_hash)
+        if cached is not None:
+            IMAGE_ANSWER_CACHE[cache_key] = cached
             return cached
         answer = RESIDENT_DEMO.ask(prompt, image_path)
         if len(IMAGE_ANSWER_CACHE) >= MAX_IMAGE_CACHE_ITEMS:
             IMAGE_ANSWER_CACHE.pop(next(iter(IMAGE_ANSWER_CACHE)))
         IMAGE_ANSWER_CACHE[cache_key] = answer
+        persistent_cache_put(image_key, prompt_hash, answer)
         return answer
     return RESIDENT_DEMO.ask(prompt, image_path)
 
@@ -195,6 +282,7 @@ class ResidentDemo:
         ):
             return
         self.stop()
+        STATS["demo_restarts"] += 1
         master_fd, slave_fd = pty.openpty()
         self.proc = subprocess.Popen(
             demo_cmd(image_path),
@@ -278,6 +366,7 @@ class Handler(BaseHTTPRequestHandler):
         print(f"{self.address_string()} - {fmt % args}", flush=True)
 
     def do_GET(self) -> None:
+        STATS["requests_total"] += 1
         path = urlparse(self.path).path
         if path == "/v1/models":
             json_response(self, 200, {
@@ -286,20 +375,44 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
         if path in {"/health", "/v1/health"}:
-            json_response(self, 200, {"ok": True, "model": MODEL_ID})
+            json_response(self, 200, {
+                "ok": True,
+                "model": MODEL_ID,
+                "uptime_seconds": round(time.time() - STARTED_AT, 1),
+                "adapter_pid": os.getpid(),
+                "resident": {
+                    "ready": bool(RESIDENT_DEMO.booted),
+                    "demo_pid": RESIDENT_DEMO.proc.pid if RESIDENT_DEMO.proc else None,
+                    "image_path": str(RESIDENT_DEMO.image_path) if RESIDENT_DEMO.image_path else "",
+                    "is_default_image": RESIDENT_DEMO.image_path == DEFAULT_IMAGE.resolve(),
+                },
+                "cache": {
+                    "db_path": str(CACHE_DB),
+                    "persistent_items": cache_count(),
+                    "memory_items": len(IMAGE_ANSWER_CACHE),
+                    "memory_cache_hits": STATS["memory_cache_hits"],
+                    "persistent_cache_hits": STATS["persistent_cache_hits"],
+                },
+                "stats": STATS,
+            })
             return
         json_response(self, 404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        STATS["requests_total"] += 1
         path = urlparse(self.path).path
         if path != "/v1/chat/completions":
             json_response(self, 404, {"error": "not found"})
             return
 
         try:
+            started = time.monotonic()
+            STATS["chat_requests"] += 1
             payload = read_json(self)
             prompt, image_path = message_text_and_image(payload.get("messages") or [])
             answer = run_rkllm(prompt, image_path)
+            STATS["last_latency_ms"] = round((time.monotonic() - started) * 1000, 1)
+            STATS["last_error"] = ""
             model = payload.get("model") or MODEL_ID
             if payload.get("stream"):
                 sse_response(self, model, answer)
@@ -322,6 +435,8 @@ class Handler(BaseHTTPRequestHandler):
                 },
             })
         except Exception as exc:
+            STATS["failures_total"] += 1
+            STATS["last_error"] = str(exc)
             json_response(self, 500, {"error": str(exc)})
 
 
@@ -329,6 +444,7 @@ def main() -> None:
     missing = [path for path in [DEMO_BIN, DEFAULT_IMAGE, VISION_MODEL, LLM_MODEL] if not path.exists()]
     if missing:
         raise SystemExit(f"missing RKLLM files: {', '.join(map(str, missing))}")
+    init_cache_db()
     RESIDENT_DEMO.start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"rkllm-openai-adapter listening on http://{HOST}:{PORT}/v1", flush=True)
