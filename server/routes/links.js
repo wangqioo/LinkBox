@@ -136,7 +136,7 @@ router.get('/', (req, res) => {
   if (to) { conditions.push('l.imported_at <= ?'); params.push(to + ' 23:59:59'); }
 
   const where = ' WHERE ' + conditions.join(' AND ');
-  sql += where + ` ORDER BY l.imported_at DESC LIMIT ? OFFSET ?`;
+  sql += where + ` ORDER BY l.id DESC LIMIT ? OFFSET ?`;
   countSql += where;
 
   const offset = (Number(page) - 1) * Number(limit);

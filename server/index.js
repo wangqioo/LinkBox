@@ -3,6 +3,7 @@ import cors from 'cors';
 import https from 'https';
 import http from 'http';
 import { readFileSync, existsSync } from 'fs';
+import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import authRoutes from './routes/auth.js';
@@ -10,6 +11,7 @@ import linkRoutes from './routes/links.js';
 import tagRoutes from './routes/tags.js';
 import settingsRoutes from './routes/settings.js';
 import assistantRoutes from './routes/assistant.js';
+import mobileFileRoutes from './routes/mobileFiles.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -24,6 +26,83 @@ app.use('/api/links', linkRoutes);
 app.use('/api/tags', tagRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/assistant', assistantRoutes);
+app.use('/api/mobile/files', mobileFileRoutes);
+
+function runJsonCommand(command, args, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    execFile(command, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
+      if (error) {
+        resolve({
+          ok: false,
+          error: error.killed ? `timeout after ${timeoutMs}ms` : error.message,
+          stderr: stderr?.trim() || '',
+        });
+        return;
+      }
+
+      try {
+        resolve({ ok: true, data: JSON.parse(stdout) });
+      } catch (parseError) {
+        resolve({
+          ok: false,
+          error: parseError.message,
+          raw: stdout.slice(0, 1000),
+        });
+      }
+    });
+  });
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 3000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const text = await response.text();
+    let body = text;
+
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text.slice(0, 1000);
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data: body,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.name === 'AbortError' ? `timeout after ${timeoutMs}ms` : error.message,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+app.get('/api/system/health', async (req, res) => {
+  const modelUrl = `${process.env.LOCAL_LLM_URL || 'http://127.0.0.1:8000/v1'}/health`;
+  const [system, model] = await Promise.all([
+    runJsonCommand('taishan-health', ['--json'], 3000),
+    fetchJsonWithTimeout(modelUrl, 3000),
+  ]);
+
+  res.json({
+    ok: system.ok && model.ok,
+    ts: new Date().toISOString(),
+    app: {
+      name: 'LinkBox',
+      port: Number(PORT),
+      dataDir: process.env.DATA_DIR || '',
+      uploadsDir: process.env.UPLOADS_DIR || '',
+    },
+    system,
+    model,
+  });
+});
 
 // Serve uploaded files with long-term caching (filenames are random hex = immutable content)
 const uploadsDir = process.env.UPLOADS_DIR || join(__dirname, 'uploads');
@@ -36,6 +115,10 @@ app.use('/uploads', express.static(uploadsDir, {
 app.use((err, req, res, next) => {
   console.error('API Error:', err.message);
   res.status(500).json({ error: err.message || '服务器错误' });
+});
+
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API route not found' });
 });
 
 // Serve static frontend in production

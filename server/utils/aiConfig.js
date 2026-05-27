@@ -97,11 +97,11 @@ function envValue(name) {
 }
 
 const DEFAULTS = {
-  provider: 'custom',
-  baseUrl: PROVIDERS_BY_ID.get('custom').baseUrl,
-  model: PROVIDERS_BY_ID.get('custom').model,
-  visionModel: PROVIDERS_BY_ID.get('custom').visionModel,
-  apiKey: process.env.LOCAL_LLM_API_KEY || process.env.OPENAI_API_KEY || '',
+  provider: 'zhipu',
+  baseUrl: PROVIDERS_BY_ID.get('zhipu').baseUrl,
+  model: process.env.GLM_MODEL || PROVIDERS_BY_ID.get('zhipu').model,
+  visionModel: process.env.GLM_VISION_MODEL || PROVIDERS_BY_ID.get('zhipu').visionModel,
+  apiKey: process.env.GLM_API_KEY || '',
   temperature: 0.3,
   enableThinking: false,
 };

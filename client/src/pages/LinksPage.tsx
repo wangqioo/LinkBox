@@ -5,7 +5,11 @@ import AddLinkModal from '../components/AddLinkModal';
 import ImportModal from '../components/ImportModal';
 import { Plus, Search, Upload, Download, Filter, X, Loader2, Link2, Image, FileText, Mic, Paperclip, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 500;
+
+function sortLikeMobile(a: Link, b: Link) {
+  return b.id - a.id;
+}
 
 interface Tag { id: number; name: string; color: string; link_count: number; }
 interface LinkItem {
@@ -49,7 +53,7 @@ export default function LinksPage() {
       if (dateFrom) params.from = dateFrom;
       if (dateTo) params.to = dateTo;
       const data = await api.getLinks(params);
-      setLinks(data.links);
+      setLinks([...data.links].sort(sortLikeMobile));
       setTotal(data.total);
     } catch { /* ignore */ }
     setLoading(false);
