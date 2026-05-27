@@ -59,10 +59,13 @@ function toMobileFile(link) {
     original_filename: title,
     type: normalizeType(link),
     url: link.url || '',
+    comment: link.comment || '',
     file_path: link.image_path || '',
     file_size: null,
     mime_type: '',
     content,
+    content_md: link.content_md || '',
+    has_content: Boolean(link.content_md),
     summary: displaySummary,
     description: link.description || '',
     keywords: [],
@@ -326,6 +329,15 @@ router.get('/:id', (req, res) => {
   const link = getLinkForUser(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Not found' });
   res.json(toMobileFile(link));
+});
+
+router.put('/:id/comment', (req, res) => {
+  const comment = String(req.body?.comment || '').slice(0, 2000);
+  const result = db.prepare('UPDATE links SET comment = ? WHERE id = ? AND user_id = ?')
+    .run(comment, req.params.id, req.userId);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  const updated = getLinkForUser(req.params.id, req.userId);
+  res.json(toMobileFile(updated));
 });
 
 router.delete('/:id', (req, res) => {
