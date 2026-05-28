@@ -11,7 +11,7 @@ import { summarizeContent, summarizeMarkdown } from '../utils/aiSummarize.js';
 import { generateLearningNote } from '../utils/generateLearningNote.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
 import { describeImage, fileToMarkdown } from '../utils/fileToMarkdown.js';
-import { indexLinkContent } from '../utils/chunkIndex.js';
+import { indexLinkContent, removeLinkContentIndex } from '../utils/chunkIndex.js';
 import { backgroundQueue } from '../utils/backgroundQueue.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -104,6 +104,42 @@ function setTags(linkId, tagIds) {
   }
 }
 
+function refreshLinkIndex(linkId) {
+  removeLinkContentIndex(linkId);
+  return indexLinkContent(linkId);
+}
+
+async function processLinkContent(linkId, url) {
+  try {
+    const extracted = await extractPageMarkdown(url);
+    if (!extracted?.markdown) {
+      db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
+      refreshLinkIndex(linkId);
+      return;
+    }
+
+    db.prepare(`UPDATE links SET content_md = ? WHERE id = ?`).run(extracted.markdown, linkId);
+
+    try {
+      const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
+      const summary = await summarizeMarkdown(extracted.markdown, currentLink?.title || url);
+      if (summary) {
+        db.prepare(`UPDATE links SET summary = ?, status = 'done' WHERE id = ?`).run(summary, linkId);
+      } else {
+        db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
+      }
+    } catch (e) {
+      console.error('[bg] summarize failed:', e.message);
+      db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
+    }
+
+    refreshLinkIndex(linkId);
+  } catch (e) {
+    console.error('[bg] extract failed:', e.message);
+    db.prepare(`UPDATE links SET status = 'error' WHERE id = ?`).run(linkId);
+  }
+}
+
 // List items with filters
 router.get('/', (req, res) => {
   const { tag, search, from, to, type, page = 1, limit = 50 } = req.query;
@@ -187,34 +223,7 @@ router.post('/', (req, res) => {
       }
     } catch (e) { console.error('[bg] meta fetch failed:', e.message); }
 
-    try {
-      // Step 2: extract page content as markdown
-      const extracted = await extractPageMarkdown(url);
-      if (extracted?.markdown) {
-        db.prepare(`UPDATE links SET content_md = ? WHERE id = ?`)
-          .run(extracted.markdown, linkId);
-        indexLinkContent(linkId);
-
-        // Step 3: summarize using local AI (Qwen2.5-VL-3B)
-        try {
-          const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
-          const summary = await summarizeMarkdown(extracted.markdown, currentLink?.title || url);
-          if (summary) {
-            db.prepare(`UPDATE links SET summary = ?, status = 'done' WHERE id = ?`).run(summary, linkId);
-          } else {
-            db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
-          }
-        } catch (e) {
-          console.error('[bg] summarize failed:', e.message);
-          db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
-        }
-      } else {
-        db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
-      }
-    } catch (e) {
-      console.error('[bg] extract failed:', e.message);
-      db.prepare(`UPDATE links SET status = 'error' WHERE id = ?`).run(linkId);
-    }
+    await processLinkContent(linkId, url);
   });
 });
 
@@ -229,7 +238,7 @@ router.post('/text', (req, res) => {
   `).run(req.userId, title || '', content || '', comment || '', imported_at || new Date().toISOString());
 
   if (tag_ids?.length) setTags(result.lastInsertRowid, tag_ids);
-  indexLinkContent(result.lastInsertRowid);
+  refreshLinkIndex(result.lastInsertRowid);
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
   res.json({ ...link, tags: attachTags(link.id) });
 });
@@ -262,7 +271,7 @@ router.post('/image', upload.single('image'), (req, res) => {
         : `![image](${imagePath})`;
       db.prepare('UPDATE links SET content_md = ?, summary = ?, status = ? WHERE id = ?')
         .run(markdown, description || '', 'done', linkId);
-      indexLinkContent(linkId);
+      refreshLinkIndex(linkId);
     } catch (e) {
       console.error('[bg] image describe failed:', e.message);
       db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
@@ -331,7 +340,6 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
           const imgMatch = markdown.match(/!\[.*?\]\((\/uploads\/[^)]+)\)/);
           const thumbnail = imgMatch ? imgMatch[1] : null;
           db.prepare('UPDATE links SET content_md = ?, thumbnail = ? WHERE id = ?').run(markdown, thumbnail, linkId);
-          indexLinkContent(linkId);
           try {
             const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
             const summary = await summarizeMarkdown(markdown, currentLink?.title || originalName);
@@ -344,6 +352,7 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
             console.error('[bg] file summarize failed:', e.message);
             db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
           }
+          refreshLinkIndex(linkId);
         } else {
           db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
         }
@@ -379,6 +388,7 @@ router.post('/:id/summarize', async (req, res) => {
     }
     if (!summary) return res.status(400).json({ error: '没有可摘要的内容' });
     db.prepare("UPDATE links SET summary = ? WHERE id = ?").run(summary, link.id);
+    refreshLinkIndex(link.id);
     const updated = db.prepare("SELECT * FROM links WHERE id = ?").get(link.id);
     res.json({ ...updated, tags: attachTags(updated.id) });
   } catch (err) {
@@ -397,7 +407,7 @@ router.post("/:id/extract", async (req, res) => {
   try {
     const result = await extractPageMarkdown(link.url);
     db.prepare("UPDATE links SET content_md = ? WHERE id = ?").run(result.markdown, link.id);
-    indexLinkContent(link.id);
+    refreshLinkIndex(link.id);
     res.json({ content_md: result.markdown, meta: {
       title: result.title, byline: result.byline,
       siteName: result.siteName, wordCount: result.wordCount
@@ -420,12 +430,14 @@ router.put('/:id', (req, res) => {
   `).run(title ?? null, comment ?? null, content ?? null, imported_at ?? null, req.params.id);
 
   if (tag_ids !== undefined) setTags(req.params.id, tag_ids);
+  refreshLinkIndex(req.params.id);
   const updated = db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id);
   res.json({ ...updated, tags: attachTags(updated.id) });
 });
 
 // Delete item
 router.delete('/:id', (req, res) => {
+  removeLinkContentIndex(req.params.id);
   const result = db.prepare('DELETE FROM links WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
   if (result.changes === 0) return res.status(404).json({ error: '不存在' });
   res.json({ ok: true });
@@ -446,18 +458,26 @@ router.post('/import', (req, res) => {
       VALUES (?, 'link', ?, ?, '', '', ?, ?)
     `).run(req.userId, url, item.title || url, item.comment || '', item.imported_at || new Date().toISOString());
     imported.push(result.lastInsertRowid);
-    if (!item.title) toFetch.push({ id: result.lastInsertRowid, url });
+    toFetch.push({ id: result.lastInsertRowid, url, hasTitle: Boolean(item.title) });
   }
   res.json({ imported: imported.length });
 
-  // Background metadata fetch for all imported links
-  for (const { id, url } of toFetch) {
-    backgroundQueue.enqueue(`import-meta:${id}`, async () => {
-      const meta = await fetchLinkMeta(url);
-      if (meta.title || meta.description || meta.thumbnail) {
-        db.prepare(`UPDATE links SET title = ?, description = ?, thumbnail = ? WHERE id = ?`)
-          .run(meta.title || url, meta.description || '', meta.thumbnail || '', id);
+  // Background processing for all imported links
+  for (const { id, url, hasTitle } of toFetch) {
+    backgroundQueue.enqueue(`import-link:${id}`, async () => {
+      try {
+        db.prepare(`UPDATE links SET status = 'processing' WHERE id = ?`).run(id);
+        if (!hasTitle) {
+          const meta = await fetchLinkMeta(url);
+          if (meta.title || meta.description || meta.thumbnail) {
+            db.prepare(`UPDATE links SET title = ?, description = ?, thumbnail = ? WHERE id = ?`)
+              .run(meta.title || url, meta.description || '', meta.thumbnail || '', id);
+          }
+        }
+      } catch (e) {
+        console.error('[bg] import meta fetch failed:', e.message);
       }
+      await processLinkContent(id, url);
     });
   }
 });

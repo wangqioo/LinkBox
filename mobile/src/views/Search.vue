@@ -4,7 +4,7 @@
     <header class="app-hdr">
       <button class="app-back" @click="$router.back()">‹</button>
       <div class="hdr-body">
-        <span class="app-hdr-ttl">AI 语义搜索</span>
+        <span class="app-hdr-ttl">资料助理</span>
         <span v-if="date" class="hdr-date">{{ date }}</span>
         <span v-if="typeLabel" class="hdr-date" style="background:var(--s2)">{{ typeLabel }}</span>
       </div>

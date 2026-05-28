@@ -185,17 +185,71 @@ function proxyMarkdownImage(src) {
   return imgUrl(decoded)
 }
 
+function sanitizeTableHtml(block) {
+  const template = document.createElement('template')
+  template.innerHTML = block
+  const allowedTags = new Set(['DIV', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD', 'COLGROUP', 'COL', 'P', 'BR', 'SPAN', 'STRONG', 'B', 'EM', 'I', 'U'])
+  const allowedAttrs = new Set(['rowspan', 'colspan'])
+
+  template.content.querySelectorAll('*').forEach((el) => {
+    if (!allowedTags.has(el.tagName)) {
+      el.replaceWith(...Array.from(el.childNodes))
+      return
+    }
+    Array.from(el.attributes).forEach((attr) => {
+      if (!allowedAttrs.has(attr.name.toLowerCase()) && attr.name !== 'data-linkbox-table') {
+        el.removeAttribute(attr.name)
+      }
+    })
+  })
+  return template.innerHTML
+}
+
 function renderMarkdown(markdown) {
   const lines = String(markdown).split(/\r?\n/)
   const html = []
   let paragraph = []
+  let htmlBlock = []
+  let codeBlock = null
   const flush = () => {
     if (!paragraph.length) return
     html.push(`<p>${renderInline(paragraph.join(' '))}</p>`)
     paragraph = []
   }
   for (const line of lines) {
+    if (codeBlock) {
+      if (line.startsWith('```')) {
+        const language = escapeHtml(codeBlock.language)
+        html.push(`<pre><code${language ? ` class="language-${language}"` : ''}>${escapeHtml(codeBlock.lines.join('\n'))}</code></pre>`)
+        codeBlock = null
+      } else {
+        codeBlock.lines.push(line)
+      }
+      continue
+    }
+    if (htmlBlock.length) {
+      htmlBlock.push(line)
+      if (line.includes('</div>')) {
+        html.push(`<div class="table-scroll">${sanitizeTableHtml(htmlBlock.join('\n'))}</div>`)
+        htmlBlock = []
+      }
+      continue
+    }
     if (!line.trim()) { flush(); continue }
+    if (line.startsWith('```')) {
+      flush()
+      codeBlock = { language: line.slice(3).trim(), lines: [] }
+      continue
+    }
+    if (line.includes('data-linkbox-table')) {
+      flush()
+      htmlBlock = [line]
+      if (line.includes('</div>')) {
+        html.push(`<div class="table-scroll">${sanitizeTableHtml(htmlBlock.join('\n'))}</div>`)
+        htmlBlock = []
+      }
+      continue
+    }
     if (line.startsWith('### ')) { flush(); html.push(`<h3>${renderInline(line.slice(4))}</h3>`); continue }
     if (line.startsWith('## ')) { flush(); html.push(`<h2>${renderInline(line.slice(3))}</h2>`); continue }
     if (line.startsWith('# ')) { flush(); html.push(`<h1>${renderInline(line.slice(2))}</h1>`); continue }
@@ -204,6 +258,11 @@ function renderMarkdown(markdown) {
     paragraph.push(line)
   }
   flush()
+  if (codeBlock) {
+    const language = escapeHtml(codeBlock.language)
+    html.push(`<pre><code${language ? ` class="language-${language}"` : ''}>${escapeHtml(codeBlock.lines.join('\n'))}</code></pre>`)
+  }
+  if (htmlBlock.length) html.push(`<div class="table-scroll">${sanitizeTableHtml(htmlBlock.join('\n'))}</div>`)
   return html.join('')
 }
 
@@ -547,6 +606,33 @@ onMounted(load)
 }
 .md-content :deep(pre code) { background: none; padding: 0; color: var(--text2); }
 .md-content :deep(hr) { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.md-content :deep(.table-scroll) {
+  overflow-x: auto;
+  margin: 14px 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.md-content :deep(table) {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  background: var(--s1);
+}
+.md-content :deep(th),
+.md-content :deep(td) {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.55;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+.md-content :deep(th) {
+  color: var(--text);
+  font-weight: 700;
+  background: var(--s2);
+}
 
 /* Slide up transition */
 .slide-up-enter-active, .slide-up-leave-active { transition: transform .35s cubic-bezier(.32,.72,0,1); }

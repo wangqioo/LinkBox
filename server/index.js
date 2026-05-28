@@ -121,7 +121,12 @@ app.use('/api', (req, res) => {
   res.status(404).json({ error: 'API route not found' });
 });
 
-// Serve static frontend in production
+// Serve static frontends in production
+app.use('/mobile', express.static(join(__dirname, '../mobile/dist')));
+app.get('/mobile/*', (req, res) => {
+  res.sendFile(join(__dirname, '../mobile/dist/index.html'));
+});
+
 app.use(express.static(join(__dirname, '../client/dist')));
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api')) {

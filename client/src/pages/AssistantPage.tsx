@@ -8,6 +8,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   sources?: AssistantSource[];
+  done?: boolean;
 }
 
 const EXAMPLES = [
@@ -54,6 +55,20 @@ function SourceList({ sources = [] }: { sources?: AssistantSource[] }) {
                       {source.url}
                     </a>
                   )}
+                  {!!source.chunks?.length && (
+                    <div className="mt-2 space-y-1.5">
+                      {source.chunks.map(chunk => (
+                        <div key={chunk.id} className="rounded-md bg-white dark:bg-gray-900/60 border px-2 py-1.5">
+                          <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 mb-0.5">
+                            片段 {chunk.index}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-3">
+                            {chunk.text}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -81,7 +96,7 @@ export default function AssistantPage() {
     setQuestion('');
     setLoading(true);
     const assistantId = idRef.current++;
-    setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', sources: [] }]);
+    setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', sources: [], done: false }]);
 
     try {
       await api.streamAssistant(q, selectedTask, {
@@ -95,6 +110,11 @@ export default function AssistantPage() {
             message.id === assistantId ? { ...message, content: message.content + text } : message
           ));
         },
+        onDone: () => {
+          setMessages(prev => prev.map(message =>
+            message.id === assistantId ? { ...message, done: true } : message
+          ));
+        },
       });
     } catch (e) {
       setMessages(prev => prev.map(message => message.id === assistantId ? {
@@ -102,6 +122,9 @@ export default function AssistantPage() {
         content: e instanceof Error ? e.message : '资料助理暂时无法回答。',
       } : message));
     } finally {
+      setMessages(prev => prev.map(message =>
+        message.id === assistantId ? { ...message, done: true } : message
+      ));
       setLoading(false);
     }
   };
@@ -175,7 +198,7 @@ export default function AssistantPage() {
                   ) : (
                     <div className="whitespace-pre-wrap">{message.content}</div>
                   )}
-                  {message.role === 'assistant' && <SourceList sources={message.sources} />}
+                  {message.role === 'assistant' && message.done && <SourceList sources={message.sources} />}
                 </div>
                 {message.role === 'user' && (
                   <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0">

@@ -25,7 +25,7 @@
         @mouseleave="onMouseUp"
       >
         <router-view v-slot="{ Component }">
-          <transition :name="transitionName" mode="out-in">
+          <transition :name="transitionName">
             <component :is="Component" />
           </transition>
         </router-view>
@@ -53,44 +53,58 @@ function updateTime() {
 }
 
 function updateScale() {
+  if (window.matchMedia('(max-width: 600px), (pointer: coarse)').matches) {
+    document.documentElement.style.setProperty('--phone-scale', 1)
+    return
+  }
   const PW = 390, PH = 844
   const s = Math.min(1, (window.innerHeight - 40) / PH, (window.innerWidth - 40) / PW)
   document.documentElement.style.setProperty('--phone-scale', s)
 }
 
 // ── Transition direction tracking ────────────────────────────
-const transitionName = ref('slide-forward')
-const routeHistory = ['/']
+const transitionName = ref('zoom-page')
+const lateralRoutes = {
+  '/friends': -1,
+  '/': 0,
+  '/category': 1,
+}
 
-router.afterEach((to, from) => {
-  const idx = routeHistory.lastIndexOf(to.path)
-  if (idx >= 0 && idx < routeHistory.length - 1) {
-    transitionName.value = 'zoom-page'
-    routeHistory.splice(idx + 1)
+router.beforeEach((to, from) => {
+  const toPos = lateralRoutes[to.path]
+  const fromPos = lateralRoutes[from.path]
+
+  if (toPos !== undefined && fromPos !== undefined && toPos !== fromPos) {
+    transitionName.value = toPos > fromPos ? 'slide-left' : 'slide-right'
   } else {
     transitionName.value = 'zoom-page'
-    if (routeHistory[routeHistory.length - 1] !== to.path) routeHistory.push(to.path)
   }
 })
 
 // ── Global right-swipe to go back ────────────────────────────
 let txStart = 0, tyStart = 0
+let touchStartPath = '/'
 function onTouchStart(e) {
   txStart = e.touches[0].clientX
   tyStart = e.touches[0].clientY
+  touchStartPath = route.path
 }
 function onTouchEnd(e) {
   const dx = e.changedTouches[0].clientX - txStart
   const dy = e.changedTouches[0].clientY - tyStart
   if (Math.abs(dx) <= Math.abs(dy) + 10) return
-  if (dx > 60 && route.path !== '/') router.back()
+  if (touchStartPath === '/friends' && dx < -60) router.push('/')
+  else if (touchStartPath === '/category' && dx > 60) router.push('/')
+  else if (dx > 60 && touchStartPath !== '/' && route.path !== '/') router.back()
 }
 
 let mouseDown = false, mxStart = 0, myStart = 0, mouseMoved = false
+let mouseStartPath = '/'
 function onMouseDown(e) {
   if (e.button !== 0) return
   mouseDown = true; mouseMoved = false
   mxStart = e.clientX; myStart = e.clientY
+  mouseStartPath = route.path
 }
 function onMouseMove(e) {
   if (!mouseDown) return
@@ -104,7 +118,9 @@ function onMouseUp(e) {
   const dx = e.clientX - mxStart
   const dy = e.clientY - myStart
   if (Math.abs(dx) <= Math.abs(dy) + 10) return
-  if (dx > 60 && route.path !== '/') router.back()
+  if (mouseStartPath === '/friends' && dx < -60) router.push('/')
+  else if (mouseStartPath === '/category' && dx > 60) router.push('/')
+  else if (dx > 60 && mouseStartPath !== '/' && route.path !== '/') router.back()
 }
 
 let timer
@@ -282,6 +298,18 @@ body {
 }
 
 /* Page transitions — center zoom */
+.zoom-page-enter-active,
+.zoom-page-leave-active,
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .zoom-page-enter-active, .zoom-page-leave-active {
   transition: transform .28s cubic-bezier(.2,.82,.2,1), opacity .22s ease;
   transform-origin: center center;
@@ -293,6 +321,42 @@ body {
 .zoom-page-leave-to {
   transform: scale(1.04);
   opacity: 0;
+}
+
+/* Lateral page transitions for the main three-panel surface.
+   friends ← home → category */
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform .34s cubic-bezier(.32,.72,0,1), opacity .24s ease;
+  will-change: transform;
+}
+.slide-left-enter-active,
+.slide-right-enter-active {
+  z-index: 2;
+}
+.slide-left-leave-active,
+.slide-right-leave-active {
+  z-index: 1;
+}
+.slide-left-enter-from {
+  transform: translateX(100%);
+}
+.slide-left-leave-to {
+  transform: translateX(-100%);
+}
+.slide-right-enter-from {
+  transform: translateX(-100%);
+}
+.slide-right-leave-to {
+  transform: translateX(100%);
+}
+.slide-left-enter-to,
+.slide-left-leave-from,
+.slide-right-enter-to,
+.slide-right-leave-from {
+  transform: translateX(0);
 }
 
 /* Glass card shared class */
@@ -330,11 +394,28 @@ body {
 }
 
 /* Mobile: full screen (no phone frame) */
-@media (max-width: 600px) {
-  body { display: block; background: var(--bg) !important; background-image: none !important; }
-  .stage { width: 100%; height: 100%; }
+@media (max-width: 600px), (pointer: coarse) {
+  html, body, #app {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+  body {
+    display: block;
+    background: var(--bg) !important;
+    background-image: none !important;
+  }
+  .stage {
+    width: 100vw;
+    height: 100dvh;
+  }
   .phone {
-    width: 100%; height: 100dvh;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    transform: none !important;
     border-radius: 0;
     box-shadow: none;
   }

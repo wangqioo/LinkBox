@@ -54,6 +54,14 @@ export interface AssistantSource {
   url: string;
   summary: string;
   imported_at: string;
+  chunks?: AssistantSourceChunk[];
+}
+
+export interface AssistantSourceChunk {
+  id: number | string;
+  index: number;
+  chunk_index?: number;
+  text: string;
 }
 
 export interface AssistantAnswer {

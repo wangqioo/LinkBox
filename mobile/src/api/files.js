@@ -89,6 +89,51 @@ export async function searchFiles(q, date = '', type = '') {
   return data
 }
 
+export async function streamAssistant(question, task = 'ask', handlers = {}, scope = {}) {
+  const token = localStorage.getItem('linkbox_token')
+  const response = await fetch('/api/assistant/chat/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ question, task, scope }),
+  })
+
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || '资料助理请求失败')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  function handleEvent(raw) {
+    const lines = raw.split('\n')
+    const event = lines.find(line => line.startsWith('event:'))?.slice(6).trim() || 'message'
+    const dataLine = lines.find(line => line.startsWith('data:'))
+    if (!dataLine) return
+    const data = JSON.parse(dataLine.slice(5).trim())
+
+    if (event === 'sources') handlers.onSources?.(data.sources || [])
+    if (event === 'delta') handlers.onDelta?.(data.text || '')
+    if (event === 'done') handlers.onDone?.()
+    if (event === 'error') throw new Error(data.error || '资料助理生成失败')
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split('\n\n')
+    buffer = events.pop() || ''
+    events.filter(Boolean).forEach(handleEvent)
+  }
+
+  if (buffer.trim()) handleEvent(buffer)
+}
+
 export async function getStats() {
   const { data } = await api.get('/mobile/files/stats')
   return data

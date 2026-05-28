@@ -10,7 +10,7 @@ import { fetchLinkMeta } from '../utils/fetchMeta.js';
 import { summarizeMarkdown, summarizeContent } from '../utils/aiSummarize.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
 import { describeImage, fileToMarkdown } from '../utils/fileToMarkdown.js';
-import { indexLinkContent } from '../utils/chunkIndex.js';
+import { indexLinkContent, removeLinkContentIndex } from '../utils/chunkIndex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -83,6 +83,11 @@ function getLinkForUser(id, userId) {
   return db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(id, userId);
 }
 
+function refreshLinkIndex(linkId) {
+  removeLinkContentIndex(linkId);
+  return indexLinkContent(linkId);
+}
+
 async function processLink(linkId, url) {
   try {
     const meta = await fetchLinkMeta(url);
@@ -98,12 +103,13 @@ async function processLink(linkId, url) {
     const extracted = await extractPageMarkdown(url);
     if (extracted?.markdown) {
       db.prepare('UPDATE links SET content_md = ? WHERE id = ?').run(extracted.markdown, linkId);
-      indexLinkContent(linkId);
       const current = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
       const summary = await summarizeMarkdown(extracted.markdown, current?.title || url);
       db.prepare('UPDATE links SET summary = ?, status = ? WHERE id = ?').run(summary || '', 'done', linkId);
+      refreshLinkIndex(linkId);
     } else {
       db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
+      refreshLinkIndex(linkId);
     }
   } catch (e) {
     console.error('[mobile] link processing failed:', e.message);
@@ -116,7 +122,7 @@ async function processText(linkId, title, content) {
     const summary = await summarizeContent([title, content].filter(Boolean).join('\n\n'), 'text');
     if (summary) db.prepare('UPDATE links SET summary = ?, status = ? WHERE id = ?').run(summary, 'done', linkId);
     else db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
-    indexLinkContent(linkId);
+    refreshLinkIndex(linkId);
   } catch (e) {
     console.error('[mobile] text processing failed:', e.message);
     db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
@@ -131,7 +137,7 @@ async function processUploadedFile(linkId, diskPath, originalName, imagePath) {
       const markdown = description ? `![image](${imagePath})\n\n> Image description: ${description}` : `![image](${imagePath})`;
       db.prepare('UPDATE links SET content_md = ?, summary = ?, status = ? WHERE id = ?')
         .run(markdown, description || '', 'done', linkId);
-      indexLinkContent(linkId);
+      refreshLinkIndex(linkId);
       return;
     }
 
@@ -145,10 +151,10 @@ async function processUploadedFile(linkId, diskPath, originalName, imagePath) {
       const imgMatch = markdown.match(/!\[.*?\]\((\/uploads\/[^)]+)\)/);
       const thumbnail = imgMatch ? imgMatch[1] : '';
       db.prepare('UPDATE links SET content_md = ?, thumbnail = ? WHERE id = ?').run(markdown, thumbnail, linkId);
-      indexLinkContent(linkId);
       const current = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
       const summary = await summarizeMarkdown(markdown, current?.title || originalName);
       db.prepare('UPDATE links SET summary = ?, status = ? WHERE id = ?').run(summary || '', 'done', linkId);
+      refreshLinkIndex(linkId);
     } else {
       db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
     }
@@ -318,7 +324,7 @@ router.get('/:id/extract', async (req, res) => {
   try {
     const result = await extractPageMarkdown(link.url);
     db.prepare('UPDATE links SET content_md = ? WHERE id = ?').run(result.markdown || '', link.id);
-    indexLinkContent(link.id);
+    refreshLinkIndex(link.id);
     return res.json(result);
   } catch (e) {
     return res.status(500).json({ error: e.message || 'Extract failed' });
@@ -341,6 +347,7 @@ router.put('/:id/comment', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  removeLinkContentIndex(req.params.id);
   const result = db.prepare('DELETE FROM links WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ message: 'Deleted' });

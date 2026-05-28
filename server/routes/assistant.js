@@ -6,6 +6,7 @@ import { indexAllMissingChunks, searchRelevantChunks, tokenizeQuery } from '../u
 
 const router = Router();
 const MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
+const MAX_FALLBACK_SOURCES = Number(process.env.ASSISTANT_MAX_FALLBACK_SOURCES || 2);
 const MAX_CONTEXT_CHARS = Number(process.env.ASSISTANT_MAX_CONTEXT_CHARS || 12000);
 const MAX_FIELD_CHARS = Number(process.env.ASSISTANT_MAX_FIELD_CHARS || 5000);
 const ASSISTANT_MAX_TOKENS = Number(process.env.ASSISTANT_MAX_TOKENS || 900);
@@ -71,16 +72,76 @@ function textForItem(item) {
   ].filter(Boolean).join('\n');
 }
 
+function groupSources(items) {
+  const groups = [];
+  const indexBySource = new Map();
+
+  for (const item of items) {
+    const sourceKey = sourceDedupeKey(item);
+    let group = indexBySource.get(sourceKey);
+    if (!group) {
+      group = {
+        ...item,
+        source_index: groups.length + 1,
+        chunks: [],
+      };
+      indexBySource.set(sourceKey, group);
+      groups.push(group);
+    }
+
+    if (item.chunk_text) {
+      group.chunks.push(item);
+    } else if (!group.content_md && !group.content) {
+      group.content_md = item.content_md;
+      group.content = item.content;
+    }
+  }
+
+  return groups;
+}
+
+function normalizeUrlKey(url) {
+  return String(url || '')
+    .trim()
+    .replace(/#.*$/, '')
+    .replace(/[?&]utm_[^=&]+=[^&]*/gi, '')
+    .replace(/[?&](from|scene|clicktime|enterid|ascene|devicetype|version|nettype|lang)=[^&]*/gi, '')
+    .replace(/[?&]$/, '')
+    .replace(/\/$/, '')
+    .toLowerCase();
+}
+
+function normalizeTitleKey(title) {
+  return String(title || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function sourceDedupeKey(item) {
+  const url = normalizeUrlKey(item.url);
+  const title = normalizeTitleKey(item.title);
+  if (title && (url.includes('mp.weixin.qq.com') || title.length >= 8)) return `title:${title}`;
+  if (url) return `url:${url}`;
+  if (title) return `title:${title}`;
+  return `id:${item.id}`;
+}
+
 function trimContext(sources) {
   const blocks = [];
   let total = 0;
 
   for (const source of sources) {
-    const body = textForItem(source).slice(0, MAX_FIELD_CHARS);
+    const body = source.chunks?.length
+      ? [
+          source.title ? `标题：${source.title}` : '',
+          source.url ? `链接：${source.url}` : '',
+          source.summary ? `摘要：${source.summary}` : '',
+          ...source.chunks.map((chunk, index) => `相关片段 ${index + 1}：\n${chunk.chunk_text}`),
+        ].filter(Boolean).join('\n\n')
+      : textForItem(source);
     const block = `资料 ${source.source_index}（ID: ${source.id}）\n${body}`;
     if (total + block.length > MAX_CONTEXT_CHARS && blocks.length > 0) break;
-    blocks.push(block);
-    total += block.length;
+    const trimmed = block.slice(0, MAX_FIELD_CHARS);
+    blocks.push(trimmed);
+    total += trimmed.length;
   }
 
   return blocks.join('\n\n---\n\n');
@@ -88,7 +149,7 @@ function trimContext(sources) {
 
 function publicSource(item) {
   return {
-    id: item.chunk_id || item.id,
+    id: item.id,
     link_id: item.id,
     type: item.type,
     title: item.chunk_index !== undefined
@@ -100,30 +161,97 @@ function publicSource(item) {
   };
 }
 
+function publicSources(items) {
+  return groupSources(items).map(item => ({
+    id: item.id,
+    link_id: item.id,
+    type: item.type,
+    title: item.title || item.url || `璧勬枡 ${item.id}`,
+    url: item.url || '',
+    summary: item.summary || '',
+    imported_at: item.imported_at,
+    chunks: publicChunks(item.chunks || []),
+  }));
+}
+
+function publicChunks(chunks) {
+  const seen = new Set();
+  return chunks
+    .map((chunk, index) => {
+      const text = String(chunk.chunk_text || '').replace(/\s+/g, ' ').trim();
+      return {
+        id: chunk.chunk_id || `${chunk.id || 'chunk'}-${index}`,
+        index: index + 1,
+        chunk_index: chunk.chunk_index,
+        text: text.slice(0, 420),
+      };
+    })
+    .filter(chunk => {
+      if (!chunk.text) return false;
+      const key = chunk.text.slice(0, 180);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 8);
+}
+
 function normalizeTask(task) {
   return TASKS[task] ? task : 'ask';
 }
 
-function retrieveSources(userId, question, task = 'ask') {
+function shouldUseFallbackSources(task, question) {
+  if (task === 'ask') return false;
+  if (task === 'recent') return true;
+  return tokenize(question).length < 2;
+}
+
+function normalizeScope(scope = {}) {
+  const date = String(scope.date || '').trim();
+  const type = String(scope.type || '').trim();
+  return {
+    date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '',
+    type: type === 'document' ? 'file' : type,
+  };
+}
+
+function scopeWhere(scope, params) {
+  const conditions = [];
+  if (scope.date) {
+    conditions.push('substr(l.imported_at, 1, 10) = ?');
+    params.push(scope.date);
+  }
+  if (scope.type) {
+    conditions.push('l.type = ?');
+    params.push(scope.type);
+  }
+  return conditions;
+}
+
+function retrieveSources(userId, question, task = 'ask', rawScope = {}) {
   indexAllMissingChunks();
-  const chunks = searchRelevantChunks({ userId, query: question, task, limit: MAX_SOURCES });
+  const scope = normalizeScope(rawScope);
+  const chunks = searchRelevantChunks({ userId, query: question, task, limit: MAX_SOURCES, scope });
   if (chunks.length) {
     return chunks.map((item, index) => ({ ...item, source_index: index + 1 }));
   }
 
+  const params = [userId];
+  const scopedConditions = scopeWhere(scope, params);
   const rows = db.prepare(`
     SELECT id, type, url, title, description, comment, content, content_md, summary, imported_at
-    FROM links
-    WHERE user_id = ?
+    FROM links l
+    WHERE l.user_id = ?
       AND (
-        COALESCE(content_md, '') != ''
-        OR COALESCE(summary, '') != ''
-        OR COALESCE(content, '') != ''
-        OR COALESCE(title, '') != ''
+        COALESCE(l.content_md, '') != ''
+        OR COALESCE(l.summary, '') != ''
+        OR COALESCE(l.content, '') != ''
+        OR COALESCE(l.title, '') != ''
       )
-    ORDER BY imported_at DESC
+      ${scopedConditions.length ? `AND ${scopedConditions.join(' AND ')}` : ''}
+    ORDER BY l.imported_at DESC
     LIMIT 1000
-  `).all(userId);
+  `).all(...params);
 
   if (task === 'recent') {
     return rows.slice(0, MAX_SOURCES).map((item, index) => ({ ...item, source_index: index + 1 }));
@@ -137,17 +265,20 @@ function retrieveSources(userId, question, task = 'ask') {
     .slice(0, MAX_SOURCES)
     .map((item, index) => ({ ...item, source_index: index + 1 }));
 
-  if (ranked.length || task === 'ask') return ranked;
-  return rows.slice(0, MAX_SOURCES).map((item, index) => ({ ...item, source_index: index + 1 }));
+  if (ranked.length) return ranked;
+  if (!shouldUseFallbackSources(task, question)) return [];
+  return rows.slice(0, MAX_FALLBACK_SOURCES).map((item, index) => ({ ...item, source_index: index + 1 }));
 }
 
 function buildMessages(question, ranked, task = 'ask') {
   const taskConfig = TASKS[normalizeTask(task)];
-  const context = trimContext(ranked);
+  const grouped = groupSources(ranked);
+  const context = trimContext(grouped);
+  const sourceIds = grouped.map(source => `[资料${source.source_index}]`).join('、');
   return [
     {
       role: 'system',
-      content: `你是 LinkBox 私人资料助理。不要输出思考过程。只能基于用户提供的资料工作；资料不足时明确说明不足。回答要具体、可执行，使用 Markdown 组织结构，并在关键结论后用 [资料1] 这样的格式引用来源。当前任务：${taskConfig.label}。任务要求：${taskConfig.instruction}`,
+      content: `你是 LinkBox 私人资料助理。不要输出思考过程。只能基于用户提供的资料工作；资料不足时明确说明不足。回答要具体、可执行，使用 Markdown 组织结构。引用只能使用这些编号：${sourceIds || '无'}。引用格式必须是完整的 [资料1]，不要写 [资料1-3]、[资料21] 或缺少右括号。当前任务：${taskConfig.label}。任务要求：${taskConfig.instruction}`,
     },
     {
       role: 'user',
@@ -161,12 +292,27 @@ function writeSse(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function normalizeCitationText(text, maxSourceNumber) {
+  return String(text || '')
+    .replace(/\[资料(\d+)\s*-\s*(\d+)\]/g, (_, start, end) => {
+      const from = Number(start);
+      const to = Math.min(Number(end), maxSourceNumber);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return '';
+      return Array.from({ length: to - from + 1 }, (_v, index) => `[资料${from + index}]`).join('');
+    })
+    .replace(/\[资料(\d+)(?!\])/g, (match, n) => {
+      const value = Number(n);
+      if (!Number.isFinite(value) || value > maxSourceNumber) return match;
+      return `[资料${value}]`;
+    });
+}
+
 router.post('/chat', async (req, res) => {
   const question = String(req.body?.question || '').trim();
   if (!question) return res.status(400).json({ error: '问题不能为空' });
   const task = normalizeTask(req.body?.task);
 
-  const ranked = retrieveSources(req.userId, question, task);
+  const ranked = retrieveSources(req.userId, question, task, req.body?.scope);
   if (!ranked.length) {
     return res.json({
       answer: '没有在你的资料库里找到足够相关的内容。可以换个关键词，或先收藏/上传相关资料。',
@@ -179,10 +325,11 @@ router.post('/chat', async (req, res) => {
     maxTokens: ASSISTANT_MAX_TOKENS,
     timeoutMs: 90000,
   });
+  const sources = publicSources(ranked);
 
   res.json({
-    answer,
-    sources: ranked.map(publicSource),
+    answer: normalizeCitationText(answer, sources.length),
+    sources,
   });
 });
 
@@ -196,8 +343,8 @@ router.post('/chat/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  const ranked = retrieveSources(req.userId, question, task);
-  const sources = ranked.map(publicSource);
+  const ranked = retrieveSources(req.userId, question, task, req.body?.scope);
+  const sources = publicSources(ranked);
   writeSse(res, 'sources', { sources });
 
   if (!ranked.length) {
@@ -212,7 +359,7 @@ router.post('/chat/stream', async (req, res) => {
       maxTokens: ASSISTANT_MAX_TOKENS,
       enableThinking: false,
       timeoutMs: 90000,
-      onToken: async text => writeSse(res, 'delta', { text }),
+      onToken: async text => writeSse(res, 'delta', { text: normalizeCitationText(text, sources.length) }),
     });
     writeSse(res, 'done', {});
     res.end();
