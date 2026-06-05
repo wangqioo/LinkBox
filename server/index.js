@@ -12,6 +12,7 @@ import tagRoutes from './routes/tags.js';
 import settingsRoutes from './routes/settings.js';
 import assistantRoutes from './routes/assistant.js';
 import mobileFileRoutes from './routes/mobileFiles.js';
+import adminRoutes from './routes/admin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -27,6 +28,7 @@ app.use('/api/tags', tagRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/assistant', assistantRoutes);
 app.use('/api/mobile/files', mobileFileRoutes);
+app.use('/api/admin', adminRoutes);
 
 function runJsonCommand(command, args, timeoutMs = 3000) {
   return new Promise((resolve) => {

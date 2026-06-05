@@ -6,6 +6,7 @@ import LinksPage from './pages/LinksPage';
 import TagsPage from './pages/TagsPage';
 import SettingsPage from './pages/SettingsPage';
 import AssistantPage from './pages/AssistantPage';
+import AdminUsersPage from './pages/AdminUsersPage';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/assistant" element={<AssistantPage />} />
         <Route path="/tags" element={<TagsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

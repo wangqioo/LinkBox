@@ -69,6 +69,48 @@ export interface AssistantAnswer {
   sources: AssistantSource[];
 }
 
+export interface AdminUserSummary {
+  id: number;
+  username: string;
+  created_at: string;
+  item_count: number;
+  tag_count: number;
+  processing_count: number;
+  error_count: number;
+  last_used_at: string | null;
+  by_type: Record<string, number>;
+}
+
+export interface AdminRecentItem {
+  id: number;
+  type: string;
+  url: string;
+  title: string;
+  description: string;
+  comment: string;
+  imported_at: string;
+  created_at: string;
+  status: string;
+}
+
+export interface AdminUserDetail {
+  user: {
+    id: number;
+    username: string;
+    created_at: string;
+  };
+  stats: {
+    item_count: number;
+    tag_count: number;
+    processing_count: number;
+    error_count: number;
+    last_used_at: string | null;
+    by_type: Record<string, number>;
+    by_status: Record<string, number>;
+  };
+  recent_items: AdminRecentItem[];
+}
+
 export interface AssistantStreamHandlers {
   onSources?: (sources: AssistantSource[]) => void;
   onDelta?: (text: string) => void;
@@ -217,6 +259,10 @@ export const api = {
     request('/settings/ai', { method: 'PUT', body: JSON.stringify(data) }),
   testAIConfig: (data: Partial<AIConfig>) =>
     request('/settings/ai/test', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Admin
+  getAdminUsers: (): Promise<AdminUserSummary[]> => request('/admin/users'),
+  getAdminUser: (id: number): Promise<AdminUserDetail> => request(`/admin/users/${id}`),
 
   // Tags
   getTags: () => request('/tags'),
