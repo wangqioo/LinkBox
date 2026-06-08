@@ -20,6 +20,7 @@ import {
   parseTagIds,
   shouldExtractFile,
 } from '../utils/linkPayloads.js';
+import { buildLinkListQuery } from '../utils/linkListQuery.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -122,49 +123,17 @@ function parseMultipartTags(req, res) {
 
 // List items with filters
 router.get('/', (req, res) => {
-  const { tag, search, from, to, type, page = 1, limit = 50 } = req.query;
-  // Exclude large text columns (content_md, html_note) from list to keep response small.
-  // Use flag columns instead; client fetches full content on demand via GET /:id
-  let sql = `SELECT DISTINCT l.id, l.user_id, l.type, l.url, l.title, l.description,
-    l.thumbnail, l.comment, l.content, l.image_path, l.imported_at, l.created_at,
-    l.summary, l.status,
-    CASE WHEN l.content_md IS NOT NULL AND l.content_md != '' THEN 1 ELSE 0 END AS has_content_md,
-    CASE WHEN l.html_note IS NOT NULL AND l.html_note != '' THEN 1 ELSE 0 END AS has_html_note
-    FROM links l`;
-  let countSql = `SELECT COUNT(DISTINCT l.id) as total FROM links l`;
-  const params = [];
-  const conditions = ['l.user_id = ?'];
-  params.push(req.userId);
-
-  if (tag) {
-    sql += ` JOIN link_tags lt ON l.id = lt.link_id JOIN tags t ON lt.tag_id = t.id`;
-    countSql += ` JOIN link_tags lt ON l.id = lt.link_id JOIN tags t ON lt.tag_id = t.id`;
-    conditions.push('t.id = ?');
-    params.push(tag);
-  }
-  if (type) { conditions.push('l.type = ?'); params.push(type); }
-  if (search) {
-    conditions.push(`(l.title LIKE ? OR l.url LIKE ? OR l.comment LIKE ? OR l.content LIKE ?)`);
-    const s = `%${search}%`;
-    params.push(s, s, s, s);
-  }
-  if (from) { conditions.push('l.imported_at >= ?'); params.push(from); }
-  if (to) { conditions.push('l.imported_at <= ?'); params.push(to + ' 23:59:59'); }
-
-  const where = ' WHERE ' + conditions.join(' AND ');
-  sql += where + ` ORDER BY l.imported_at DESC LIMIT ? OFFSET ?`;
-  countSql += where;
-
-  const offset = (Number(page) - 1) * Number(limit);
-  const countParams = [...params];
-  params.push(Number(limit), offset);
+  const { sql, countSql, params, countParams, page, limit } = buildLinkListQuery({
+    userId: req.userId,
+    query: req.query,
+  });
 
   const links = db.prepare(sql).all(...params);
   const { total } = db.prepare(countSql).get(...countParams);
   const tagStmt = db.prepare('SELECT t.* FROM tags t JOIN link_tags lt ON t.id = lt.tag_id WHERE lt.link_id = ?');
   const result = links.map(link => ({ ...link, tags: tagStmt.all(link.id) }));
 
-  res.json({ links: result, total, page: Number(page), limit: Number(limit) });
+  res.json({ links: result, total, page, limit });
 });
 
 // Get single item
