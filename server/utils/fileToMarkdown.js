@@ -9,6 +9,12 @@ import {
   findImagePlaceholders,
   replaceImagePlaceholdersWithDescriptions,
 } from './fileMarkdownUtils.js';
+import {
+  extractDrawingEmbedRefs,
+  extractWordText,
+  parseImageRelationships,
+  wordTableToMarkdown,
+} from './officeXmlUtils.js';
 
 const TMP_DIR = '/tmp/file2md';
 mkdirSync(TMP_DIR, { recursive: true });
@@ -80,29 +86,6 @@ export async function describeImage(localPath) {
   }
 }
 
-// Parse a .rels XML file and return a map: rId -> target path (for image types only)
-function parseRelsMap(relsXml) {
-  const map = {};
-  const regex = /<Relationship[^>]+Id="([^"]+)"[^>]+Target="([^"]+)"[^>]+Type="[^"]*\/image"[^>]*\/?>/g;
-  let m;
-  while ((m = regex.exec(relsXml)) !== null) map[m[1]] = m[2];
-  // Also try reversed attribute order (Target before Type)
-  const regex2 = /<Relationship[^>]+Id="([^"]+)"[^>]+Type="[^"]*\/image"[^>]+Target="([^"]+)"[^>]*\/?>/g;
-  while ((m = regex2.exec(relsXml)) !== null) {
-    if (!map[m[1]]) map[m[1]] = m[2];
-  }
-  return map;
-}
-
-// Extract all a:blip r:embed references from an XML fragment
-function findBlipRefs(fragment) {
-  const refs = [];
-  const regex = /<a:blip[^>]+r:embed="([^"]+)"/g;
-  let m;
-  while ((m = regex.exec(fragment)) !== null) refs.push(m[1]);
-  return refs;
-}
-
 /**
  * Extract text + images from DOCX by parsing word/document.xml
  * Returns { markdown, images: [{url, localPath}] }
@@ -119,25 +102,16 @@ function extractDocxRaw(filePath, uploadsDir) {
     let relsMap = {};
     try {
       const relsXml = readFileSync(join(workDir, 'word/_rels/document.xml.rels'), 'utf-8');
-      relsMap = parseRelsMap(relsXml);
+      relsMap = parseImageRelationships(relsXml);
     } catch {}
 
     // Collect all images for later description
     const images = [];
 
-    // Helper: extract all text from an XML fragment, decode entities
-    function grabText(fragment) {
-      const texts = [];
-      const regex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
-      let m;
-      while ((m = regex.exec(fragment)) !== null) texts.push(m[1]);
-      return decodeXmlEntities(texts.join(''));
-    }
-
     // Helper: extract images from a paragraph fragment and save them
     function grabImages(fragment) {
       if (!uploadsDir || !Object.keys(relsMap).length) return [];
-      const refs = findBlipRefs(fragment);
+      const refs = extractDrawingEmbedRefs(fragment);
       const imgResults = [];
       for (const rId of refs) {
         const target = relsMap[rId];
@@ -152,38 +126,10 @@ function extractDocxRaw(filePath, uploadsDir) {
       return imgResults;
     }
 
-    // Helper: parse a <w:tbl> block into a markdown table
-    function parseTable(tblXml) {
-      const rows = [];
-      const rowRegex = /<w:tr[\s>][\s\S]*?<\/w:tr>/g;
-      let rowMatch;
-      while ((rowMatch = rowRegex.exec(tblXml)) !== null) {
-        const cells = [];
-        const cellRegex = /<w:tc[\s>][\s\S]*?<\/w:tc>/g;
-        let cellMatch;
-        while ((cellMatch = cellRegex.exec(rowMatch[0])) !== null) {
-          const paras = cellMatch[0].split(/<\/w:p>/);
-          const cellTexts = paras.map(p => grabText(p).trim()).filter(Boolean);
-          cells.push(cellTexts.join(' '));
-        }
-        if (cells.length) rows.push(cells);
-      }
-      if (!rows.length) return '';
-      const maxCols = Math.max(...rows.map(r => r.length));
-      const padded = rows.map(r => {
-        while (r.length < maxCols) r.push('');
-        return r;
-      });
-      const header = '| ' + padded[0].join(' | ') + ' |';
-      const sep = '| ' + padded[0].map(() => '---').join(' | ') + ' |';
-      const body = padded.slice(1).map(r => '| ' + r.join(' | ') + ' |').join('\n');
-      return header + '\n' + sep + (body ? '\n' + body : '');
-    }
-
     // Process a paragraph: extract text + images, push to result array
     // Images use a placeholder that will be replaced with descriptions later
     function processParagraph(p, result) {
-      const text = grabText(p);
+      const text = extractWordText(p);
       const imgResults = grabImages(p);
 
       if (text.trim()) {
@@ -220,7 +166,7 @@ function extractDocxRaw(filePath, uploadsDir) {
       for (const p of paragraphs) {
         processParagraph(p, result);
       }
-      const mdTable = parseTable(tblMatch[0]);
+      const mdTable = wordTableToMarkdown(tblMatch[0]);
       if (mdTable) result.push(mdTable);
       cursor = tblMatch.index + tblMatch[0].length;
     }
@@ -272,10 +218,10 @@ function extractPptxRaw(filePath, uploadsDir) {
         try {
           const relsFile = join(slidesDir, '_rels', slideFiles[si] + '.rels');
           const relsXml = readFileSync(relsFile, 'utf-8');
-          slideRelsMap = parseRelsMap(relsXml);
+          slideRelsMap = parseImageRelationships(relsXml);
         } catch {}
 
-        const refs = findBlipRefs(xml);
+        const refs = extractDrawingEmbedRefs(xml);
         const seen = new Set();
         for (const rId of refs) {
           if (seen.has(rId)) continue;
