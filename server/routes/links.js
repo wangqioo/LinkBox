@@ -11,6 +11,7 @@ import { generateLearningNote } from '../utils/generateLearningNote.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
 import { indexLinkContent } from '../utils/chunkIndex.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
+import { enqueueFileProcessing, enqueueImageProcessing, enqueueLinkProcessing } from '../utils/processingJobs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -171,10 +172,7 @@ router.post('/', (req, res) => {
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
   res.json({ ...link, tags: attachTags(link.id) });
 
-  getRuntimeQueue().enqueue('link.fetchMetadata', {
-    linkId: result.lastInsertRowid,
-    payload: { url, title: title || '' },
-  });
+  enqueueLinkProcessing(getRuntimeQueue(), { linkId: result.lastInsertRowid, url, title });
 });
 
 // Add text note
@@ -212,10 +210,7 @@ router.post('/image', upload.single('image'), (req, res) => {
 
   const linkId = result.lastInsertRowid;
   const diskPath = join(UPLOADS_DIR, req.file.filename);
-  getRuntimeQueue().enqueue('image.describe', {
-    linkId,
-    payload: { diskPath },
-  });
+  enqueueImageProcessing(getRuntimeQueue(), { linkId, diskPath });
 });
 
 // Upload audio
@@ -265,13 +260,11 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
   if (SUPPORTED_EXTS.has(ext)) {
     const linkId = result.lastInsertRowid;
     const diskPath = join(UPLOADS_DIR, req.file.filename);
-    getRuntimeQueue().enqueue('file.extractMarkdown', {
+    enqueueFileProcessing(getRuntimeQueue(), {
       linkId,
-      payload: {
-        diskPath,
-        originalName,
-        isHtml: ['.html', '.htm'].includes(ext),
-      },
+      diskPath,
+      originalName,
+      isHtml: ['.html', '.htm'].includes(ext),
     });
   }
 });
@@ -373,10 +366,7 @@ router.post('/import', (req, res) => {
   res.json({ imported: imported.length });
 
   for (const { id, url, title } of toFetch) {
-    getRuntimeQueue().enqueue('link.fetchMetadata', {
-      linkId: id,
-      payload: { url, title },
-    });
+    enqueueLinkProcessing(getRuntimeQueue(), { linkId: id, url, title });
   }
 });
 

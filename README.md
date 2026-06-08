@@ -231,6 +231,21 @@ journalctl -u linkbox -f   # 查看日志
 
 ---
 
+## 测试与诊断
+
+```bash
+# 后端自动化测试
+cd server && npm test
+
+# 前端生产构建检查
+cd client && npm run build
+
+# 手动检查 AI 设置接口和模型连接
+cd server && node scripts/check-ai-settings.mjs
+```
+
+---
+
 ## API 接口
 
 所有接口需要在请求头中携带 JWT：`Authorization: Bearer <token>`
