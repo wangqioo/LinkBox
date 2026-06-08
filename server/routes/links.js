@@ -6,7 +6,6 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { summarizeContent, summarizeMarkdown } from '../utils/aiSummarize.js';
 import { generateLearningNote } from '../utils/generateLearningNote.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
 import { indexLinkContent } from '../utils/chunkIndex.js';
@@ -24,6 +23,7 @@ import {
   importLinkItems,
   setTags as setLinkTags,
 } from '../utils/linkCreateService.js';
+import { summarizeLinkItem } from '../utils/linkAiActions.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -252,33 +252,15 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
 
 // AI summarize item (calls Spark 1 vLLM)
 router.post('/:id/summarize', async (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
-  if (!link) return res.status(404).json({ error: '不存在' });
-  if (!['link', 'text', 'file'].includes(link.type)) {
-    return res.status(400).json({ error: '该类型不支持摘要' });
-  }
-
   try {
-    let summary = '';
-    if (link.type === 'text') {
-      const text = [link.title, link.content].filter(Boolean).join('\n\n');
-      if (!text.trim()) return res.status(400).json({ error: '没有可摘要的内容' });
-      summary = await summarizeContent(text, 'text');
-    } else if (link.content_md && link.content_md.trim()) {
-      // link or file with extracted content — use full markdown (image descriptions included)
-      summary = await summarizeMarkdown(link.content_md, link.title || '');
-    } else {
-      // link with no extracted content yet: use title + description
-      const text = [link.title, link.description].filter(Boolean).join('\n') || link.url;
-      summary = await summarizeContent(text, 'link');
-    }
-    if (!summary) return res.status(400).json({ error: '没有可摘要的内容' });
-    db.prepare("UPDATE links SET summary = ? WHERE id = ?").run(summary, link.id);
-    const updated = db.prepare("SELECT * FROM links WHERE id = ?").get(link.id);
-    res.json({ ...updated, tags: attachTags(updated.id) });
+    const { link } = await summarizeLinkItem(db, {
+      linkId: req.params.id,
+      userId: req.userId,
+    });
+    res.json(link);
   } catch (err) {
     console.error("Summarize failed:", err.message);
-    res.status(500).json({ error: "摘要失败: " + err.message });
+    res.status(err.status || 500).json({ error: err.status ? err.message : "摘要失败: " + err.message });
   }
 });
 
