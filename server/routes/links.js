@@ -12,6 +12,14 @@ import { extractPageMarkdown } from '../utils/extractContent.js';
 import { indexLinkContent } from '../utils/chunkIndex.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { enqueueFileProcessing, enqueueImageProcessing, enqueueLinkProcessing } from '../utils/processingJobs.js';
+import {
+  decodeUploadName,
+  describeUploadedFile,
+  initialFileStatus,
+  isHtmlFile,
+  parseTagIds,
+  shouldExtractFile,
+} from '../utils/linkPayloads.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -100,6 +108,15 @@ function setTags(linkId, tagIds) {
   if (tagIds?.length) {
     const stmt = db.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)');
     for (const tid of tagIds) stmt.run(linkId, tid);
+  }
+}
+
+function parseMultipartTags(req, res) {
+  try {
+    return parseTagIds(req.body.tag_ids);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+    return null;
   }
 }
 
@@ -196,13 +213,14 @@ router.post('/image', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '请上传图片' });
 
   const imagePath = `/uploads/${req.file.filename}`;
-  const { comment, tag_ids, imported_at, title } = req.body;
-  const parsedTags = tag_ids ? JSON.parse(tag_ids) : [];
+  const { comment, imported_at, title } = req.body;
+  const parsedTags = parseMultipartTags(req, res);
+  if (parsedTags === null) return;
 
   const result = db.prepare(`
     INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at, status)
     VALUES (?, 'image', '', ?, ?, ?, ?, ?, 'processing')
-  `).run(req.userId, title || Buffer.from(req.file.originalname, 'latin1').toString('utf8'), imagePath, imagePath, comment || '', imported_at || new Date().toISOString());
+  `).run(req.userId, title || decodeUploadName(req.file.originalname), imagePath, imagePath, comment || '', imported_at || new Date().toISOString());
 
   if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
@@ -218,8 +236,9 @@ router.post('/audio', uploadAudio.single('audio'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '请上传录音' });
 
   const audioPath = `/uploads/${req.file.filename}`;
-  const { comment, tag_ids, imported_at, title } = req.body;
-  const parsedTags = tag_ids ? JSON.parse(tag_ids) : [];
+  const { comment, imported_at, title } = req.body;
+  const parsedTags = parseMultipartTags(req, res);
+  if (parsedTags === null) return;
 
   const result = db.prepare(`
     INSERT INTO links (user_id, type, url, title, image_path, comment, imported_at)
@@ -231,22 +250,20 @@ router.post('/audio', uploadAudio.single('audio'), (req, res) => {
   res.json({ ...link, tags: attachTags(link.id) });
 });
 
-const SUPPORTED_EXTS = new Set(['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.xls', '.ppt', '.txt', '.md', '.html', '.htm']);
-
 // Upload file (any format)
 router.post('/file', uploadFile.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '请上传文件' });
 
   const filePath = `/uploads/${req.file.filename}`;
-  const { comment, tag_ids, imported_at, title } = req.body;
-  const parsedTags = tag_ids ? JSON.parse(tag_ids) : [];
+  const { comment, imported_at, title } = req.body;
+  const parsedTags = parseMultipartTags(req, res);
+  if (parsedTags === null) return;
 
   const fileSize = req.file.size;
-  const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-  const desc = `${originalName} (${fileSize > 1048576 ? (fileSize / 1048576).toFixed(1) + ' MB' : (fileSize / 1024).toFixed(0) + ' KB'})`;
+  const originalName = decodeUploadName(req.file.originalname);
+  const desc = describeUploadedFile(originalName, fileSize);
 
-  const ext = extname(originalName).toLowerCase();
-  const initialStatus = SUPPORTED_EXTS.has(ext) ? 'processing' : 'done';
+  const initialStatus = initialFileStatus(originalName);
   const result = db.prepare(`
     INSERT INTO links (user_id, type, url, title, description, image_path, comment, imported_at, status)
     VALUES (?, 'file', '', ?, ?, ?, ?, ?, ?)
@@ -257,14 +274,14 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
   res.json({ ...link, tags: attachTags(link.id) });
 
   // Background: extract content from supported file types
-  if (SUPPORTED_EXTS.has(ext)) {
+  if (shouldExtractFile(originalName)) {
     const linkId = result.lastInsertRowid;
     const diskPath = join(UPLOADS_DIR, req.file.filename);
     enqueueFileProcessing(getRuntimeQueue(), {
       linkId,
       diskPath,
       originalName,
-      isHtml: ['.html', '.htm'].includes(ext),
+      isHtml: isHtmlFile(originalName),
     });
   }
 });
