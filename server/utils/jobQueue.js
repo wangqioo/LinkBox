@@ -72,6 +72,38 @@ export function createJobQueue({
     return result.changes;
   }
 
+  function retryFailedJobs({ ids = null } = {}) {
+    const now = isoNow();
+    if (Array.isArray(ids) && ids.length) {
+      const placeholders = ids.map(() => '?').join(',');
+      const result = db.prepare(`
+        UPDATE jobs
+        SET status = 'queued',
+            attempts = 0,
+            locked_at = '',
+            last_error = '',
+            next_run_at = ?,
+            updated_at = ?,
+            completed_at = ''
+        WHERE status = 'failed' AND id IN (${placeholders})
+      `).run(now, now, ...ids);
+      return result.changes;
+    }
+
+    const result = db.prepare(`
+      UPDATE jobs
+      SET status = 'queued',
+          attempts = 0,
+          locked_at = '',
+          last_error = '',
+          next_run_at = ?,
+          updated_at = ?,
+          completed_at = ''
+      WHERE status = 'failed'
+    `).run(now, now);
+    return result.changes;
+  }
+
   function leaseNextJob() {
     const job = db.prepare(`
       SELECT * FROM jobs
@@ -196,6 +228,7 @@ export function createJobQueue({
   const api = {
     enqueue,
     recoverRunningJobs,
+    retryFailedJobs,
     leaseNextJob,
     markDone,
     markFailed,

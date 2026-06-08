@@ -63,6 +63,26 @@ router.get('/system', authMiddleware, requireAdmin, (req, res) => {
   });
 });
 
+// POST /api/settings/system/retry-failed-jobs - retry failed background jobs
+router.post('/system/retry-failed-jobs', authMiddleware, requireAdmin, (req, res) => {
+  const failedLinkIds = db.prepare(`
+    SELECT DISTINCT link_id
+    FROM jobs
+    WHERE status = 'failed' AND link_id IS NOT NULL
+  `).all().map(row => row.link_id);
+  const retried = getRuntimeQueue().retryFailedJobs();
+  if (retried && failedLinkIds.length) {
+    const placeholders = failedLinkIds.map(() => '?').join(',');
+    db.prepare(`UPDATE links SET status = 'processing' WHERE id IN (${placeholders})`).run(...failedLinkIds);
+  }
+  getRuntimeQueue().drain();
+  res.json({
+    ok: true,
+    retried,
+    queue: getRuntimeQueue().stats(),
+  });
+});
+
 // PUT /api/settings - update one or more settings
 router.put('/', authMiddleware, requireAdmin, (req, res) => {
   const updates = req.body;

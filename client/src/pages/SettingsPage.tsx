@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { api, type AIConfig, type AIProvider } from '../api/client';
+import { api, type AIConfig, type AIProvider, type SystemStatus } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Save, ExternalLink, PlugZap } from 'lucide-react';
+import { Save, ExternalLink, PlugZap, RotateCcw, RefreshCw, Activity } from 'lucide-react';
 
 interface SiteCookieEntry {
   domain: string;
@@ -55,6 +55,10 @@ export default function SettingsPage() {
   const [testingAI, setTestingAI] = useState(false);
   const [saved, setSaved] = useState(false);
   const [aiTestResult, setAITestResult] = useState('');
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [loadingSystem, setLoadingSystem] = useState(false);
+  const [retryingJobs, setRetryingJobs] = useState(false);
+  const [queueMessage, setQueueMessage] = useState('');
   const [error, setError] = useState('');
 
   const isAdmin = user?.id === 1;
@@ -65,7 +69,35 @@ export default function SettingsPage() {
     api.getAIConfig()
       .then((config) => setAIConfig({ ...DEFAULT_AI_CONFIG, ...config, apiKey: '' }))
       .catch(() => {});
+    refreshSystemStatus();
   }, [isAdmin]);
+
+  const refreshSystemStatus = async () => {
+    setLoadingSystem(true);
+    setQueueMessage('');
+    try {
+      setSystemStatus(await api.getSystemStatus());
+    } catch (e: any) {
+      setError(e.message || '系统状态加载失败');
+    } finally {
+      setLoadingSystem(false);
+    }
+  };
+
+  const handleRetryFailedJobs = async () => {
+    setRetryingJobs(true);
+    setError('');
+    setQueueMessage('');
+    try {
+      const result = await api.retryFailedJobs();
+      setSystemStatus((prev) => prev ? { ...prev, queue: result.queue } : prev);
+      setQueueMessage(result.retried ? `已重新入队 ${result.retried} 个失败任务` : '没有失败任务需要重试');
+    } catch (e: any) {
+      setError(e.message || '重试失败任务失败');
+    } finally {
+      setRetryingJobs(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -271,6 +303,74 @@ export default function SettingsPage() {
             {testingAI ? '测试中…' : '测试连接'}
           </button>
           {aiTestResult && <span className="text-sm text-green-600">{aiTestResult}</span>}
+        </div>
+      </div>
+
+      {/* Background Jobs */}
+      <div className="rounded-xl border p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold flex items-center gap-2">
+              <Activity className="w-4 h-4 text-indigo-500" />
+              后台任务
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              链接抓取、文件解析、图片描述和 AI 摘要都会进入持久化队列；服务重启后会继续处理。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={refreshSystemStatus}
+            disabled={loadingSystem}
+            className="btn-secondary flex items-center gap-2 shrink-0"
+          >
+            <RefreshCw className={`w-4 h-4 ${loadingSystem ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            ['等待', systemStatus?.queue.queued ?? 0],
+            ['运行', systemStatus?.queue.leased ?? 0],
+            ['完成', systemStatus?.queue.done ?? 0],
+            ['失败', systemStatus?.queue.failed ?? 0],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border bg-gray-50 dark:bg-gray-800 px-3 py-2">
+              <div className="text-xs text-gray-500">{label}</div>
+              <div className="text-lg font-semibold">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        {systemStatus && (
+          <div className="text-xs text-gray-500">
+            并发：{systemStatus.queue.concurrency} · 进程运行：{systemStatus.queue.running} · 服务运行：{Math.floor(systemStatus.uptimeSeconds / 60)} 分钟
+          </div>
+        )}
+
+        {systemStatus?.queue.lastFailed && (
+          <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm">
+            <div className="font-medium text-red-700 dark:text-red-300">
+              最近失败：#{systemStatus.queue.lastFailed.id} {systemStatus.queue.lastFailed.type}
+            </div>
+            <div className="text-xs text-red-600 dark:text-red-200 mt-1 break-words">
+              {systemStatus.queue.lastFailed.last_error || '未记录错误'}
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleRetryFailedJobs}
+            disabled={retryingJobs || !systemStatus?.queue.failed}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            {retryingJobs ? '重试中…' : '重试失败任务'}
+          </button>
+          {queueMessage && <span className="text-sm text-green-600">{queueMessage}</span>}
         </div>
       </div>
 

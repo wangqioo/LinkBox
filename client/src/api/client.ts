@@ -46,6 +46,29 @@ export interface AIConfig {
   apiKey?: string;
 }
 
+export interface QueueStats {
+  concurrency: number;
+  running: number;
+  queued: number;
+  leased: number;
+  done: number;
+  failed: number;
+  lastFailed?: {
+    id: number;
+    type: string;
+    link_id: number | null;
+    attempts: number;
+    last_error: string;
+    updated_at: string;
+  } | null;
+}
+
+export interface SystemStatus {
+  queue: QueueStats;
+  env: Record<string, string>;
+  uptimeSeconds: number;
+}
+
 export interface AssistantSource {
   id: number;
   link_id?: number;
@@ -209,6 +232,9 @@ export const api = {
     request('/settings/ai', { method: 'PUT', body: JSON.stringify(data) }),
   testAIConfig: (data: Partial<AIConfig>) =>
     request('/settings/ai/test', { method: 'POST', body: JSON.stringify(data) }),
+  getSystemStatus: (): Promise<SystemStatus> => request('/settings/system'),
+  retryFailedJobs: (): Promise<{ ok: boolean; retried: number; queue: QueueStats }> =>
+    request('/settings/system/retry-failed-jobs', { method: 'POST' }),
 
   // Tags
   getTags: () => request('/tags'),

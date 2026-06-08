@@ -80,3 +80,20 @@ test('runJob retries failed jobs until max attempts is reached', async () => wit
   assert.equal(finalFailure.id, first.id);
   assert.match(finalFailure.last_error, /LLM offline/);
 }));
+
+test('retryFailedJobs returns failed jobs to queued', async () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO jobs (type, link_id, payload, status, attempts, max_attempts, locked_at, last_error)
+    VALUES ('file.extractMarkdown', 7, '{}', 'failed', 3, 3, 'stale-lock', 'parser missing')
+  `).run();
+  const queue = createJobQueue({ db, autoStart: false });
+
+  const retried = queue.retryFailedJobs();
+  const row = db.prepare('SELECT status, attempts, locked_at, last_error FROM jobs').get();
+
+  assert.equal(retried, 1);
+  assert.equal(row.status, 'queued');
+  assert.equal(row.attempts, 0);
+  assert.equal(row.locked_at, '');
+  assert.equal(row.last_error, '');
+}));
