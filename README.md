@@ -1,230 +1,297 @@
 # LinkBox
 
-一个为个人知识管理设计的全栈收藏夹应用，支持链接、文本、图片、音频、Office 文件、HTML 网页的统一收集与管理，内置 AI 内容理解能力。
+LinkBox 是一个面向个人知识管理的收藏与文件系统。它把网页链接、文字笔记、图片、录音、Office/PDF/HTML 文件统一收进一个本地优先的知识库，并通过 OpenAI 兼容模型完成正文提取、摘要、学习笔记和问答检索。
 
----
+项目包含三部分：
 
-## 功能概览
+- `client/`：React Web 管理端，用于收藏、搜索、标签、AI 设置、后台任务和用户管理。
+- `mobile/`：Vue 移动端文件助手，用于移动设备上的文件浏览、上传、聊天和分类视图。
+- `server/`：Express + SQLite 后端，提供鉴权、文件处理、AI 调用、持久化后台任务和静态托管。
+
+## 核心功能
 
 ### 内容收集
 
-| 类型 | 说明 |
-|------|------|
-| 链接 | 保存网页链接，自动抓取标题、描述、封面图 |
-| 文本 | 快速记录文字笔记 |
-| 图片 | 上传本地图片，支持实时进度显示 |
-| 音频 | 网页端录音（HTTPS 环境）或 iOS/Android 原生录音（HTTP 环境自动降级） |
-| 文件 | 上传 Office 文档、PDF 等，自动提取正文并生成摘要 |
-| 网页 | 上传 HTML 文件，沙箱 iframe 完整渲染，自动提取文本生成摘要 |
+LinkBox 支持保存多种内容：
 
-### 智能内容处理（AI 自动流水线）
+| 类型 | 能力 |
+| --- | --- |
+| 链接 | 保存 URL，后台抓取标题、描述、封面图，并提取正文 |
+| 文本 | 保存文字笔记，支持标签和 AI 摘要 |
+| 图片 | 上传图片，后台生成图片描述并索引 |
+| 音频 | 上传或录制音频，作为收藏项保存 |
+| 文件 | 上传 PDF、Office、Markdown、文本、HTML 等文件 |
+| HTML | 保存原始 HTML，可在沙箱 iframe 中预览 |
 
-保存链接或上传文件后，后台自动依次执行：
+### AI 处理流水线
 
-**链接：**
-```
-保存 → ① 抓取页面元数据（标题/描述/封面图）
-      → ② 提取正文并转为 Markdown
-      → ③ 本地 AI 生成中文摘要（OpenAI 兼容模型）
-```
+链接和文件进入系统后，会进入 SQLite 持久化任务队列。服务重启后，未完成任务会恢复继续处理。
 
-**Office / PDF / HTML 文件：**
-```
-上传 → ① 提取正文转为 Markdown（HTML 文件另存原始内容用于渲染）
-      → ② 本地 AI 生成中文摘要
-```
+典型流程：
 
-无需手动触发，上传完成后自动处理，卡片上实时显示进度。
+```text
+保存链接
+  -> 抓取网页元数据
+  -> 提取正文 Markdown
+  -> 生成中文摘要
+  -> 建立检索索引
 
-### 文件格式支持
-
-| 格式 | 正文提取 | 图片提取 + AI 视觉描述 | 网页渲染 |
-|------|---------|----------------------|---------|
-| `.docx` | ✅ | ✅ | — |
-| `.pptx` | ✅ | ✅ | — |
-| `.xlsx` | ✅（转 Markdown 表格）| — | — |
-| `.pdf` | ✅ | — | — |
-| `.doc` / `.ppt` / `.xls` | ✅（LibreOffice 转换）| — | — |
-| `.txt` / `.md` | ✅ | — | — |
-| `.html` / `.htm` | ✅（提取纯文本）| — | ✅ |
-
-`.docx` / `.pptx` 内嵌图片会自动提取，并由视觉 AI 生成一句中文描述嵌入正文。
-
-### 文件卡片样式
-
-- 有图片内容：自动提取首图作为卡片缩略图（与链接卡片风格一致）
-- 无图片内容：显示格式专属彩色图标
-  - Word → 蓝色文档图标
-  - Excel → 绿色表格图标
-  - PPT → 橙色演示图标
-  - PDF → 红色代码图标
-  - HTML → 青色地球图标
-
-### Markdown 正文阅读
-
-- 点击「正文」按钮弹出阅读模态框，完整渲染 Markdown（标题、粗体、列表、代码块、表格）
-- 正文内图片通过服务端代理加载，绕过微信公众号等防盗链限制
-- 支持「复制 Markdown 原文」一键导出
-
-### HTML 网页预览
-
-- 上传 `.html` / `.htm` 文件后，点击地球图标在弹窗中完整渲染网页
-- 使用沙箱 `<iframe>`（`sandbox="allow-same-origin allow-scripts"`），隔离脚本执行
-
-### AI 摘要 / 手动触发
-
-- 链接、文本、文件卡片均支持 AI 摘要
-- 每张卡片右上角 ✦ 图标可手动重新生成摘要
-- 摘要以紫色卡片样式展示
-
-### AI 学习笔记
-
-- 对已提取正文的链接或文件，可生成结构化学习笔记
-- 包含：核心结论 → 关键要点 → 概念解释 → 交互式 SVG 知识导图
-- 笔记以 HTML 渲染，可在浏览器中直接阅读
-
-### 标签管理
-
-- 自定义彩色标签，支持多标签批量打标
-- 按标签过滤卡片，标签统计页可查看每个标签下的收藏数量
-
-### 搜索与过滤
-
-- 全文搜索：标题、URL、备注、正文内容四字段联合搜索
-- 按类型（链接/文本/图片/音频/文件）过滤
-- 按日期范围过滤
-- 所有过滤条件可组合使用
-
-### 批量导入
-
-- 粘贴多行 URL，批量导入链接
-- 每条链接独立在后台异步处理元数据，不阻塞 UI
-
-### 多用户
-
-- JWT 鉴权，各用户数据完全隔离
-- 支持注册 / 登录
-
----
-
-## 技术架构
-
-```
-client/          React 18 + TypeScript + Vite + Tailwind CSS
-server/          Express + better-sqlite3（单文件 SQLite）
-server/utils/
-  ├─ itemController.js         收藏项 HTTP 处理器
-  ├─ itemRepository.js         收藏项查询与用户隔离
-  ├─ itemProcessingStatus.js   后台任务状态派生与重试元数据
-  ├─ uploadMiddleware.js       上传中间件与文件过滤
-  ├─ imageProxyService.js      图片代理与防盗链处理
-  ├─ fetchMeta.js              网页元数据抓取（title/description/og:image）
-  ├─ extractContent.js         网页正文提取（微信公众号 + 通用 Readability）
-  ├─ fileToMarkdown.js         Office/PDF/HTML 文件转 Markdown + 图片视觉描述
-  ├─ aiSummarize.js            AI 摘要（OpenAI 兼容接口）
-  ├─ jobQueue.js               SQLite 持久化后台任务队列
-  └─ generateLearningNote.js   AI 学习笔记 + SVG 知识导图生成
-server/routes/
-  ├─ auth.js                   登录 / 注册
-  ├─ links.js                  CRUD + 图片代理 + AI 接口
-  └─ tags.js                   标签管理
+上传文件
+  -> 解析为 Markdown
+  -> 提取图片或表格内容
+  -> 生成摘要
+  -> 建立检索索引
 ```
 
-详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。
+后台任务在管理员设置页可查看状态，包括等待、运行、完成、失败任务数，并支持重试失败任务。
 
-**AI 模型**：默认连接 OpenAI 兼容 API（`/v1/chat/completions`），默认地址 `http://localhost:8000/v1`，默认模型名 `Qwen3.5-4B`。也可在管理员设置页切换 DeepSeek、OpenAI、OpenRouter、Kimi、DashScope、智谱或自定义服务。
+### 文件解析
 
-**数据库**：SQLite 单文件，路径 `server/linkbox.db`，服务启动时自动初始化表结构和迁移。
+支持的主要格式：
 
-**后台任务**：链接抓取、正文提取、文件转换、图片描述和 AI 摘要会写入 SQLite 持久化任务队列；服务重启后会恢复未完成任务。
+| 格式 | 处理方式 |
+| --- | --- |
+| `.docx` | 解包 Office XML，提取段落、表格、图片占位 |
+| `.pptx` | 提取幻灯片文本和图片占位 |
+| `.xlsx` / `.csv` | 转成 Markdown 表格 |
+| `.pdf` | 使用 `pdftotext` 提取文本 |
+| `.doc` / `.ppt` / `.xls` | 可通过 LibreOffice 转换后处理 |
+| `.txt` / `.md` | 直接读取文本 |
+| `.html` / `.htm` | 保存原始 HTML，并提取可检索正文 |
 
-**HTTPS**：检测到 `server/certs/cert.pem` + `key.pem` 时自动以 HTTPS 模式启动，否则 HTTP 模式，无需修改代码。
+### 检索与问答
 
----
+LinkBox 会把标题、摘要、正文切分为 `link_chunks`，用于 Assistant 问答。检索排序会综合标题、摘要、正文命中情况，支持中英文 token，并对来源做去重，减少同一篇内容重复占满结果。
+
+### 管理能力
+
+- 多用户登录与 JWT 鉴权
+- 管理员设置 AI 供应商、模型、API Key、温度等参数
+- 管理员查看系统后台任务状态
+- 管理员用户管理
+- 站点 Cookie 配置，例如知乎等需要登录 Cookie 的内容抓取
+
+## 技术栈
+
+| 模块 | 技术 |
+| --- | --- |
+| Web 端 | React 18、TypeScript、Vite、Tailwind CSS |
+| 移动端 | Vue 3、Vue Router、Vite |
+| 后端 | Express、better-sqlite3、JWT、multer |
+| 数据库 | SQLite 单文件 |
+| AI | OpenAI 兼容 `/v1/chat/completions` 接口 |
+| 文件解析 | Office XML、Readability、Turndown、pdftotext、LibreOffice 可选 |
+| 部署 | Node.js、Docker、systemd、HTTP/HTTPS 自动切换 |
+
+## 目录结构
+
+```text
+LinkBox/
+  client/                  React Web 管理端
+  mobile/                  Vue 移动端文件助手
+  server/
+    routes/
+      auth.js              登录/注册
+      links.js             收藏 API、上传、图片代理、导出
+      assistant.js         AI 问答
+      settings.js          系统和 AI 设置
+      admin.js             管理员用户管理
+      mobileFiles.js       移动端文件 API
+      tags.js              标签管理
+    utils/
+      jobQueue.js          SQLite 持久化任务队列
+      enrichmentJobs.js    链接/图片/文件后台任务注册
+      chunkIndex.js        内容切块、索引、检索排序
+      fileToMarkdown.js    文件转 Markdown 入口
+      officeXmlUtils.js    Word XML 解析
+      spreadsheetXmlUtils.js
+      presentationXmlUtils.js
+      linkCreateService.js
+      linkAiActions.js
+      linkMutationService.js
+      linkExportService.js
+  Dockerfile
+  docker-compose.yml
+```
+
+详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。知识库重构计划见 [docs/markdown-knowledge-base-plan.md](docs/markdown-knowledge-base-plan.md)。
 
 ## 快速开始
 
 ### 环境要求
 
-- Node.js 18+
-- `unzip`（用于解压 Office 文件）
-- `pdftotext`（poppler-utils，用于 PDF 提取）
-- `libreoffice`（用于旧格式 .doc/.xls/.ppt 转换，可选）
-- （可选）本地或远程 OpenAI 兼容模型服务，默认监听 `http://localhost:8000/v1`
+- Node.js 20 推荐，Node.js 18+ 可运行
+- `unzip`：解析 Office 文件
+- `pdftotext`：PDF 文本提取，通常来自 `poppler-utils`
+- `libreoffice`：旧版 `.doc/.xls/.ppt` 转换，可选
+- OpenAI 兼容模型服务，可选但推荐
 
-### 安装与启动
+### 本地构建运行
 
 ```bash
-# 克隆仓库
 git clone https://github.com/wangqioo/LinkBox.git
 cd LinkBox
 
-# 安装服务端依赖
-cd server && npm install
+cd server
+npm install
 
-# 安装客户端依赖并构建
-cd ../client && npm install && npm run build
+cd ../client
+npm install
+npm run build
 
-# 启动服务（构建产物由 Express 静态托管）
-cd ../server && node index.js
+cd ../mobile
+npm install
+npm run build
+
+cd ../server
+npm start
 ```
 
-访问 `http://localhost:3100`（默认端口，可通过 `PORT` 环境变量修改）。
+默认访问：
+
+- Web 管理端：`http://localhost:3100`
+- 移动端：`http://localhost:3100/mobile`
 
 ### 开发模式
 
 ```bash
-# 终端 1：启动后端
-cd server && node --watch index.js
+# 后端
+cd server
+npm run dev
 
-# 终端 2：启动前端开发服务器
-cd client && npm run dev
+# Web 端
+cd client
+npm run dev
+
+# 移动端
+cd mobile
+npm run dev
 ```
 
-前端默认 `http://localhost:5173`，已配置 Vite 代理将 `/api` 转发到后端。
+Web 端默认运行在 `http://localhost:5173`。
 
-### 启用 HTTPS
+## Docker 部署
 
 ```bash
-# 在 server/certs/ 目录生成自签名证书（含 IP SAN）
+docker compose up -d --build
+```
+
+默认 `docker-compose.yml` 使用 host 网络，数据目录挂载到：
+
+```text
+/home/wq/linkbox-data:/data
+```
+
+容器内关键路径：
+
+- 数据库：`/data/linkbox.db`
+- 上传文件：`/data/uploads`
+
+按需修改 `docker-compose.yml` 中的挂载目录、端口和模型地址。
+
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PORT` | `3100` | 服务监听端口 |
+| `JWT_SECRET` | `linkbox-secret` | JWT 签名密钥，生产环境必须修改 |
+| `DATA_DIR` | 空 | 数据目录，Docker 默认 `/data` |
+| `DB_PATH` | `server/linkbox.db` 或 `/data/linkbox.db` | SQLite 文件路径 |
+| `UPLOADS_DIR` | `server/uploads` 或 `/data/uploads` | 上传文件目录 |
+| `LOCAL_LLM_URL` | `http://localhost:8000/v1` | OpenAI 兼容接口地址 |
+| `LOCAL_LLM_MODEL` | `Qwen3.5-4B` | 默认文本模型 |
+| `LOCAL_VISION_MODEL` | `Qwen3.5-4B` | 默认视觉模型 |
+
+AI 配置也可以在 Web 管理端的系统设置中修改，支持 DeepSeek、OpenAI、OpenRouter、Kimi、DashScope、智谱和自定义 OpenAI 兼容服务。
+
+## HTTPS
+
+如果存在以下证书文件，服务会自动以 HTTPS 启动：
+
+```text
+server/certs/cert.pem
+server/certs/key.pem
+```
+
+否则默认以 HTTP 启动。生成本地自签名证书示例：
+
+```bash
 mkdir -p server/certs
 openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
   -keyout server/certs/key.pem \
   -out server/certs/cert.pem \
   -subj "/CN=LinkBox" \
-  -addext "subjectAltName=IP:127.0.0.1,IP:<your-ip>"
+  -addext "subjectAltName=IP:127.0.0.1"
 ```
 
-服务启动时自动检测 `certs/` 目录并切换到 HTTPS 模式。
+## 测试与检查
 
----
+```bash
+# 后端自动化测试
+cd server
+npm test
 
-## 环境变量
+# Web 端生产构建
+cd client
+npm run build
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `PORT` | `3100` | 服务监听端口 |
-| `DATA_DIR` | `server/` | 数据目录，默认随服务端目录 |
-| `DB_PATH` | `server/linkbox.db` | SQLite 数据库路径 |
-| `UPLOADS_DIR` | `server/uploads` | 上传文件目录 |
-| `JWT_SECRET` | `linkbox-dev-secret-change-in-prod` | JWT 签名密钥，生产环境请修改 |
-| `LOCAL_LLM_URL` | `http://localhost:8000/v1` | OpenAI 兼容模型服务地址 |
+# 移动端生产构建
+cd mobile
+npm run build
+```
 
----
+当前后端测试覆盖了队列、链接创建、上传处理、AI 动作、导出、检索排序、Office/XML 解析、表格解析和任务重试等核心路径。
 
-## systemd 服务（Linux 部署参考）
+## 常用 API
+
+所有非公开接口都需要：
+
+```http
+Authorization: Bearer <token>
+```
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/auth/register` | 注册 |
+| `POST` | `/api/auth/login` | 登录 |
+| `GET` | `/api/links` | 收藏列表，支持分页、搜索、类型、标签、日期过滤 |
+| `POST` | `/api/links` | 新增链接 |
+| `POST` | `/api/links/text` | 新增文本 |
+| `POST` | `/api/links/image` | 上传图片 |
+| `POST` | `/api/links/audio` | 上传音频 |
+| `POST` | `/api/links/file` | 上传文件 |
+| `GET` | `/api/links/:id` | 收藏详情 |
+| `PUT` | `/api/links/:id` | 更新收藏 |
+| `DELETE` | `/api/links/:id` | 删除收藏 |
+| `POST` | `/api/links/:id/summarize` | 手动生成摘要 |
+| `POST` | `/api/links/:id/extract` | 手动提取正文 |
+| `POST` | `/api/links/:id/learning-note` | 生成 AI 学习笔记 |
+| `GET` | `/api/links/export/all` | 导出全部数据 |
+| `GET` | `/api/links/export/summaries` | 导出摘要 Markdown |
+| `GET` | `/api/tags` | 标签列表 |
+| `POST` | `/api/tags` | 新建标签 |
+| `GET` | `/api/settings/system/status` | 系统与后台任务状态 |
+| `POST` | `/api/settings/system/retry-failed-jobs` | 重试失败任务 |
+| `GET` | `/api/admin/users` | 管理员用户列表 |
+| `GET` | `/api/mobile/files` | 移动端文件列表 |
+
+`/api/links/image-proxy` 是公开图片代理接口，用于加载微信公众号等防盗链图片。
+
+## systemd 示例
 
 ```ini
-# /etc/systemd/system/linkbox.service
 [Unit]
 Description=LinkBox Server
 After=network.target
 
 [Service]
 Type=simple
-User=<your-user>
-WorkingDirectory=/path/to/LinkBox
-Environment=PORT=8443
+User=linkbox
+WorkingDirectory=/opt/LinkBox
+Environment=PORT=3100
+Environment=DATA_DIR=/var/lib/linkbox
+Environment=DB_PATH=/var/lib/linkbox/linkbox.db
+Environment=UPLOADS_DIR=/var/lib/linkbox/uploads
 ExecStart=/usr/bin/node server/index.js
 Restart=on-failure
 RestartSec=5s
@@ -238,82 +305,6 @@ sudo systemctl enable --now linkbox
 sudo systemctl restart linkbox
 journalctl -u linkbox -f   # 查看日志
 ```
-
----
-
-## 测试与诊断
-
-```bash
-# 后端自动化测试（推荐 Node 22 LTS）
-cd server
-npm.cmd exec --yes --package node@22 -- node --test
-
-# 前端生产构建检查
-cd ../client
-npm.cmd run build
-
-# 移动端生产构建检查
-cd ../mobile
-npm.cmd run build
-
-# 手动检查 AI 设置接口和模型连接
-cd ../server
-node scripts/check-ai-settings.mjs
-```
-
-如果系统 Node 版本已经是兼容的 LTS 版本，也可以在 `server/` 下直接运行 `npm test`。更多隔离冒烟测试步骤见 [docs/development.md](docs/development.md)。
-
----
-
-## API 接口
-
-所有接口需要在请求头中携带 JWT：`Authorization: Bearer <token>`
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/auth/login` | 登录，返回 token |
-| POST | `/api/auth/register` | 注册 |
-| GET | `/api/links` | 获取收藏列表（支持分页、搜索、过滤） |
-| POST | `/api/links` | 新增链接（自动触发后台 AI 流水线） |
-| POST | `/api/links/text` | 新增文本 |
-| POST | `/api/links/image` | 上传图片 |
-| POST | `/api/links/audio` | 上传音频 |
-| POST | `/api/links/file` | 上传文件（Office/PDF/HTML，自动提取正文和摘要） |
-| PUT | `/api/links/:id` | 编辑 |
-| DELETE | `/api/links/:id` | 删除 |
-| POST | `/api/links/:id/summarize` | 手动重新生成摘要 |
-| POST | `/api/links/:id/extract` | 手动重新提取正文 |
-| POST | `/api/links/:id/learning-note` | 生成 AI 学习笔记 |
-| GET | `/api/links/image-proxy` | 图片代理（无需认证） |
-| GET | `/api/tags` | 标签列表 |
-| POST | `/api/tags` | 新建标签 |
-| DELETE | `/api/tags/:id` | 删除标签 |
-
----
-
-## 数据库结构
-
-```sql
-links (
-  id, user_id, type,         -- 基础信息
-  url, title, description,   -- 链接元数据
-  thumbnail,                 -- 封面图 / 文件首图 URL
-  content, content_md,       -- 正文（原始/Markdown）
-  summary,                   -- AI 生成摘要
-  comment,                   -- 用户备注
-  html_note,                 -- AI 学习笔记 HTML / 原始 HTML 文件内容
-  file_path, file_name,      -- 上传文件路径
-  imported_at                -- 保存时间
-)
-
-tags (id, user_id, name, color)
-
-link_tags (link_id, tag_id)
-
-users (id, username, password_hash, created_at)
-```
-
----
 
 ## 许可证
 
