@@ -12,17 +12,13 @@ import { extractPageMarkdown } from '../utils/extractContent.js';
 import { indexLinkContent } from '../utils/chunkIndex.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { enqueueFileProcessing, enqueueImageProcessing, enqueueLinkProcessing } from '../utils/processingJobs.js';
-import {
-  decodeUploadName,
-  describeUploadedFile,
-  initialFileStatus,
-  isHtmlFile,
-  parseTagIds,
-  shouldExtractFile,
-} from '../utils/linkPayloads.js';
+import { decodeUploadName, parseTagIds } from '../utils/linkPayloads.js';
 import { buildLinkListQuery } from '../utils/linkListQuery.js';
 import {
   attachTags as attachLinkTags,
+  createAudioItem,
+  createFileItem,
+  createImageItem,
   createLinkItem,
   createTextItem,
   importLinkItems,
@@ -186,22 +182,24 @@ router.post('/image', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '请上传图片' });
 
   const imagePath = `/uploads/${req.file.filename}`;
+  const diskPath = join(UPLOADS_DIR, req.file.filename);
   const { comment, imported_at, title } = req.body;
   const parsedTags = parseMultipartTags(req, res);
   if (parsedTags === null) return;
 
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at, status)
-    VALUES (?, 'image', '', ?, ?, ?, ?, ?, 'processing')
-  `).run(req.userId, title || decodeUploadName(req.file.originalname), imagePath, imagePath, comment || '', imported_at || new Date().toISOString());
+  const { link, processing } = createImageItem(db, {
+    userId: req.userId,
+    imagePath,
+    diskPath,
+    originalName: decodeUploadName(req.file.originalname),
+    title,
+    comment,
+    tagIds: parsedTags,
+    importedAt: imported_at || new Date().toISOString(),
+  });
+  res.json(link);
 
-  if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
-  const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
-  res.json({ ...link, tags: attachTags(link.id) });
-
-  const linkId = result.lastInsertRowid;
-  const diskPath = join(UPLOADS_DIR, req.file.filename);
-  enqueueImageProcessing(getRuntimeQueue(), { linkId, diskPath });
+  enqueueImageProcessing(getRuntimeQueue(), processing);
 });
 
 // Upload audio
@@ -213,14 +211,15 @@ router.post('/audio', uploadAudio.single('audio'), (req, res) => {
   const parsedTags = parseMultipartTags(req, res);
   if (parsedTags === null) return;
 
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, image_path, comment, imported_at)
-    VALUES (?, 'audio', '', ?, ?, ?, ?)
-  `).run(req.userId, title || '录音', audioPath, comment || '', imported_at || new Date().toISOString());
-
-  if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
-  const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
-  res.json({ ...link, tags: attachTags(link.id) });
+  const { link } = createAudioItem(db, {
+    userId: req.userId,
+    audioPath,
+    title,
+    comment,
+    tagIds: parsedTags,
+    importedAt: imported_at || new Date().toISOString(),
+  });
+  res.json(link);
 });
 
 // Upload file (any format)
@@ -232,31 +231,23 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
   const parsedTags = parseMultipartTags(req, res);
   if (parsedTags === null) return;
 
-  const fileSize = req.file.size;
   const originalName = decodeUploadName(req.file.originalname);
-  const desc = describeUploadedFile(originalName, fileSize);
+  const diskPath = join(UPLOADS_DIR, req.file.filename);
 
-  const initialStatus = initialFileStatus(originalName);
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, description, image_path, comment, imported_at, status)
-    VALUES (?, 'file', '', ?, ?, ?, ?, ?, ?)
-  `).run(req.userId, title || originalName, desc, filePath, comment || '', imported_at || new Date().toISOString(), initialStatus);
+  const { link, processing } = createFileItem(db, {
+    userId: req.userId,
+    filePath,
+    diskPath,
+    originalName,
+    sizeBytes: req.file.size,
+    title,
+    comment,
+    tagIds: parsedTags,
+    importedAt: imported_at || new Date().toISOString(),
+  });
+  res.json(link);
 
-  if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
-  const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
-  res.json({ ...link, tags: attachTags(link.id) });
-
-  // Background: extract content from supported file types
-  if (shouldExtractFile(originalName)) {
-    const linkId = result.lastInsertRowid;
-    const diskPath = join(UPLOADS_DIR, req.file.filename);
-    enqueueFileProcessing(getRuntimeQueue(), {
-      linkId,
-      diskPath,
-      originalName,
-      isHtml: isHtmlFile(originalName),
-    });
-  }
+  if (processing) enqueueFileProcessing(getRuntimeQueue(), processing);
 });
 
 // AI summarize item (calls Spark 1 vLLM)

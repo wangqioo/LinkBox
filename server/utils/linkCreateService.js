@@ -1,3 +1,10 @@
+import {
+  describeUploadedFile,
+  initialFileStatus,
+  isHtmlFile,
+  shouldExtractFile,
+} from './linkPayloads.js';
+
 export function attachTags(db, linkId) {
   return db.prepare('SELECT t.* FROM tags t JOIN link_tags lt ON t.id = lt.tag_id WHERE lt.link_id = ?').all(linkId);
 }
@@ -91,4 +98,83 @@ export function importLinkItems(db, {
   }
 
   return { imported: imported.length, toFetch };
+}
+
+export function createImageItem(db, {
+  userId,
+  imagePath,
+  diskPath,
+  originalName,
+  title = '',
+  comment = '',
+  tagIds = [],
+  importedAt = new Date().toISOString(),
+}) {
+  const result = db.prepare(`
+    INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at, status)
+    VALUES (?, 'image', '', ?, ?, ?, ?, ?, 'processing')
+  `).run(userId, title || originalName, imagePath, imagePath, comment || '', importedAt);
+
+  setTags(db, result.lastInsertRowid, tagIds);
+  const link = getLinkWithTags(db, result.lastInsertRowid);
+
+  return {
+    link,
+    processing: {
+      linkId: result.lastInsertRowid,
+      diskPath,
+    },
+  };
+}
+
+export function createAudioItem(db, {
+  userId,
+  audioPath,
+  title = '',
+  comment = '',
+  tagIds = [],
+  importedAt = new Date().toISOString(),
+}) {
+  const result = db.prepare(`
+    INSERT INTO links (user_id, type, url, title, image_path, comment, imported_at)
+    VALUES (?, 'audio', '', ?, ?, ?, ?)
+  `).run(userId, title || '录音', audioPath, comment || '', importedAt);
+
+  setTags(db, result.lastInsertRowid, tagIds);
+
+  return {
+    link: getLinkWithTags(db, result.lastInsertRowid),
+  };
+}
+
+export function createFileItem(db, {
+  userId,
+  filePath,
+  diskPath,
+  originalName,
+  sizeBytes = 0,
+  title = '',
+  comment = '',
+  tagIds = [],
+  importedAt = new Date().toISOString(),
+}) {
+  const description = describeUploadedFile(originalName, sizeBytes);
+  const status = initialFileStatus(originalName);
+  const result = db.prepare(`
+    INSERT INTO links (user_id, type, url, title, description, image_path, comment, imported_at, status)
+    VALUES (?, 'file', '', ?, ?, ?, ?, ?, ?)
+  `).run(userId, title || originalName, description, filePath, comment || '', importedAt, status);
+
+  setTags(db, result.lastInsertRowid, tagIds);
+  const link = getLinkWithTags(db, result.lastInsertRowid);
+  const processing = shouldExtractFile(originalName)
+    ? {
+        linkId: result.lastInsertRowid,
+        diskPath,
+        originalName,
+        isHtml: isHtmlFile(originalName),
+      }
+    : null;
+
+  return { link, processing };
 }

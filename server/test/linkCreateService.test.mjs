@@ -5,6 +5,9 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import {
+  createAudioItem,
+  createFileItem,
+  createImageItem,
   createLinkItem,
   createTextItem,
   importLinkItems,
@@ -25,6 +28,7 @@ function withDb(fn) {
         thumbnail TEXT DEFAULT '',
         comment TEXT DEFAULT '',
         content TEXT DEFAULT '',
+        image_path TEXT DEFAULT '',
         imported_at TEXT DEFAULT '',
         status TEXT DEFAULT ''
       );
@@ -110,4 +114,81 @@ test('importLinkItems skips blank items and returns enqueue payloads', () => wit
       { url: 'https://b.example', title: 'B', comment: 'c', status: 'processing' },
     ],
   );
+}));
+
+test('createImageItem saves image metadata and returns image processing payload', () => withDb((db) => {
+  const result = createImageItem(db, {
+    userId: 5,
+    imagePath: '/uploads/a.png',
+    diskPath: '/tmp/a.png',
+    originalName: 'photo.png',
+    title: '',
+    comment: 'look',
+    tagIds: [2],
+    importedAt: '2026-06-09T00:00:00.000Z',
+  });
+
+  assert.equal(result.link.type, 'image');
+  assert.equal(result.link.title, 'photo.png');
+  assert.equal(result.link.image_path, '/uploads/a.png');
+  assert.equal(result.link.thumbnail, '/uploads/a.png');
+  assert.equal(result.link.status, 'processing');
+  assert.deepEqual(result.processing, {
+    linkId: result.link.id,
+    diskPath: '/tmp/a.png',
+  });
+}));
+
+test('createAudioItem saves audio uploads without background processing', () => withDb((db) => {
+  const result = createAudioItem(db, {
+    userId: 5,
+    audioPath: '/uploads/a.wav',
+    title: '',
+    comment: '',
+    tagIds: [1],
+    importedAt: '2026-06-09T00:00:00.000Z',
+  });
+
+  assert.equal(result.link.type, 'audio');
+  assert.equal(result.link.title, '录音');
+  assert.equal(result.link.image_path, '/uploads/a.wav');
+  assert.deepEqual(result.link.tags.map(tag => tag.name), ['AI']);
+}));
+
+test('createFileItem saves supported files as processing and returns extraction payload', () => withDb((db) => {
+  const result = createFileItem(db, {
+    userId: 5,
+    filePath: '/uploads/report.html',
+    diskPath: '/tmp/report.html',
+    originalName: 'report.html',
+    sizeBytes: 2048,
+    title: '',
+    comment: '',
+    tagIds: [],
+    importedAt: '2026-06-09T00:00:00.000Z',
+  });
+
+  assert.equal(result.link.type, 'file');
+  assert.equal(result.link.title, 'report.html');
+  assert.equal(result.link.description, 'report.html (2 KB)');
+  assert.equal(result.link.status, 'processing');
+  assert.deepEqual(result.processing, {
+    linkId: result.link.id,
+    diskPath: '/tmp/report.html',
+    originalName: 'report.html',
+    isHtml: true,
+  });
+}));
+
+test('createFileItem saves unsupported files as done without extraction payload', () => withDb((db) => {
+  const result = createFileItem(db, {
+    userId: 5,
+    filePath: '/uploads/archive.zip',
+    diskPath: '/tmp/archive.zip',
+    originalName: 'archive.zip',
+    sizeBytes: 4096,
+  });
+
+  assert.equal(result.link.status, 'done');
+  assert.equal(result.processing, null);
 }));
