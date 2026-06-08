@@ -6,7 +6,6 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { generateLearningNote } from '../utils/generateLearningNote.js';
 import { indexLinkContent } from '../utils/chunkIndex.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { enqueueFileProcessing, enqueueImageProcessing, enqueueLinkProcessing } from '../utils/processingJobs.js';
@@ -22,7 +21,11 @@ import {
   importLinkItems,
   setTags as setLinkTags,
 } from '../utils/linkCreateService.js';
-import { extractLinkContent, summarizeLinkItem } from '../utils/linkAiActions.js';
+import {
+  extractLinkContent,
+  generateLinkLearningNote,
+  summarizeLinkItem,
+} from '../utils/linkAiActions.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -364,22 +367,16 @@ router.get('/export/all', (req, res) => {
 
 // Generate AI learning note HTML from extracted content
 router.post('/:id/learning-note', async (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
-  if (!link) return res.status(404).json({ error: '不存在' });
-  if (!link.content_md) return res.status(400).json({ error: '请先提取正文' });
-
-  // Return cached if exists and not forced refresh
-  if (link.html_note && !req.query.refresh) {
-    return res.json({ html_note: link.html_note });
-  }
-
   try {
-    const html = await generateLearningNote(link.content_md, link.title, link.summary);
-    db.prepare('UPDATE links SET html_note = ? WHERE id = ?').run(html, link.id);
-    res.json({ html_note: html });
+    const result = await generateLinkLearningNote(db, {
+      linkId: req.params.id,
+      userId: req.userId,
+      refresh: Boolean(req.query.refresh),
+    });
+    res.json(result);
   } catch (e) {
     console.error('learning-note error:', e.message);
-    res.status(500).json({ error: '生成失败: ' + e.message });
+    res.status(e.status || 500).json({ error: e.status ? e.message : '生成失败: ' + e.message });
   }
 });
 

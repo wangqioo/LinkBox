@@ -6,6 +6,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import {
   extractLinkContent,
+  generateLinkLearningNote,
   summarizeLinkItem,
 } from '../utils/linkAiActions.js';
 
@@ -23,6 +24,7 @@ async function withDb(fn) {
         description TEXT DEFAULT '',
         content TEXT DEFAULT '',
         content_md TEXT DEFAULT '',
+        html_note TEXT DEFAULT '',
         summary TEXT DEFAULT ''
       );
       CREATE TABLE tags (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT NOT NULL);
@@ -152,5 +154,49 @@ test('extractLinkContent validates item ownership, type, and url', async () => w
   await assert.rejects(
     () => extractLinkContent(db, { linkId: 2, userId: 5 }),
     error => error.status === 400 && error.message === '链接地址为空',
+  );
+}));
+
+test('generateLinkLearningNote returns cached notes unless refresh is requested', async () => withDb(async (db) => {
+  db.prepare("INSERT INTO links (id, user_id, type, title, content_md, html_note) VALUES (1, 5, 'link', 'T', '# MD', '<p>cached</p>')").run();
+  let generated = 0;
+
+  const cached = await generateLinkLearningNote(db, {
+    linkId: 1,
+    userId: 5,
+    refresh: false,
+    generateLearningNote: async () => {
+      generated++;
+      return '<p>fresh</p>';
+    },
+  });
+
+  const refreshed = await generateLinkLearningNote(db, {
+    linkId: 1,
+    userId: 5,
+    refresh: true,
+    generateLearningNote: async (markdown, title, summary) => {
+      generated++;
+      assert.deepEqual({ markdown, title, summary }, { markdown: '# MD', title: 'T', summary: '' });
+      return '<p>fresh</p>';
+    },
+  });
+
+  assert.deepEqual(cached, { html_note: '<p>cached</p>' });
+  assert.deepEqual(refreshed, { html_note: '<p>fresh</p>' });
+  assert.equal(generated, 1);
+  assert.equal(db.prepare('SELECT html_note FROM links WHERE id = 1').get().html_note, '<p>fresh</p>');
+}));
+
+test('generateLinkLearningNote validates item and extracted content', async () => withDb(async (db) => {
+  db.prepare("INSERT INTO links (id, user_id, type, content_md) VALUES (1, 5, 'link', '')").run();
+
+  await assert.rejects(
+    () => generateLinkLearningNote(db, { linkId: 404, userId: 5 }),
+    error => error.status === 404 && error.message === '不存在',
+  );
+  await assert.rejects(
+    () => generateLinkLearningNote(db, { linkId: 1, userId: 5 }),
+    error => error.status === 400 && error.message === '请先提取正文',
   );
 }));

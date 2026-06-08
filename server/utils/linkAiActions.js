@@ -4,6 +4,7 @@ import {
 } from './aiSummarize.js';
 import { indexLinkContent as defaultIndexLinkContent } from './chunkIndex.js';
 import { extractPageMarkdown as defaultExtractPageMarkdown } from './extractContent.js';
+import { generateLearningNote as defaultGenerateLearningNote } from './generateLearningNote.js';
 import { attachTags } from './linkCreateService.js';
 
 export class LinkActionError extends Error {
@@ -69,4 +70,23 @@ export async function extractLinkContent(db, {
       wordCount: result.wordCount,
     },
   };
+}
+
+export async function generateLinkLearningNote(db, {
+  linkId,
+  userId,
+  refresh = false,
+  generateLearningNote = defaultGenerateLearningNote,
+}) {
+  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(linkId, userId);
+  if (!link) throw new LinkActionError(404, '不存在');
+  if (!link.content_md) throw new LinkActionError(400, '请先提取正文');
+
+  if (link.html_note && !refresh) {
+    return { html_note: link.html_note };
+  }
+
+  const html = await generateLearningNote(link.content_md, link.title, link.summary);
+  db.prepare('UPDATE links SET html_note = ? WHERE id = ?').run(html, link.id);
+  return { html_note: html };
 }
