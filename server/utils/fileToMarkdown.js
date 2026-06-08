@@ -15,6 +15,12 @@ import {
   parseImageRelationships,
   wordTableToMarkdown,
 } from './officeXmlUtils.js';
+import {
+  parseSharedStrings,
+  parseSheetNames,
+  sheetRowsToMarkdown,
+  worksheetRows,
+} from './spreadsheetXmlUtils.js';
 
 const TMP_DIR = '/tmp/file2md';
 mkdirSync(TMP_DIR, { recursive: true });
@@ -262,18 +268,12 @@ function extractXlsx(filePath) {
     const ssPath = join(workDir, 'xl/sharedStrings.xml');
     try {
       const ssXml = readFileSync(ssPath, 'utf-8');
-      const regex = /<t[^>]*>([^<]*)<\/t>/g;
-      let m;
-      while ((m = regex.exec(ssXml)) !== null) strings.push(decodeXmlEntities(m[1]));
+      strings.push(...parseSharedStrings(ssXml));
     } catch {}
     const sheetNames = [];
     try {
       const wbXml = readFileSync(join(workDir, 'xl/workbook.xml'), 'utf-8');
-      const sheetTagRegex = /<sheet[^>]+name="([^"]*)"[^>]*\/?>|<sheet[^>]+name="([^"]*)"[^>]*>/g;
-      let nm;
-      while ((nm = sheetTagRegex.exec(wbXml)) !== null) {
-        sheetNames.push(decodeXmlEntities(nm[1] || nm[2]));
-      }
+      sheetNames.push(...parseSheetNames(wbXml));
     } catch {}
     const sheetsDir = join(workDir, 'xl/worksheets');
     const sheetFiles = readdirSync(sheetsDir)
@@ -283,40 +283,10 @@ function extractXlsx(filePath) {
     for (let si = 0; si < sheetFiles.length; si++) {
       const sf = sheetFiles[si];
       const xml = readFileSync(join(sheetsDir, sf), 'utf-8');
-      const rows = [];
-      const rowRegex = /<row[^>]*>([\s\S]*?)<\/row>/g;
-      let rowMatch;
-      while ((rowMatch = rowRegex.exec(xml)) !== null) {
-        const cells = [];
-        const cellRegex = /<c([^>]*)>([\s\S]*?)<\/c>/g;
-        let cellMatch;
-        while ((cellMatch = cellRegex.exec(rowMatch[1])) !== null) {
-          const attrs = cellMatch[1];
-          const inner = cellMatch[2];
-          if (/t="inlineStr"/.test(attrs)) {
-            const tMatch = inner.match(/<t[^>]*>([^<]*)<\/t>/);
-            cells.push(tMatch ? decodeXmlEntities(tMatch[1]) : '');
-          } else if (/t="s"/.test(attrs)) {
-            const vMatch = inner.match(/<v>([^<]*)<\/v>/);
-            cells.push(vMatch ? (strings[parseInt(vMatch[1])] || '') : '');
-          } else {
-            const vMatch = inner.match(/<v>([^<]*)<\/v>/);
-            cells.push(vMatch ? vMatch[1] : '');
-          }
-        }
-        if (cells.some(c => c)) rows.push(cells);
-      }
+      const rows = worksheetRows(xml, strings);
       if (rows.length) {
         const sheetTitle = sheetNames[si] || ('Sheet ' + (si + 1));
-        const maxCols = Math.max(...rows.map(r => r.length));
-        const padded = rows.map(r => {
-          while (r.length < maxCols) r.push('');
-          return r;
-        });
-        const header = '| ' + padded[0].join(' | ') + ' |';
-        const sep = '| ' + padded[0].map(() => '---').join(' | ') + ' |';
-        const body = padded.slice(1).map(r => '| ' + r.join(' | ') + ' |').join('\n');
-        sheets.push('### ' + sheetTitle + '\n\n' + header + '\n' + sep + '\n' + body);
+        sheets.push(sheetRowsToMarkdown(rows, sheetTitle));
       }
     }
     return sheets.join('\n\n---\n\n');
