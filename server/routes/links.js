@@ -19,13 +19,13 @@ import {
   createLinkItem,
   createTextItem,
   importLinkItems,
-  setTags as setLinkTags,
 } from '../utils/linkCreateService.js';
 import {
   extractLinkContent,
   generateLinkLearningNote,
   summarizeLinkItem,
 } from '../utils/linkAiActions.js';
+import { deleteLinkItem, updateLinkItem } from '../utils/linkMutationService.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -107,10 +107,6 @@ router.use(authMiddleware);
 
 function attachTags(linkId) {
   return attachLinkTags(db, linkId);
-}
-
-function setTags(linkId, tagIds) {
-  return setLinkTags(db, linkId, tagIds);
 }
 
 function parseMultipartTags(req, res) {
@@ -283,25 +279,33 @@ router.post("/:id/extract", async (req, res) => {
 
 // Update item
 router.put('/:id', (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
-  if (!link) return res.status(404).json({ error: '不存在' });
-
   const { title, comment, content, tag_ids, imported_at } = req.body;
-  db.prepare(`
-    UPDATE links SET title = COALESCE(?, title), comment = COALESCE(?, comment),
-    content = COALESCE(?, content), imported_at = COALESCE(?, imported_at) WHERE id = ?
-  `).run(title ?? null, comment ?? null, content ?? null, imported_at ?? null, req.params.id);
-
-  if (tag_ids !== undefined) setTags(req.params.id, tag_ids);
-  const updated = db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id);
-  res.json({ ...updated, tags: attachTags(updated.id) });
+  try {
+    const { link } = updateLinkItem(db, {
+      linkId: req.params.id,
+      userId: req.userId,
+      title,
+      comment,
+      content,
+      importedAt: imported_at,
+      tagIds: tag_ids,
+    });
+    res.json(link);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.status ? err.message : '更新失败: ' + err.message });
+  }
 });
 
 // Delete item
 router.delete('/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM links WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
-  if (result.changes === 0) return res.status(404).json({ error: '不存在' });
-  res.json({ ok: true });
+  try {
+    res.json(deleteLinkItem(db, {
+      linkId: req.params.id,
+      userId: req.userId,
+    }));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.status ? err.message : '删除失败: ' + err.message });
+  }
 });
 
 // Batch import links (saves immediately, fetches metadata in background)
