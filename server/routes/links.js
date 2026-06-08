@@ -21,6 +21,13 @@ import {
   shouldExtractFile,
 } from '../utils/linkPayloads.js';
 import { buildLinkListQuery } from '../utils/linkListQuery.js';
+import {
+  attachTags as attachLinkTags,
+  createLinkItem,
+  createTextItem,
+  importLinkItems,
+  setTags as setLinkTags,
+} from '../utils/linkCreateService.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -101,15 +108,11 @@ router.get('/image-proxy', async (req, res) => {
 router.use(authMiddleware);
 
 function attachTags(linkId) {
-  return db.prepare('SELECT t.* FROM tags t JOIN link_tags lt ON t.id = lt.tag_id WHERE lt.link_id = ?').all(linkId);
+  return attachLinkTags(db, linkId);
 }
 
 function setTags(linkId, tagIds) {
-  db.prepare('DELETE FROM link_tags WHERE link_id = ?').run(linkId);
-  if (tagIds?.length) {
-    const stmt = db.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)');
-    for (const tid of tagIds) stmt.run(linkId, tid);
-  }
+  return setLinkTags(db, linkId, tagIds);
 }
 
 function parseMultipartTags(req, res) {
@@ -148,17 +151,17 @@ router.post('/', (req, res) => {
   const { url, title, comment, tag_ids, imported_at } = req.body;
   if (!url) return res.status(400).json({ error: 'URL 不能为空' });
 
-  // Save immediately with URL as fallback title
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at, status)
-    VALUES (?, 'link', ?, ?, '', '', ?, ?, 'processing')
-  `).run(req.userId, url, title || url, comment || '', imported_at || new Date().toISOString());
+  const { link, processing } = createLinkItem(db, {
+    userId: req.userId,
+    url,
+    title,
+    comment,
+    tagIds: tag_ids,
+    importedAt: imported_at || new Date().toISOString(),
+  });
+  res.json(link);
 
-  if (tag_ids?.length) setTags(result.lastInsertRowid, tag_ids);
-  const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
-  res.json({ ...link, tags: attachTags(link.id) });
-
-  enqueueLinkProcessing(getRuntimeQueue(), { linkId: result.lastInsertRowid, url, title });
+  enqueueLinkProcessing(getRuntimeQueue(), processing);
 });
 
 // Add text note
@@ -166,15 +169,16 @@ router.post('/text', (req, res) => {
   const { title, content, comment, tag_ids, imported_at } = req.body;
   if (!content && !title) return res.status(400).json({ error: '标题或内容不能为空' });
 
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, content, comment, imported_at)
-    VALUES (?, 'text', '', ?, ?, ?, ?)
-  `).run(req.userId, title || '', content || '', comment || '', imported_at || new Date().toISOString());
-
-  if (tag_ids?.length) setTags(result.lastInsertRowid, tag_ids);
-  indexLinkContent(result.lastInsertRowid);
-  const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
-  res.json({ ...link, tags: attachTags(link.id) });
+  const { link } = createTextItem(db, {
+    userId: req.userId,
+    title,
+    content,
+    comment,
+    tagIds: tag_ids,
+    importedAt: imported_at || new Date().toISOString(),
+    indexLink: indexLinkContent,
+  });
+  res.json(link);
 });
 
 // Upload image
@@ -336,20 +340,11 @@ router.post('/import', (req, res) => {
   const { links } = req.body;
   if (!Array.isArray(links)) return res.status(400).json({ error: '请提供链接数组' });
 
-  const imported = [];
-  const toFetch = [];
-  for (const item of links) {
-    const url = typeof item === 'string' ? item : item.url;
-    if (!url) continue;
-    const explicitTitle = typeof item === 'string' ? '' : item.title;
-    const result = db.prepare(`
-      INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at, status)
-      VALUES (?, 'link', ?, ?, '', '', ?, ?, 'processing')
-    `).run(req.userId, url, explicitTitle || url, item.comment || '', item.imported_at || new Date().toISOString());
-    imported.push(result.lastInsertRowid);
-    toFetch.push({ id: result.lastInsertRowid, url, title: explicitTitle || '' });
-  }
-  res.json({ imported: imported.length });
+  const { imported, toFetch } = importLinkItems(db, {
+    userId: req.userId,
+    items: links,
+  });
+  res.json({ imported });
 
   for (const { id, url, title } of toFetch) {
     enqueueLinkProcessing(getRuntimeQueue(), { linkId: id, url, title });

@@ -1,0 +1,94 @@
+export function attachTags(db, linkId) {
+  return db.prepare('SELECT t.* FROM tags t JOIN link_tags lt ON t.id = lt.tag_id WHERE lt.link_id = ?').all(linkId);
+}
+
+export function setTags(db, linkId, tagIds) {
+  db.prepare('DELETE FROM link_tags WHERE link_id = ?').run(linkId);
+  if (tagIds?.length) {
+    const stmt = db.prepare('INSERT OR IGNORE INTO link_tags (link_id, tag_id) VALUES (?, ?)');
+    for (const tagId of tagIds) stmt.run(linkId, tagId);
+  }
+}
+
+export function getLinkWithTags(db, linkId) {
+  const link = db.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
+  return link ? { ...link, tags: attachTags(db, link.id) } : null;
+}
+
+export function createLinkItem(db, {
+  userId,
+  url,
+  title = '',
+  comment = '',
+  tagIds = [],
+  importedAt = new Date().toISOString(),
+}) {
+  const result = db.prepare(`
+    INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at, status)
+    VALUES (?, 'link', ?, ?, '', '', ?, ?, 'processing')
+  `).run(userId, url, title || url, comment || '', importedAt);
+
+  setTags(db, result.lastInsertRowid, tagIds);
+  const link = getLinkWithTags(db, result.lastInsertRowid);
+
+  return {
+    link,
+    processing: {
+      linkId: result.lastInsertRowid,
+      url,
+      title,
+    },
+  };
+}
+
+export function createTextItem(db, {
+  userId,
+  title = '',
+  content = '',
+  comment = '',
+  tagIds = [],
+  importedAt = new Date().toISOString(),
+  indexLink = () => {},
+}) {
+  const result = db.prepare(`
+    INSERT INTO links (user_id, type, url, title, content, comment, imported_at)
+    VALUES (?, 'text', '', ?, ?, ?, ?)
+  `).run(userId, title || '', content || '', comment || '', importedAt);
+
+  setTags(db, result.lastInsertRowid, tagIds);
+  indexLink(result.lastInsertRowid);
+
+  return {
+    link: getLinkWithTags(db, result.lastInsertRowid),
+  };
+}
+
+export function importLinkItems(db, {
+  userId,
+  items,
+}) {
+  const imported = [];
+  const toFetch = [];
+
+  for (const item of items) {
+    const url = typeof item === 'string' ? item : item.url;
+    if (!url) continue;
+
+    const explicitTitle = typeof item === 'string' ? '' : item.title;
+    const result = db.prepare(`
+      INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at, status)
+      VALUES (?, 'link', ?, ?, '', '', ?, ?, 'processing')
+    `).run(
+      userId,
+      url,
+      explicitTitle || url,
+      typeof item === 'string' ? '' : item.comment || '',
+      typeof item === 'string' ? new Date().toISOString() : item.imported_at || new Date().toISOString(),
+    );
+
+    imported.push(result.lastInsertRowid);
+    toFetch.push({ id: result.lastInsertRowid, url, title: explicitTitle || '' });
+  }
+
+  return { imported: imported.length, toFetch };
+}
