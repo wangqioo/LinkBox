@@ -1,55 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Plus, Loader2, Clipboard, Check, Link2, Image, FileText, Mic, Paperclip } from 'lucide-react';
+import { X, Loader2, Clipboard, Check, Image, Paperclip } from 'lucide-react';
 import VoiceInput, { speechSupported } from './VoiceInput';
 import AudioRecorder from './AudioRecorder';
 import type { UploadProgress } from '../api/client';
+import AddLinkTabs from './AddLinkTabs';
+import UploadProgressBar from './UploadProgressBar';
+import type { AddLinkModalProps, ContentType } from './addLinkModalTypes';
+import { formatSize, isUrl, nowLocal, titleFromUploadName } from './addLinkModalUtils';
 
-interface Tag { id: number; name: string; color: string; }
-
-type ContentType = 'link' | 'image' | 'text' | 'audio' | 'file';
-
-interface Props {
-  open: boolean;
-  tags: Tag[];
-  onClose: () => void;
-  onAddLink: (data: { url: string; comment?: string; tag_ids?: number[]; imported_at?: string }) => Promise<void>;
-  onAddText: (data: { title: string; content: string; comment?: string; tag_ids?: number[]; imported_at?: string }) => Promise<void>;
-  onAddImage: (formData: FormData, onProgress?: (p: UploadProgress) => void) => Promise<void>;
-  onAddAudio: (formData: FormData, onProgress?: (p: UploadProgress) => void) => Promise<void>;
-  onAddFile: (formData: FormData, onProgress?: (p: UploadProgress) => void) => Promise<void>;
-}
-
-function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
-  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
-  return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function isUrl(text: string) {
-  return /^https?:\/\/.+/i.test(text.trim());
-}
-
-function nowLocal() {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-const TABS: { key: ContentType; label: string; icon: typeof Link2 }[] = [
-  { key: 'link', label: '链接', icon: Link2 },
-  { key: 'image', label: '图片', icon: Image },
-  { key: 'text', label: '文字', icon: FileText },
-  { key: 'audio', label: '录音', icon: Mic },
-  { key: 'file', label: '文件', icon: Paperclip },
-];
-
-export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText, onAddImage, onAddAudio, onAddFile }: Props) {
+export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText, onAddImage, onAddAudio, onAddFile }: AddLinkModalProps) {
   const [type, setType] = useState<ContentType>('link');
   // Link fields
   const [url, setUrl] = useState('');
@@ -188,9 +147,8 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
     if (file) {
       setImageFile(file);
       // Don't auto-fill title with hash-like filenames from mobile photo library
-      const nameNoExt = file.name.replace(/\.[^.]+$/, '');
-      const isHash = /^[0-9a-f]{16,}$/i.test(nameNoExt) || /^IMG_\d+$/i.test(nameNoExt);
-      if (!imageTitle && !isHash) setImageTitle(nameNoExt);
+      const title = titleFromUploadName(file.name);
+      if (!imageTitle && title) setImageTitle(title);
     }
   };
 
@@ -203,21 +161,7 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
           <button onClick={onClose} className="btn-ghost p-1.5"><X className="w-4 h-4" /></button>
         </div>
 
-        {/* Type tabs */}
-        <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg mb-4">
-          {TABS.map(tab => (
-            <button key={tab.key} type="button"
-              onClick={() => setType(tab.key)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                type === tab.key
-                  ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-gray-100'
-                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}>
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <AddLinkTabs type={type} onChange={setType} />
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           {/* Link input */}
@@ -316,9 +260,7 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{fileData.name}</p>
                       <p className="text-xs text-gray-400">
-                        {fileData.size > 1048576
-                          ? (fileData.size / 1048576).toFixed(1) + ' MB'
-                          : (fileData.size / 1024).toFixed(0) + ' KB'}
+                        {formatSize(fileData.size)}
                       </p>
                     </div>
                     <button type="button" onClick={() => setFileData(null)}
@@ -399,19 +341,7 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
           </div>
 
           {/* Upload progress bar */}
-          {loading && uploadProgress && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>{formatSize(uploadProgress.loaded)} / {formatSize(uploadProgress.total)}</span>
-                <span>{formatSpeed(uploadProgress.speed)}</span>
-              </div>
-              <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-500 rounded-full transition-all duration-300"
-                  style={{ width: `${uploadProgress.percent}%` }} />
-              </div>
-              <p className="text-xs text-center text-gray-400">{uploadProgress.percent}%</p>
-            </div>
-          )}
+          {loading && uploadProgress && <UploadProgressBar progress={uploadProgress} />}
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-2 pt-2">
