@@ -2,7 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { callAIChat, streamAIChat } from '../utils/aiConfig.js';
-import { indexAllMissingChunks, searchRelevantChunks, tokenizeQuery } from '../utils/chunkIndex.js';
+import { indexAllMissingChunks, scoreTextFields, searchRelevantChunks, tokenizeQuery } from '../utils/chunkIndex.js';
 
 const router = Router();
 const MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
@@ -40,20 +40,14 @@ function tokenize(text) {
 }
 
 function scoreItem(item, tokens) {
-  const title = String(item.title || '').toLowerCase();
-  const summary = String(item.summary || '').toLowerCase();
-  const comment = String(item.comment || '').toLowerCase();
-  const url = String(item.url || '').toLowerCase();
-  const content = String(item.content_md || item.content || '').toLowerCase();
-  let score = 0;
-
-  for (const token of tokens) {
-    if (title.includes(token)) score += 8;
-    if (summary.includes(token)) score += 5;
-    if (comment.includes(token)) score += 4;
-    if (url.includes(token)) score += 3;
-    if (content.includes(token)) score += 1;
-  }
+  let score = scoreTextFields(item, tokens, {
+    title: 8,
+    summary: 5,
+    comment: 4,
+    url: 3,
+    content_md: 1,
+    content: 1,
+  });
 
   if (item.summary) score += 1;
   if (item.content_md) score += 1;

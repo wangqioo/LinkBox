@@ -7,8 +7,20 @@ const MAX_CHUNKS_PER_LINK = 80;
 export function tokenizeQuery(text) {
   const normalized = String(text || '').toLowerCase();
   const latin = normalized.match(/[a-z0-9_\-]{2,}/g) || [];
-  const cjk = normalized.match(/[\u4e00-\u9fa5]{1,2}/g) || [];
-  return [...new Set([...latin, ...cjk])].slice(0, 80);
+  const cjkPhrases = normalized.match(/[\u4e00-\u9fa5]{2,}/g) || [];
+  const cjk = [];
+
+  for (const phrase of cjkPhrases) {
+    if (phrase.length <= 6) cjk.push(phrase);
+    for (let i = 0; i < phrase.length - 1; i += 1) {
+      cjk.push(phrase.slice(i, i + 2));
+    }
+    for (let i = 0; i < phrase.length - 2; i += 1) {
+      cjk.push(phrase.slice(i, i + 3));
+    }
+  }
+
+  return [...new Set([...latin, ...cjk])].slice(0, 120);
 }
 
 function normalizeText(text) {
@@ -88,6 +100,27 @@ export function indexAllMissingChunks() {
   return { links: rows.length, chunks: total };
 }
 
+function tokenWeight(token) {
+  if (/^[\u4e00-\u9fa5]{4,}$/.test(token)) return 4;
+  if (/^[\u4e00-\u9fa5]{3}$/.test(token)) return 2;
+  if (/^[a-z0-9_\-]{4,}$/.test(token)) return 2;
+  return 1;
+}
+
+export function scoreTextFields(fields, queryOrTokens, weights = {}) {
+  const tokens = Array.isArray(queryOrTokens) ? queryOrTokens : tokenizeQuery(queryOrTokens);
+  let score = 0;
+  for (const token of tokens) {
+    const tokenScore = tokenWeight(token);
+    for (const [field, fieldWeight] of Object.entries(weights)) {
+      if (String(fields[field] || '').toLowerCase().includes(token)) {
+        score += fieldWeight * tokenScore;
+      }
+    }
+  }
+  return score;
+}
+
 function scoreChunk(row, tokens) {
   const title = String(row.title || '').toLowerCase();
   const summary = String(row.summary || '').toLowerCase();
@@ -95,12 +128,26 @@ function scoreChunk(row, tokens) {
   let score = 0;
 
   for (const token of tokens) {
-    if (title.includes(token)) score += 12;
-    if (summary.includes(token)) score += 8;
-    if (chunk.includes(token)) score += 3;
+    const weight = tokenWeight(token);
+    if (title.includes(token)) score += 16 * weight;
+    if (summary.includes(token)) score += 10 * weight;
+    if (chunk.includes(token)) score += 2 * weight;
   }
 
   return score;
+}
+
+export function scoreChunkForQuery(row, query) {
+  return scoreChunk(row, tokenizeQuery(query));
+}
+
+export function rankChunkRows(rows, { query, limit = 12 }) {
+  const tokens = tokenizeQuery(query);
+  return rows
+    .map(row => ({ ...row, score: scoreChunk(row, tokens) }))
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score || String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
+    .slice(0, limit);
 }
 
 export function searchRelevantChunks({ userId, query, task = 'ask', limit = 12 }) {
@@ -116,7 +163,6 @@ export function searchRelevantChunks({ userId, query, task = 'ask', limit = 12 }
     `).all(userId, limit);
   }
 
-  const tokens = tokenizeQuery(query);
   const rows = db.prepare(`
     SELECT c.id AS chunk_id, c.chunk_index, c.text AS chunk_text,
            l.id, l.type, l.url, l.title, l.summary, l.imported_at
@@ -127,11 +173,7 @@ export function searchRelevantChunks({ userId, query, task = 'ask', limit = 12 }
     LIMIT 2000
   `).all(userId);
 
-  const ranked = rows
-    .map(row => ({ ...row, score: scoreChunk(row, tokens) }))
-    .filter(row => row.score > 0)
-    .sort((a, b) => b.score - a.score || String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
-    .slice(0, limit);
+  const ranked = rankChunkRows(rows, { query, limit });
 
   if (ranked.length || task === 'ask') return ranked;
   return rows.slice(0, limit);
