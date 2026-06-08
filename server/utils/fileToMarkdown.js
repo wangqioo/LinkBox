@@ -21,6 +21,10 @@ import {
   sheetRowsToMarkdown,
   worksheetRows,
 } from './spreadsheetXmlUtils.js';
+import {
+  presentationParagraphLines,
+  slideToMarkdown,
+} from './presentationXmlUtils.js';
 
 const TMP_DIR = '/tmp/file2md';
 mkdirSync(TMP_DIR, { recursive: true });
@@ -208,14 +212,7 @@ function extractPptxRaw(filePath, uploadsDir) {
 
     for (let si = 0; si < slideFiles.length; si++) {
       const xml = readFileSync(join(slidesDir, slideFiles[si]), 'utf-8');
-      const paragraphs = xml.split(/<\/a:p>/);
-      const lines = paragraphs.map(p => {
-        const texts = [];
-        const regex = /<a:t>([^<]*)<\/a:t>/g;
-        let m;
-        while ((m = regex.exec(p)) !== null) texts.push(m[1]);
-        return decodeXmlEntities(texts.join(''));
-      }).filter(l => l.trim());
+      const lines = presentationParagraphLines(xml);
 
       // Extract images from this slide
       const imageLines = [];
@@ -243,12 +240,8 @@ function extractPptxRaw(filePath, uploadsDir) {
         }
       }
 
-      if (lines.length || imageLines.length) {
-        const heading = `### Slide ${si + 1}${lines.length ? ': ' + lines[0] : ''}`;
-        const body = lines.slice(1).map(l => '- ' + l).join('\n');
-        const imgMd = imageLines.length ? '\n\n' + imageLines.join('\n\n') : '';
-        slides.push(heading + (body ? '\n\n' + body : '') + imgMd);
-      }
+      const slideMarkdown = slideToMarkdown(si + 1, lines, imageLines);
+      if (slideMarkdown) slides.push(slideMarkdown);
     }
     return { markdown: slides.join('\n\n---\n\n'), images };
   } finally {
