@@ -3,29 +3,16 @@ import { api, type UploadProgress } from '../api/client';
 import LinkCard from '../components/LinkCard';
 import AddLinkModal from '../components/AddLinkModal';
 import ImportModal from '../components/ImportModal';
-import { Plus, Search, Upload, Download, Filter, X, Loader2, Link2, Image, FileText, Mic, Paperclip, CheckSquare, Square, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Upload, Download, Loader2, CheckSquare, Square } from 'lucide-react';
+import LinksFilters from './LinksFilters';
+import LinksPagination from './LinksPagination';
+import type { LinkPageItem, LinkPageTag } from './linksPageTypes';
 
 const PAGE_SIZE = 50;
 
-interface Tag { id: number; name: string; color: string; link_count: number; }
-interface LinkItem {
-  id: number; type?: string; url: string; title: string; description: string;
-  thumbnail: string; comment: string; content?: string; image_path?: string;
-  imported_at: string; tags: Tag[];
-}
-
-const TYPE_FILTERS = [
-  { key: '', label: '全部', icon: null },
-  { key: 'link', label: '链接', icon: Link2 },
-  { key: 'image', label: '图片', icon: Image },
-  { key: 'text', label: '文字', icon: FileText },
-  { key: 'audio', label: '录音', icon: Mic },
-  { key: 'file', label: '文件', icon: Paperclip },
-];
-
 export default function LinksPage() {
-  const [links, setLinks] = useState<LinkItem[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
+  const [links, setLinks] = useState<LinkPageItem[]>([]);
+  const [tags, setTags] = useState<LinkPageTag[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -255,79 +242,23 @@ export default function LinksPage() {
         </div>
       </div>
 
-      {/* Search & Filter bar */}
-      <div className="card p-3 mb-4 space-y-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input className="input pl-9" placeholder="搜索标题、链接、评论..."
-              value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <button onClick={() => setShowFilters(!showFilters)}
-            className={`btn-secondary relative ${hasFilters ? 'text-indigo-600' : ''}`}>
-            <Filter className="w-4 h-4" />
-            {hasFilters && <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-600 rounded-full" />}
-          </button>
-        </div>
-
-        {/* Type filter pills - always visible */}
-        <div className="flex gap-1.5">
-          {TYPE_FILTERS.map(tf => (
-            <button key={tf.key} onClick={() => setActiveType(tf.key)}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                activeType === tf.key
-                  ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}>
-              {tf.icon && <tf.icon className="w-3 h-3" />}
-              {tf.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Expanded filters */}
-        {showFilters && (
-          <div className="space-y-3 pt-2 border-t">
-            {/* Tag filter */}
-            <div>
-              <label className="text-xs text-gray-500 mb-1.5 block">按标签筛选</label>
-              <div className="flex flex-wrap gap-1.5">
-                <button onClick={() => setActiveTag('')}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    !activeTag ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-transparent' : 'border-gray-200 dark:border-gray-700'
-                  }`}>
-                  全部
-                </button>
-                {tags.map(tag => (
-                  <button key={tag.id} onClick={() => setActiveTag(String(tag.id))}
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      activeTag === String(tag.id) ? 'border-transparent text-white' : 'border-gray-200 dark:border-gray-700'
-                    }`}
-                    style={activeTag === String(tag.id) ? { backgroundColor: tag.color } : {}}>
-                    {tag.name} ({tag.link_count})
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* Date range */}
-            <div className="flex flex-col sm:flex-row gap-2">
-              <div className="flex-1">
-                <label className="text-xs text-gray-500 mb-1 block">开始日期</label>
-                <input type="date" className="input text-sm" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-              </div>
-              <div className="flex-1">
-                <label className="text-xs text-gray-500 mb-1 block">结束日期</label>
-                <input type="date" className="input text-sm" value={dateTo} onChange={e => setDateTo(e.target.value)} />
-              </div>
-              {hasFilters && (
-                <button onClick={clearFilters} className="btn-ghost text-xs self-end text-red-500">
-                  <X className="w-3 h-3" /> 清除筛选
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      <LinksFilters
+        search={search}
+        onSearchChange={setSearch}
+        activeType={activeType}
+        onTypeChange={setActiveType}
+        showFilters={showFilters}
+        onToggleFilters={() => setShowFilters(!showFilters)}
+        hasFilters={hasFilters}
+        tags={tags}
+        activeTag={activeTag}
+        onTagChange={setActiveTag}
+        dateFrom={dateFrom}
+        onDateFromChange={setDateFrom}
+        dateTo={dateTo}
+        onDateToChange={setDateTo}
+        onClearFilters={clearFilters}
+      />
 
       {/* Selection toolbar - visible only when filter panel is open */}
       {showFilters && links.length > 0 && (
@@ -367,42 +298,7 @@ export default function LinksPage() {
         </div>
       )}
 
-      {/* Pagination */}
-      {total > PAGE_SIZE && (
-        <div className="flex items-center justify-center gap-2 mt-6">
-          <button
-            onClick={() => { setPage(p => Math.max(1, p - 1)); window.scrollTo(0, 0); }}
-            disabled={page === 1}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm border border-gray-200 dark:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-            <ChevronLeft className="w-4 h-4" /> 上一页
-          </button>
-          <div className="flex items-center gap-1">
-            {Array.from({ length: Math.ceil(total / PAGE_SIZE) }, (_, i) => i + 1)
-              .filter(p => p === 1 || p === Math.ceil(total / PAGE_SIZE) || Math.abs(p - page) <= 2)
-              .reduce<(number | '...')[]>((acc, p, idx, arr) => {
-                if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('...');
-                acc.push(p);
-                return acc;
-              }, [])
-              .map((p, idx) =>
-                p === '...'
-                  ? <span key={`ellipsis-${idx}`} className="px-1 text-gray-400 text-sm">…</span>
-                  : <button key={p} onClick={() => { setPage(p as number); window.scrollTo(0, 0); }}
-                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
-                        page === p
-                          ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
-                      }`}>{p}</button>
-              )}
-          </div>
-          <button
-            onClick={() => { setPage(p => Math.min(Math.ceil(total / PAGE_SIZE), p + 1)); window.scrollTo(0, 0); }}
-            disabled={page === Math.ceil(total / PAGE_SIZE)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm border border-gray-200 dark:border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-            下一页 <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      <LinksPagination total={total} page={page} pageSize={PAGE_SIZE} onPageChange={setPage} />
 
       <AddLinkModal open={showAdd} tags={tags} onClose={() => setShowAdd(false)}
         onAddLink={handleAddLink} onAddText={handleAddText} onAddImage={handleAddImage} onAddAudio={handleAddAudio} onAddFile={handleAddFile} />
