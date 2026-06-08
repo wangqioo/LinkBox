@@ -3,18 +3,15 @@ import { readFileSync, mkdirSync, readdirSync, copyFileSync, existsSync } from '
 import { extname, join } from 'path';
 import { execSync } from 'child_process';
 import { getAIConfig } from './aiConfig.js';
+import {
+  decodeXmlEntities,
+  extractHtmlText,
+  findImagePlaceholders,
+  replaceImagePlaceholdersWithDescriptions,
+} from './fileMarkdownUtils.js';
 
 const TMP_DIR = '/tmp/file2md';
 mkdirSync(TMP_DIR, { recursive: true });
-
-// Decode XML entities: &#12345; -> char, &amp; &lt; &gt; &quot; &apos;
-function decodeXmlEntities(str) {
-  return str
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
-}
 
 // Save an extracted image to uploadsDir, return { url, localPath }
 let _imgCounter = 0;
@@ -81,17 +78,6 @@ export async function describeImage(localPath) {
     console.warn(`[file2md] Vision LLM error: ${e.message}`);
     return '';
   }
-}
-
-/**
- * Format an image block with optional description.
- * Uses a special marker pattern that MarkdownRenderer will detect for centered display.
- */
-function formatImageBlock(url, description) {
-  if (description) {
-    return `![image](${url})\n\n> 图片描述：${description}`;
-  }
-  return `![image](${url})`;
 }
 
 // Parse a .rels XML file and return a map: rId -> target path (for image types only)
@@ -454,13 +440,7 @@ async function replaceImagePlaceholders(markdown, images) {
     pathMap[img.url] = img.localPath;
   }
 
-  // Find all placeholders
-  const placeholderRegex = /__IMG_PLACEHOLDER__([^_]+(?:_[^_]+)*)__END__/g;
-  const matches = [];
-  let m;
-  while ((m = placeholderRegex.exec(markdown)) !== null) {
-    matches.push({ full: m[0], url: m[1] });
-  }
+  const matches = findImagePlaceholders(markdown);
 
   if (!matches.length) return markdown;
 
@@ -479,15 +459,7 @@ async function replaceImagePlaceholders(markdown, images) {
     }
   }
 
-  // Replace placeholders with formatted image blocks
-  let result = markdown;
-  for (const match of matches) {
-    const desc = descriptions[match.url] || '';
-    const block = formatImageBlock(match.url, desc);
-    result = result.replace(match.full, block);
-  }
-
-  return result;
+  return replaceImagePlaceholdersWithDescriptions(markdown, descriptions);
 }
 
 /**
@@ -505,13 +477,7 @@ export async function fileToMarkdown(filePath, originalName, uploadsDir = null) 
   } else if (ext === '.html' || ext === '.htm') {
     // For HTML files, extract plain text for summarization
     const html = readFileSync(filePath, 'utf-8');
-    // Strip tags and extract readable text
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const text = extractHtmlText(html);
     return text || '*HTML 文件内容为空*';
   } else if (ext === '.pdf') {
     markdown = extractPdf(filePath);
