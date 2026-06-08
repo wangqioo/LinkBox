@@ -107,6 +107,26 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_link_chunks_link ON link_chunks(link_id);
   CREATE INDEX IF NOT EXISTS idx_link_chunks_user ON link_chunks(user_id);
+
+  CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    link_id INTEGER,
+    payload TEXT DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'queued',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    next_run_at TEXT DEFAULT (datetime('now')),
+    locked_at TEXT DEFAULT '',
+    last_error TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT DEFAULT '',
+    FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run ON jobs(status, next_run_at);
+  CREATE INDEX IF NOT EXISTS idx_jobs_link ON jobs(link_id);
 `);
 
 // Uploads directory is created above so multer/static serving can use a Docker volume.

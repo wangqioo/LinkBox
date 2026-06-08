@@ -2,7 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getAIConfig, updateAIConfig, testAIConfig } from '../utils/aiConfig.js';
-import { backgroundQueue } from '../utils/backgroundQueue.js';
+import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 
 const router = Router();
 
@@ -51,7 +51,7 @@ router.get('/', authMiddleware, requireAdmin, (req, res) => {
 // GET /api/settings/system - lightweight operational status
 router.get('/system', authMiddleware, requireAdmin, (req, res) => {
   res.json({
-    queue: backgroundQueue.stats(),
+    queue: getRuntimeQueue().stats(),
     env: {
       backgroundQueueConcurrency: process.env.BACKGROUND_QUEUE_CONCURRENCY || '1',
       localLlmUrl: process.env.LOCAL_LLM_URL || '',

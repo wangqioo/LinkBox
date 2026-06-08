@@ -10,6 +10,10 @@ import linkRoutes from './routes/links.js';
 import tagRoutes from './routes/tags.js';
 import settingsRoutes from './routes/settings.js';
 import assistantRoutes from './routes/assistant.js';
+import db from './db.js';
+import { createJobQueue } from './utils/jobQueue.js';
+import { registerEnrichmentJobs } from './utils/enrichmentJobs.js';
+import { setRuntimeQueue } from './utils/runtimeQueue.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -31,6 +35,19 @@ app.use('/uploads', express.static(uploadsDir, {
   maxAge: '7d',
   immutable: true,
 }));
+
+const jobQueue = createJobQueue({
+  db,
+  autoStart: false,
+  onFinalFailure: job => {
+    if (job.link_id) {
+      db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', job.link_id);
+    }
+  },
+});
+registerEnrichmentJobs(jobQueue, { uploadsDir });
+setRuntimeQueue(jobQueue);
+jobQueue.start();
 
 // Global error handler for API (returns JSON, not HTML)
 app.use((err, req, res, next) => {

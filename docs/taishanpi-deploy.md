@@ -62,6 +62,12 @@ RKLLM runtime process.
 - LinkBox background import/image/file work is serialized by
   `BACKGROUND_QUEUE_CONCURRENCY=1` so a small RK3576 board does not run several
   AI jobs at once.
+- LinkBox stores background enrichment jobs in SQLite. Jobs left in `running`
+  during a process restart are returned to `queued` on startup, so link
+  extraction, file conversion, image description, and AI summarization are not
+  lost just because the service restarts.
+- Admin users can inspect LinkBox queue counts and the latest failed job through
+  `/api/settings/system`.
 - The adapter exposes `/health` and `/v1/health` with resident demo PID,
   currently bound image, cache counts, request counters, last latency, and last
   error.
@@ -90,6 +96,7 @@ Useful checks on the board:
 
 ```sh
 systemctl is-active linkbox rkllm-openai-adapter linkbox-backup.timer
+curl -s http://127.0.0.1:3100/api/settings/system
 curl -s http://127.0.0.1:8000/v1/health
 systemctl list-timers linkbox-backup.timer --no-pager
 journalctl -u linkbox -u rkllm-openai-adapter -n 80 --no-pager

@@ -6,13 +6,11 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { fetchLinkMeta } from '../utils/fetchMeta.js';
 import { summarizeContent, summarizeMarkdown } from '../utils/aiSummarize.js';
 import { generateLearningNote } from '../utils/generateLearningNote.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
-import { describeImage, fileToMarkdown } from '../utils/fileToMarkdown.js';
 import { indexLinkContent } from '../utils/chunkIndex.js';
-import { backgroundQueue } from '../utils/backgroundQueue.js';
+import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -173,48 +171,9 @@ router.post('/', (req, res) => {
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(result.lastInsertRowid);
   res.json({ ...link, tags: attachTags(link.id) });
 
-  // Background pipeline: fetchMeta → extractContent → summarize
-  backgroundQueue.enqueue(`link:${result.lastInsertRowid}`, async () => {
-    const linkId = result.lastInsertRowid;
-    try {
-      // Step 1: fetch page metadata
-      if (!title) {
-        const meta = await fetchLinkMeta(url);
-        if (meta.title || meta.description || meta.thumbnail) {
-          db.prepare(`UPDATE links SET title = ?, description = ?, thumbnail = ? WHERE id = ?`)
-            .run(meta.title || url, meta.description || '', meta.thumbnail || '', linkId);
-        }
-      }
-    } catch (e) { console.error('[bg] meta fetch failed:', e.message); }
-
-    try {
-      // Step 2: extract page content as markdown
-      const extracted = await extractPageMarkdown(url);
-      if (extracted?.markdown) {
-        db.prepare(`UPDATE links SET content_md = ? WHERE id = ?`)
-          .run(extracted.markdown, linkId);
-        indexLinkContent(linkId);
-
-        // Step 3: summarize using local AI (Qwen2.5-VL-3B)
-        try {
-          const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
-          const summary = await summarizeMarkdown(extracted.markdown, currentLink?.title || url);
-          if (summary) {
-            db.prepare(`UPDATE links SET summary = ?, status = 'done' WHERE id = ?`).run(summary, linkId);
-          } else {
-            db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
-          }
-        } catch (e) {
-          console.error('[bg] summarize failed:', e.message);
-          db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
-        }
-      } else {
-        db.prepare(`UPDATE links SET status = 'done' WHERE id = ?`).run(linkId);
-      }
-    } catch (e) {
-      console.error('[bg] extract failed:', e.message);
-      db.prepare(`UPDATE links SET status = 'error' WHERE id = ?`).run(linkId);
-    }
+  getRuntimeQueue().enqueue('link.fetchMetadata', {
+    linkId: result.lastInsertRowid,
+    payload: { url, title: title || '' },
   });
 });
 
@@ -243,8 +202,8 @@ router.post('/image', upload.single('image'), (req, res) => {
   const parsedTags = tag_ids ? JSON.parse(tag_ids) : [];
 
   const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at)
-    VALUES (?, 'image', '', ?, ?, ?, ?, ?)
+    INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at, status)
+    VALUES (?, 'image', '', ?, ?, ?, ?, ?, 'processing')
   `).run(req.userId, title || Buffer.from(req.file.originalname, 'latin1').toString('utf8'), imagePath, imagePath, comment || '', imported_at || new Date().toISOString());
 
   if (parsedTags.length) setTags(result.lastInsertRowid, parsedTags);
@@ -253,20 +212,9 @@ router.post('/image', upload.single('image'), (req, res) => {
 
   const linkId = result.lastInsertRowid;
   const diskPath = join(UPLOADS_DIR, req.file.filename);
-  backgroundQueue.enqueue(`image:${linkId}`, async () => {
-    try {
-      db.prepare('UPDATE links SET status = ? WHERE id = ?').run('processing', linkId);
-      const description = await describeImage(diskPath);
-      const markdown = description
-        ? `![image](${imagePath})\n\n> 图片描述：${description}`
-        : `![image](${imagePath})`;
-      db.prepare('UPDATE links SET content_md = ?, summary = ?, status = ? WHERE id = ?')
-        .run(markdown, description || '', 'done', linkId);
-      indexLinkContent(linkId);
-    } catch (e) {
-      console.error('[bg] image describe failed:', e.message);
-      db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
-    }
+  getRuntimeQueue().enqueue('image.describe', {
+    linkId,
+    payload: { diskPath },
   });
 });
 
@@ -317,40 +265,13 @@ router.post('/file', uploadFile.single('file'), (req, res) => {
   if (SUPPORTED_EXTS.has(ext)) {
     const linkId = result.lastInsertRowid;
     const diskPath = join(UPLOADS_DIR, req.file.filename);
-    const uploadsDir = UPLOADS_DIR;
-    backgroundQueue.enqueue(`file:${linkId}`, async () => {
-      try {
-        const isHtml = ['.html', '.htm'].includes(ext);
-        if (isHtml) {
-          const { readFileSync } = await import('fs');
-          const rawHtml = readFileSync(diskPath, 'utf-8');
-          db.prepare('UPDATE links SET html_note = ? WHERE id = ?').run(rawHtml, linkId);
-        }
-        const markdown = await fileToMarkdown(diskPath, originalName, uploadsDir);
-        if (markdown) {
-          const imgMatch = markdown.match(/!\[.*?\]\((\/uploads\/[^)]+)\)/);
-          const thumbnail = imgMatch ? imgMatch[1] : null;
-          db.prepare('UPDATE links SET content_md = ?, thumbnail = ? WHERE id = ?').run(markdown, thumbnail, linkId);
-          indexLinkContent(linkId);
-          try {
-            const currentLink = db.prepare('SELECT title FROM links WHERE id = ?').get(linkId);
-            const summary = await summarizeMarkdown(markdown, currentLink?.title || originalName);
-            if (summary) {
-              db.prepare('UPDATE links SET summary = ?, status = ? WHERE id = ?').run(summary, 'done', linkId);
-            } else {
-              db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
-            }
-          } catch (e) {
-            console.error('[bg] file summarize failed:', e.message);
-            db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
-          }
-        } else {
-          db.prepare('UPDATE links SET status = ? WHERE id = ?').run('done', linkId);
-        }
-      } catch (e) {
-        console.error('[bg] fileToMarkdown failed:', e.message);
-        db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
-      }
+    getRuntimeQueue().enqueue('file.extractMarkdown', {
+      linkId,
+      payload: {
+        diskPath,
+        originalName,
+        isHtml: ['.html', '.htm'].includes(ext),
+      },
     });
   }
 });
@@ -441,23 +362,20 @@ router.post('/import', (req, res) => {
   for (const item of links) {
     const url = typeof item === 'string' ? item : item.url;
     if (!url) continue;
+    const explicitTitle = typeof item === 'string' ? '' : item.title;
     const result = db.prepare(`
-      INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at)
-      VALUES (?, 'link', ?, ?, '', '', ?, ?)
-    `).run(req.userId, url, item.title || url, item.comment || '', item.imported_at || new Date().toISOString());
+      INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at, status)
+      VALUES (?, 'link', ?, ?, '', '', ?, ?, 'processing')
+    `).run(req.userId, url, explicitTitle || url, item.comment || '', item.imported_at || new Date().toISOString());
     imported.push(result.lastInsertRowid);
-    if (!item.title) toFetch.push({ id: result.lastInsertRowid, url });
+    toFetch.push({ id: result.lastInsertRowid, url, title: explicitTitle || '' });
   }
   res.json({ imported: imported.length });
 
-  // Background metadata fetch for all imported links
-  for (const { id, url } of toFetch) {
-    backgroundQueue.enqueue(`import-meta:${id}`, async () => {
-      const meta = await fetchLinkMeta(url);
-      if (meta.title || meta.description || meta.thumbnail) {
-        db.prepare(`UPDATE links SET title = ?, description = ?, thumbnail = ? WHERE id = ?`)
-          .run(meta.title || url, meta.description || '', meta.thumbnail || '', id);
-      }
+  for (const { id, url, title } of toFetch) {
+    getRuntimeQueue().enqueue('link.fetchMetadata', {
+      linkId: id,
+      payload: { url, title },
     });
   }
 });

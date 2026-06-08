@@ -25,7 +25,7 @@
 ```
 保存 → ① 抓取页面元数据（标题/描述/封面图）
       → ② 提取正文并转为 Markdown
-      → ③ 本地 AI 生成中文摘要（Qwen2.5-VL-3B）
+      → ③ 本地 AI 生成中文摘要（OpenAI 兼容模型）
 ```
 
 **Office / PDF / HTML 文件：**
@@ -116,7 +116,8 @@ server/utils/
   ├─ fetchMeta.js              网页元数据抓取（title/description/og:image）
   ├─ extractContent.js         网页正文提取（微信公众号 + 通用 Readability）
   ├─ fileToMarkdown.js         Office/PDF/HTML 文件转 Markdown + 图片视觉描述
-  ├─ aiSummarize.js            AI 摘要（本地 Qwen2.5-VL-3B）
+  ├─ aiSummarize.js            AI 摘要（OpenAI 兼容接口）
+  ├─ jobQueue.js               SQLite 持久化后台任务队列
   └─ generateLearningNote.js   AI 学习笔记 + SVG 知识导图生成
 server/routes/
   ├─ auth.js                   登录 / 注册
@@ -124,9 +125,11 @@ server/routes/
   └─ tags.js                   标签管理
 ```
 
-**AI 模型**：llama.cpp 本地部署的 `Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf`，通过 OpenAI 兼容 API（`/v1/chat/completions`）调用，默认地址 `http://localhost:8081/v1`。
+**AI 模型**：默认连接 OpenAI 兼容 API（`/v1/chat/completions`），默认地址 `http://localhost:8000/v1`，默认模型名 `Qwen3.5-4B`。也可在管理员设置页切换 DeepSeek、OpenAI、OpenRouter、Kimi、DashScope、智谱或自定义服务。
 
 **数据库**：SQLite 单文件，路径 `server/linkbox.db`，服务启动时自动初始化表结构和迁移。
+
+**后台任务**：链接抓取、正文提取、文件转换、图片描述和 AI 摘要会写入 SQLite 持久化任务队列；服务重启后会恢复未完成任务。
 
 **HTTPS**：检测到 `server/certs/cert.pem` + `key.pem` 时自动以 HTTPS 模式启动，否则 HTTP 模式，无需修改代码。
 
@@ -140,7 +143,7 @@ server/routes/
 - `unzip`（用于解压 Office 文件）
 - `pdftotext`（poppler-utils，用于 PDF 提取）
 - `libreoffice`（用于旧格式 .doc/.xls/.ppt 转换，可选）
-- （可选）llama.cpp server，加载 Qwen2.5-VL-3B 模型，监听 8081 端口
+- （可选）本地或远程 OpenAI 兼容模型服务，默认监听 `http://localhost:8000/v1`
 
 ### 安装与启动
 
@@ -159,7 +162,7 @@ cd ../client && npm install && npm run build
 cd ../server && node index.js
 ```
 
-访问 `http://localhost:3000`（默认端口，可通过 `PORT` 环境变量修改）。
+访问 `http://localhost:3100`（默认端口，可通过 `PORT` 环境变量修改）。
 
 ### 开发模式
 
@@ -193,9 +196,9 @@ openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `PORT` | `3000` | 服务监听端口 |
+| `PORT` | `3100` | 服务监听端口 |
 | `JWT_SECRET` | `linkbox-secret` | JWT 签名密钥，生产环境请修改 |
-| `LOCAL_LLM_URL` | `http://localhost:8081/v1` | llama.cpp server 地址 |
+| `LOCAL_LLM_URL` | `http://localhost:8000/v1` | OpenAI 兼容模型服务地址 |
 
 ---
 
