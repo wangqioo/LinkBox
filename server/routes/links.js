@@ -26,6 +26,7 @@ import {
   summarizeLinkItem,
 } from '../utils/linkAiActions.js';
 import { deleteLinkItem, updateLinkItem } from '../utils/linkMutationService.js';
+import { exportAllData, exportSummariesMarkdown } from '../utils/linkExportService.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -327,45 +328,20 @@ router.post('/import', (req, res) => {
 
 // Export summaries as Markdown
 router.get('/export/summaries', (req, res) => {
-  let links;
-  if (req.query.ids) {
-    const ids = req.query.ids.split(',').map(Number).filter(Boolean);
-    const placeholders = ids.map(() => '?').join(',');
-    links = db.prepare(
-      `SELECT title, url, summary, imported_at FROM links WHERE user_id = ? AND id IN (${placeholders}) AND summary != '' AND summary IS NOT NULL ORDER BY imported_at DESC`
-    ).all(req.userId, ...ids);
-  } else {
-    links = db.prepare(
-      "SELECT title, url, summary, imported_at FROM links WHERE user_id = ? AND summary != '' AND summary IS NOT NULL ORDER BY imported_at DESC"
-    ).all(req.userId);
-  }
-
-  const date = new Date().toISOString().slice(0, 10);
-  const NL = '\n';
-  let md = '# LinkBox 摘要导出' + NL;
-  md += '> 导出时间：' + date + NL + NL;
-  md += '---' + NL + NL;
-
-  links.forEach((link, i) => {
-    const d = link.imported_at ? link.imported_at.slice(0, 10) : '';
-    md += '## ' + (i + 1) + '. ' + (link.title || link.url) + NL;
-    if (d) md += '_' + d + '_  ' + NL;
-    md += '[' + link.url + '](' + link.url + ')' + NL + NL;
-    md += link.summary + NL + NL;
-    md += '---' + NL + NL;
+  const ids = req.query.ids ? req.query.ids.split(',').map(Number).filter(Boolean) : null;
+  const { markdown, filename } = exportSummariesMarkdown(db, {
+    userId: req.userId,
+    ids,
   });
 
   res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="linkbox-summaries-' + date + '.md"');
-  res.send(md);
+  res.setHeader('Content-Disposition', 'attachment; filename="' + filename + '"');
+  res.send(markdown);
 });
 
 // Export all
 router.get('/export/all', (req, res) => {
-  const links = db.prepare('SELECT * FROM links WHERE user_id = ? ORDER BY imported_at DESC').all(req.userId);
-  const tags = db.prepare('SELECT * FROM tags WHERE user_id = ?').all(req.userId);
-  const linkTags = db.prepare('SELECT lt.* FROM link_tags lt JOIN links l ON lt.link_id = l.id WHERE l.user_id = ?').all(req.userId);
-  res.json({ links, tags, linkTags, exported_at: new Date().toISOString() });
+  res.json(exportAllData(db, { userId: req.userId }));
 });
 
 
