@@ -7,7 +7,6 @@ import { dirname, join } from 'path';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { generateLearningNote } from '../utils/generateLearningNote.js';
-import { extractPageMarkdown } from '../utils/extractContent.js';
 import { indexLinkContent } from '../utils/chunkIndex.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { enqueueFileProcessing, enqueueImageProcessing, enqueueLinkProcessing } from '../utils/processingJobs.js';
@@ -23,7 +22,7 @@ import {
   importLinkItems,
   setTags as setLinkTags,
 } from '../utils/linkCreateService.js';
-import { summarizeLinkItem } from '../utils/linkAiActions.js';
+import { extractLinkContent, summarizeLinkItem } from '../utils/linkAiActions.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -267,21 +266,15 @@ router.post('/:id/summarize', async (req, res) => {
 
 // Extract full page content as Markdown
 router.post("/:id/extract", async (req, res) => {
-  const link = db.prepare("SELECT * FROM links WHERE id = ? AND user_id = ?").get(req.params.id, req.userId);
-  if (!link) return res.status(404).json({ error: "不存在" });
-  if (link.type !== "link") return res.status(400).json({ error: "只有链接类型支持正文提取" });
-  if (!link.url) return res.status(400).json({ error: "链接地址为空" });
   try {
-    const result = await extractPageMarkdown(link.url);
-    db.prepare("UPDATE links SET content_md = ? WHERE id = ?").run(result.markdown, link.id);
-    indexLinkContent(link.id);
-    res.json({ content_md: result.markdown, meta: {
-      title: result.title, byline: result.byline,
-      siteName: result.siteName, wordCount: result.wordCount
-    }});
+    const result = await extractLinkContent(db, {
+      linkId: req.params.id,
+      userId: req.userId,
+    });
+    res.json(result);
   } catch (err) {
     console.error("Extract failed:", err.message);
-    res.status(500).json({ error: "提取失败: " + err.message });
+    res.status(err.status || 500).json({ error: err.status ? err.message : "提取失败: " + err.message });
   }
 });
 

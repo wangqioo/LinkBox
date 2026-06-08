@@ -4,7 +4,10 @@ import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { summarizeLinkItem } from '../utils/linkAiActions.js';
+import {
+  extractLinkContent,
+  summarizeLinkItem,
+} from '../utils/linkAiActions.js';
 
 async function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-ai-action-test-'));
@@ -101,5 +104,53 @@ test('summarizeLinkItem rejects missing or unsupported items', async () => withD
       summarizeContent: async () => '',
     }),
     error => error.status === 400 && error.message === '没有可摘要的内容',
+  );
+}));
+
+test('extractLinkContent extracts markdown, stores it, and indexes the link', async () => withDb(async (db) => {
+  db.prepare("INSERT INTO links (id, user_id, type, url) VALUES (1, 5, 'link', 'https://article.example')").run();
+  const indexed = [];
+
+  const result = await extractLinkContent(db, {
+    linkId: 1,
+    userId: 5,
+    extractPageMarkdown: async url => ({
+      markdown: `# From ${url}`,
+      title: 'Article',
+      byline: 'Author',
+      siteName: 'Site',
+      wordCount: 123,
+    }),
+    indexLink: linkId => indexed.push(linkId),
+  });
+
+  assert.deepEqual(result, {
+    content_md: '# From https://article.example',
+    meta: {
+      title: 'Article',
+      byline: 'Author',
+      siteName: 'Site',
+      wordCount: 123,
+    },
+  });
+  assert.equal(db.prepare('SELECT content_md FROM links WHERE id = 1').get().content_md, '# From https://article.example');
+  assert.deepEqual(indexed, [1]);
+}));
+
+test('extractLinkContent validates item ownership, type, and url', async () => withDb(async (db) => {
+  db.prepare("INSERT INTO links (id, user_id, type, url) VALUES (1, 5, 'text', '')").run();
+  db.prepare("INSERT INTO links (id, user_id, type, url) VALUES (2, 5, 'link', '')").run();
+
+  await assert.rejects(
+    () => extractLinkContent(db, { linkId: 404, userId: 5 }),
+    error => error.status === 404 && error.message === '不存在',
+  );
+  await assert.rejects(
+    () => extractLinkContent(db, { linkId: 1, userId: 5 }),
+    error => error.status === 400 && error.message === '只有链接类型支持正文提取',
+  );
+  await assert.rejects(
+    () => extractLinkContent(db, { linkId: 2, userId: 5 }),
+    error => error.status === 400 && error.message === '链接地址为空',
   );
 }));
