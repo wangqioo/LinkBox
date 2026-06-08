@@ -8,8 +8,11 @@ import LinksFilters from './LinksFilters';
 import LinksPagination from './LinksPagination';
 import type { LinkPageItem, LinkPageTag } from './linksPageTypes';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 500;
 
+function sortLikeMobile(a: LinkPageItem, b: LinkPageItem) {
+  return b.id - a.id;
+}
 export default function LinksPage() {
   const [links, setLinks] = useState<LinkPageItem[]>([]);
   const [tags, setTags] = useState<LinkPageTag[]>([]);
@@ -17,6 +20,7 @@ export default function LinksPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeTag, setActiveTag] = useState('');
   const [activeType, setActiveType] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -24,26 +28,33 @@ export default function LinksPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [processingIds, setProcessingIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   const fetchLinks = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, string> = { page: String(page), limit: String(PAGE_SIZE) };
-      if (search) params.search = search;
+      if (debouncedSearch) params.search = debouncedSearch;
       if (activeTag) params.tag = activeTag;
       if (activeType) params.type = activeType;
       if (dateFrom) params.from = dateFrom;
       if (dateTo) params.to = dateTo;
       const data = await api.getLinks(params);
-      setLinks(data.links);
+      setLinks([...data.links].sort(sortLikeMobile));
       setTotal(data.total);
     } catch { /* ignore */ }
     setLoading(false);
-  }, [search, activeTag, activeType, dateFrom, dateTo, page]);
+  }, [debouncedSearch, activeTag, activeType, dateFrom, dateTo, page]);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [search, activeTag, activeType, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, activeTag, activeType, dateFrom, dateTo]);
 
   const fetchTags = async () => {
     try { setTags(await api.getTags()); } catch { /* ignore */ }
@@ -152,9 +163,6 @@ export default function LinksPage() {
     fetchLinks();
   };
 
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-
   const selectAll = () => setSelectedIds(new Set(links.map(l => l.id)));
   const deselectAll = () => setSelectedIds(new Set());
   const toggleSelect = (id: number) => setSelectedIds(prev => {
@@ -201,7 +209,10 @@ export default function LinksPage() {
       });
   };
 
-  const hasFilters = activeTag || dateFrom || dateTo || activeType;
+  const hasFilters = Boolean(activeTag || dateFrom || dateTo || activeType);
+  const activeFilterCount = [activeTag, activeType, dateFrom || dateTo].filter(Boolean).length;
+  const exportSelectionActive = showFilters && selectedIds.size > 0;
+  const exportScopeLabel = exportSelectionActive ? `选中 ${selectedIds.size} 条` : '全部收藏';
   const clearFilters = () => { setActiveTag(''); setDateFrom(''); setDateTo(''); setActiveType(''); };
 
   return (
@@ -223,10 +234,14 @@ export default function LinksPage() {
             {showExportMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
-                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1">
+                <div className="absolute right-0 mt-1 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1">
+                  <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+                    <p className="text-[11px] text-gray-400">导出范围</p>
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-200">{exportScopeLabel}</p>
+                  </div>
                   <button onClick={handleExportJson}
                     className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2">
-                    <span>📦</span> 全量导出 (JSON)
+                    <span>📦</span> 数据导出 (JSON)
                   </button>
                   <button onClick={handleExportSummaries}
                     className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2">
@@ -250,6 +265,7 @@ export default function LinksPage() {
         showFilters={showFilters}
         onToggleFilters={() => setShowFilters(!showFilters)}
         hasFilters={hasFilters}
+        activeFilterCount={activeFilterCount}
         tags={tags}
         activeTag={activeTag}
         onTagChange={setActiveTag}
@@ -262,16 +278,18 @@ export default function LinksPage() {
 
       {/* Selection toolbar - visible only when filter panel is open */}
       {showFilters && links.length > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2.5 mb-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-xl text-sm">
-          <span className="text-indigo-700 dark:text-indigo-300 font-medium flex-1">
-            已选 {selectedIds.size} / {links.length} 条
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-4 py-2.5 mb-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-xl text-sm">
+          <span className="text-indigo-700 dark:text-indigo-300 font-medium flex-1 min-w-40">
+            当前结果 {links.length} 条，已选 {selectedIds.size} 条
           </span>
           <button onClick={selectAll}
-            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400">
+            disabled={selectedIds.size === links.length}
+            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed">
             <CheckSquare className="w-3.5 h-3.5" /> 全选
           </button>
           <button onClick={deselectAll}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400">
+            disabled={selectedIds.size === 0}
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 disabled:opacity-40 disabled:cursor-not-allowed">
             <Square className="w-3.5 h-3.5" /> 取消全选
           </button>
         </div>
@@ -284,8 +302,8 @@ export default function LinksPage() {
         </div>
       ) : links.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
-          <p className="text-lg mb-2">{hasFilters || search ? '没有找到匹配的内容' : '还没有收藏任何内容'}</p>
-          <p className="text-sm">{hasFilters || search ? '试试调整筛选条件' : '点击"添加"开始收藏'}</p>
+          <p className="text-lg mb-2">{hasFilters || debouncedSearch ? '没有找到匹配的内容' : '还没有收藏任何内容'}</p>
+          <p className="text-sm">{hasFilters || debouncedSearch ? '试试调整筛选条件' : '点击"添加"开始收藏'}</p>
         </div>
       ) : (
         <div className="space-y-3">

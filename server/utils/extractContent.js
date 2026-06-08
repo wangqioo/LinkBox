@@ -34,6 +34,51 @@ ${text.trim()}
   }
 });
 
+td.addRule('preserve-html-table', {
+  filter: (node) => {
+    if (node.nodeName === 'TABLE') return true;
+    return node.nodeName === 'DIV' && node.getAttribute?.('data-linkbox-table');
+  },
+  replacement: (content, node) => {
+    const html = node.outerHTML || '';
+    const tableHtml = node.nodeName === 'TABLE'
+      ? cleanTableHtml(html)
+      : cleanTableHtml(html.match(/<table[\s\S]*<\/table>/i)?.[0] || html);
+    const id = node.getAttribute?.('data-linkbox-table') || 'preserved';
+    return `\n\n<div data-linkbox-table="${id}">\n${tableHtml}\n</div>\n\n`;
+  }
+});
+
+function cleanTableHtml(tableHtml) {
+  const $ = cheerio.load(tableHtml, { decodeEntities: false });
+  const table = $('table').first();
+  if (!table.length) return tableHtml;
+
+  table.find('script,style,svg').remove();
+  table.find('*').each((_, el) => {
+    const node = $(el);
+    const allowed = {};
+    for (const attr of ['rowspan', 'colspan']) {
+      const value = node.attr(attr);
+      if (value) allowed[attr] = value;
+    }
+    node.attr({});
+    Object.entries(allowed).forEach(([key, value]) => node.attr(key, value));
+  });
+
+  table.attr({});
+  return $.html(table);
+}
+
+function preserveHtmlTables(html) {
+  const $ = cheerio.load(html, { decodeEntities: false });
+  $('table').each((index, el) => {
+    const tableHtml = cleanTableHtml($.html(el));
+    $(el).replaceWith(`\n\n<div data-linkbox-table="wechat-${index}">\n${tableHtml}\n</div>\n\n`);
+  });
+  return $('body').html() || $.root().html() || html;
+}
+
 const MIN_IMAGE_BYTES = 5000;
 
 async function fetchImageAsBase64(url, referer) {
@@ -217,7 +262,7 @@ async function extractWeixin(url, withVision) {
   if (contentEl.length && (contentEl.text().trim() || contentEl.find('img[src]').length > 0)) {
     // Standard article type: content in #js_content div
     contentEl.find('script,style,svg,.qr_code_pc_outer,.tips_global,.weapp_text_link').remove();
-    const contentHtml = contentEl.html() || '';
+    const contentHtml = preserveHtmlTables(contentEl.html() || '');
     markdown = fixMarkdownImages(td.turndown(contentHtml));
   } else {
     // Video/mixed article type (page_type=2): content encoded in JS as JsDecode('...')
@@ -236,7 +281,7 @@ async function extractWeixin(url, withVision) {
         if (/^<(div|p|h[1-6]|ul|ol|blockquote|pre|table)/i.test(p)) return p;
         return `<p>${p.replace(/\n/g, '<br>')}</p>`;
       }).filter(Boolean).join('\n');
-      markdown = td.turndown(paragraphs || decoded);
+      markdown = td.turndown(preserveHtmlTables(paragraphs || decoded));
       console.log(`[extract] JS-decoded content: ${markdown.length} chars`);
     } else {
       throw new Error('未找到正文内容，可能需要登录或链接已过期');

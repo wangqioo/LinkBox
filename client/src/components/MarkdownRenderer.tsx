@@ -9,14 +9,25 @@ interface Props {
   maxLines?: number;
 }
 
+function normalizeCitations(text: string) {
+  return String(text || '')
+    .replace(/\[资料(\d+)\s*-\s*(\d+)\]/g, (_match, start, end) => {
+      const from = Number(start);
+      const to = Number(end);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || from > to || to - from > 20) return '';
+      return Array.from({ length: to - from + 1 }, (_v, index) => `[资料${from + index}]`).join('');
+    })
+    .replace(/\[资料(\d+)(?!\])/g, (_match, n) => `[资料${n}]`);
+}
 function parseInline(text: string, keyBase: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+  const normalized = normalizeCitations(text);
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|\[资料(\d+)\]/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
-  while ((m = pattern.exec(text)) !== null) {
-    if (m.index > last) nodes.push(text.slice(last, m.index));
+  while ((m = pattern.exec(normalized)) !== null) {
+    if (m.index > last) nodes.push(normalized.slice(last, m.index));
     if (m[1] !== undefined) {
       nodes.push(<img key={`${keyBase}-img-${idx++}`} src={proxyImg(m[2].trim())} alt={m[1].trim()}
         className="max-w-full rounded my-1 block" loading="lazy"
@@ -31,10 +42,15 @@ function parseInline(text: string, keyBase: string): ReactNode[] {
       nodes.push(<strong key={`${keyBase}-b-${idx++}`}>{m[6]}</strong>);
     } else if (m[7] !== undefined) {
       nodes.push(<em key={`${keyBase}-i-${idx++}`}>{m[7]}</em>);
+    } else if (m[8] !== undefined) {
+      nodes.push(<span key={`${keyBase}-ref-${idx++}`}
+        className="inline-flex items-center rounded bg-indigo-50 dark:bg-indigo-950 px-1.5 py-0.5 text-[0.85em] font-medium text-indigo-600 dark:text-indigo-300">
+        资料{m[8]}
+      </span>);
     }
     last = m.index + m[0].length;
   }
-  if (last < text.length) nodes.push(text.slice(last));
+  if (last < normalized.length) nodes.push(normalized.slice(last));
   return nodes;
 }
 

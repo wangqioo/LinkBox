@@ -31,7 +31,8 @@ export function updateLinkItem(db, {
   return { link: { ...updated, tags: attachTags(db, updated.id) } };
 }
 
-export function deleteLinkItem(db, { linkId, userId }) {
+export function deleteLinkItem(db, { linkId, userId, removeIndex = () => {} }) {
+  removeIndex(linkId);
   const result = db.prepare('DELETE FROM links WHERE id = ? AND user_id = ?').run(linkId, userId);
   if (result.changes === 0) throw new LinkMutationError(404, '不存在');
   return { ok: true };

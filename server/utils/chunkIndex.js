@@ -3,6 +3,10 @@ import db from '../db.js';
 const TARGET_CHARS = 1200;
 const OVERLAP_CHARS = 180;
 const MAX_CHUNKS_PER_LINK = 80;
+const STOP_CJK = new Set([
+  '的', '了', '和', '是', '在', '有', '为', '与', '及', '或', '也', '都', '能', '会',
+  '什么', '为什么', '怎么', '如何', '这个', '那个', '这些', '那些', '主要', '原因',
+]);
 
 export function tokenizeQuery(text) {
   const normalized = String(text || '').toLowerCase();
@@ -12,15 +16,13 @@ export function tokenizeQuery(text) {
 
   for (const phrase of cjkPhrases) {
     if (phrase.length <= 6) cjk.push(phrase);
-    for (let i = 0; i < phrase.length - 1; i += 1) {
-      cjk.push(phrase.slice(i, i + 2));
-    }
-    for (let i = 0; i < phrase.length - 2; i += 1) {
-      cjk.push(phrase.slice(i, i + 3));
-    }
+    for (let i = 0; i < phrase.length - 1; i += 1) cjk.push(phrase.slice(i, i + 2));
+    for (let i = 0; i < phrase.length - 2; i += 1) cjk.push(phrase.slice(i, i + 3));
   }
 
-  return [...new Set([...latin, ...cjk])].slice(0, 120);
+  return [...new Set([...latin, ...cjk])]
+    .filter(token => token.length >= 2 && !STOP_CJK.has(token))
+    .slice(0, 120);
 }
 
 function normalizeText(text) {
@@ -83,6 +85,10 @@ export function indexLinkContent(linkId) {
   });
   tx();
   return chunks.length;
+}
+
+export function removeLinkContentIndex(linkId) {
+  db.prepare('DELETE FROM link_chunks WHERE link_id = ?').run(linkId);
 }
 
 export function indexAllMissingChunks() {
@@ -150,31 +156,104 @@ export function rankChunkRows(rows, { query, limit = 12 }) {
     .slice(0, limit);
 }
 
-export function searchRelevantChunks({ userId, query, task = 'ask', limit = 12 }) {
+function trimWeakMatches(ranked) {
+  if (!ranked.length) return ranked;
+  const top = ranked[0].score || 0;
+  const minScore = Math.max(6, Math.ceil(top * 0.35));
+  return ranked.filter(row => row.score >= minScore);
+}
+
+function normalizeUrlKey(url) {
+  return String(url || '')
+    .trim()
+    .replace(/#.*$/, '')
+    .replace(/[?&]utm_[^=&]+=[^&]*/gi, '')
+    .replace(/[?&](from|scene|clicktime|enterid|ascene|devicetype|version|nettype|lang)=[^&]*/gi, '')
+    .replace(/[?&]$/, '')
+    .replace(/\/$/, '')
+    .toLowerCase();
+}
+
+function normalizeTitleKey(title) {
+  return String(title || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function sourceKey(row) {
+  const url = normalizeUrlKey(row.url);
+  const title = normalizeTitleKey(row.title);
+  if (title && (url.includes('mp.weixin.qq.com') || title.length >= 8)) return `title:${title}`;
+  if (url) return `url:${url}`;
+  if (title) return `title:${title}`;
+  return `id:${row.id}`;
+}
+
+function limitBySource(ranked, maxSources) {
+  const sourceCount = new Set();
+  const kept = [];
+  for (const row of ranked) {
+    sourceCount.add(sourceKey(row));
+    if (sourceCount.size > maxSources) break;
+    kept.push(row);
+  }
+  return kept;
+}
+
+function normalizeScope(scope = {}) {
+  const date = String(scope.date || '').trim();
+  const type = String(scope.type || '').trim();
+  return {
+    date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '',
+    type: type === 'document' ? 'file' : type,
+  };
+}
+
+function scopeWhere(scope, params) {
+  const conditions = [];
+  if (scope.date) {
+    conditions.push('substr(l.imported_at, 1, 10) = ?');
+    params.push(scope.date);
+  }
+  if (scope.type) {
+    conditions.push('l.type = ?');
+    params.push(scope.type);
+  }
+  return conditions;
+}
+
+export function searchRelevantChunks({ userId, query, task = 'ask', limit = 12, scope: rawScope = {} }) {
+  const scope = normalizeScope(rawScope);
+
   if (task === 'recent') {
-    return db.prepare(`
+    const params = [userId];
+    const scopedConditions = scopeWhere(scope, params);
+    params.push(Math.max(limit * 30, 200));
+    const rows = db.prepare(`
       SELECT c.id AS chunk_id, c.chunk_index, c.text AS chunk_text,
              l.id, l.type, l.url, l.title, l.summary, l.imported_at
       FROM link_chunks c
       JOIN links l ON l.id = c.link_id
       WHERE c.user_id = ?
+        ${scopedConditions.length ? `AND ${scopedConditions.join(' AND ')}` : ''}
       ORDER BY l.imported_at DESC, c.chunk_index ASC
       LIMIT ?
-    `).all(userId, limit);
+    `).all(...params);
+    return limitBySource(rows, limit);
   }
 
+  const params = [userId];
+  const scopedConditions = scopeWhere(scope, params);
   const rows = db.prepare(`
     SELECT c.id AS chunk_id, c.chunk_index, c.text AS chunk_text,
            l.id, l.type, l.url, l.title, l.summary, l.imported_at
     FROM link_chunks c
     JOIN links l ON l.id = c.link_id
     WHERE c.user_id = ?
+      ${scopedConditions.length ? `AND ${scopedConditions.join(' AND ')}` : ''}
     ORDER BY l.imported_at DESC
     LIMIT 2000
-  `).all(userId);
+  `).all(...params);
 
-  const ranked = rankChunkRows(rows, { query, limit });
-
-  if (ranked.length || task === 'ask') return ranked;
-  return rows.slice(0, limit);
+  const ranked = rankChunkRows(rows, { query, limit: 2000 });
+  if (!ranked.length && task !== 'ask') return limitBySource(rows, limit);
+  return limitBySource(trimWeakMatches(ranked), Math.min(4, limit));
 }

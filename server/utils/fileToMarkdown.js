@@ -68,8 +68,10 @@ export async function describeImage(localPath) {
       }],
       max_tokens: 80,
       temperature: aiConfig.temperature,
-      chat_template_kwargs: { enable_thinking: aiConfig.enableThinking }
     };
+    if (aiConfig.supportsThinkingParam) {
+      payload.chat_template_kwargs = { enable_thinking: aiConfig.enableThinking };
+    }
 
     const resp = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
       method: 'POST',

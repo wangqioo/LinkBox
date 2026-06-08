@@ -77,11 +77,61 @@ export interface AssistantSource {
   url: string;
   summary: string;
   imported_at: string;
+  chunks?: AssistantSourceChunk[];
+}
+
+export interface AssistantSourceChunk {
+  id: number | string;
+  index: number;
+  chunk_index?: number;
+  text: string;
 }
 
 export interface AssistantAnswer {
   answer: string;
   sources: AssistantSource[];
+}
+
+export interface AdminUserSummary {
+  id: number;
+  username: string;
+  created_at: string;
+  item_count: number;
+  tag_count: number;
+  processing_count: number;
+  error_count: number;
+  last_used_at: string | null;
+  by_type: Record<string, number>;
+}
+
+export interface AdminRecentItem {
+  id: number;
+  type: string;
+  url: string;
+  title: string;
+  description: string;
+  comment: string;
+  imported_at: string;
+  created_at: string;
+  status: string;
+}
+
+export interface AdminUserDetail {
+  user: {
+    id: number;
+    username: string;
+    created_at: string;
+  };
+  stats: {
+    item_count: number;
+    tag_count: number;
+    processing_count: number;
+    error_count: number;
+    last_used_at: string | null;
+    by_type: Record<string, number>;
+    by_status: Record<string, number>;
+  };
+  recent_items: AdminRecentItem[];
 }
 
 export interface AssistantStreamHandlers {
@@ -235,6 +285,10 @@ export const api = {
   getSystemStatus: (): Promise<SystemStatus> => request('/settings/system'),
   retryFailedJobs: (): Promise<{ ok: boolean; retried: number; queue: QueueStats }> =>
     request('/settings/system/retry-failed-jobs', { method: 'POST' }),
+
+  // Admin
+  getAdminUsers: (): Promise<AdminUserSummary[]> => request('/admin/users'),
+  getAdminUser: (id: number): Promise<AdminUserDetail> => request(`/admin/users/${id}`),
 
   // Tags
   getTags: () => request('/tags'),

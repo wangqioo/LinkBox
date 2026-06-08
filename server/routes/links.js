@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { indexLinkContent } from '../utils/chunkIndex.js';
+import { indexLinkContent, removeLinkContentIndex } from '../utils/chunkIndex.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { enqueueFileProcessing, enqueueImageProcessing, enqueueLinkProcessing } from '../utils/processingJobs.js';
 import { decodeUploadName, parseTagIds } from '../utils/linkPayloads.js';
@@ -303,6 +303,7 @@ router.delete('/:id', (req, res) => {
     res.json(deleteLinkItem(db, {
       linkId: req.params.id,
       userId: req.userId,
+      removeIndex: removeLinkContentIndex,
     }));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.status ? err.message : '删除失败: ' + err.message });

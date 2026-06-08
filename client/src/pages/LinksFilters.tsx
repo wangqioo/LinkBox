@@ -18,6 +18,7 @@ interface Props {
   showFilters: boolean;
   onToggleFilters: () => void;
   hasFilters: string | boolean;
+  activeFilterCount?: number;
   tags: LinkPageTag[];
   activeTag: string;
   onTagChange: (value: string) => void;
@@ -36,6 +37,7 @@ export default function LinksFilters({
   showFilters,
   onToggleFilters,
   hasFilters,
+  activeFilterCount = 0,
   tags,
   activeTag,
   onTagChange,
@@ -56,14 +58,18 @@ export default function LinksFilters({
         <button onClick={onToggleFilters}
           className={`btn-secondary relative ${hasFilters ? 'text-indigo-600' : ''}`}>
           <Filter className="w-4 h-4" />
-          {hasFilters && <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-600 rounded-full" />}
+          {activeFilterCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 bg-indigo-600 text-white text-[10px] leading-4 rounded-full">
+              {activeFilterCount}
+            </span>
+          )}
         </button>
       </div>
 
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
         {TYPE_FILTERS.map(typeFilter => (
           <button key={typeFilter.key} onClick={() => onTypeChange(typeFilter.key)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
               activeType === typeFilter.key
                 ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
                 : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'

@@ -8,6 +8,14 @@ RUN npm ci
 COPY client/ ./
 RUN npm run build
 
+FROM node:20-slim AS mobile-builder
+WORKDIR /app/mobile
+RUN npm config set registry https://registry.npmmirror.com
+COPY mobile/package*.json ./
+RUN npm ci
+COPY mobile/ ./
+RUN npm run build
+
 FROM node:20-slim AS server-deps
 WORKDIR /app/server
 RUN set -eux; \
@@ -44,6 +52,7 @@ RUN set -eux; \
 COPY server/ ./server/
 COPY --from=server-deps /app/server/node_modules ./server/node_modules
 COPY --from=client-builder /app/client/dist ./client/dist
+COPY --from=mobile-builder /app/mobile/dist ./mobile/dist
 
 RUN mkdir -p /data/uploads
 VOLUME ["/data"]

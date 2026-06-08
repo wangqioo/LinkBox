@@ -190,8 +190,21 @@ export function parseBlocks(content: string): MarkdownBlock[] {
 
     if (line.match(/^\d+\.\s/)) {
       const items: string[] = [];
-      while (i < lines.length && lines[i].match(/^\d+\.\s/)) {
-        items.push(lines[i].replace(/^\d+\.\s/, '')); i++;
+      while (i < lines.length) {
+        if (lines[i].match(/^\d+\.\s/)) {
+          items.push(lines[i].replace(/^\d+\.\s/, ''));
+          i++;
+          continue;
+        }
+        if (lines[i].trim() === '') {
+          let j = i + 1;
+          while (j < lines.length && lines[j].trim() === '') j++;
+          if (j < lines.length && lines[j].match(/^\d+\.\s/)) {
+            i = j;
+            continue;
+          }
+        }
+        break;
       }
       blocks.push({ kind: 'ol', items });
       continue;
