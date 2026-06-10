@@ -2,6 +2,29 @@
 
 Date: 2026-06-10
 
+## Current Status
+
+Implementation has reached the first checkpoint in commit
+`b890d85 Refactor LinkBox item architecture and feedback`.
+
+Completed:
+
+- Per-item processing status is derived from durable jobs and returned by item
+  list/detail APIs.
+- Failed jobs can be retried from the item card when retry metadata is present.
+- `routes/links.js` has been reduced to route wiring and delegates to
+  controller/service helpers.
+- Upload middleware, image proxy logic, item repository access, and processing
+  status derivation are split into focused modules.
+- Desktop `LinksPage` is now mostly UI orchestration; data loading, actions,
+  exports, and helper logic live in separate hooks/modules.
+- A desktop toast provider gives user feedback for add, upload, edit, retry,
+  delete, import, and export flows.
+- Backend unit tests, desktop build, mobile build, `git diff --check`, and an
+  isolated HTTP smoke test passed before pausing feature work.
+
+Developer handoff details are in `docs/development.md`.
+
 ## Goal
 
 LinkBox should become a reliable personal knowledge system that feels fast even

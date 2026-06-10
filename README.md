@@ -113,6 +113,11 @@
 client/          React 18 + TypeScript + Vite + Tailwind CSS
 server/          Express + better-sqlite3（单文件 SQLite）
 server/utils/
+  ├─ itemController.js         收藏项 HTTP 处理器
+  ├─ itemRepository.js         收藏项查询与用户隔离
+  ├─ itemProcessingStatus.js   后台任务状态派生与重试元数据
+  ├─ uploadMiddleware.js       上传中间件与文件过滤
+  ├─ imageProxyService.js      图片代理与防盗链处理
   ├─ fetchMeta.js              网页元数据抓取（title/description/og:image）
   ├─ extractContent.js         网页正文提取（微信公众号 + 通用 Readability）
   ├─ fileToMarkdown.js         Office/PDF/HTML 文件转 Markdown + 图片视觉描述
@@ -124,6 +129,8 @@ server/routes/
   ├─ links.js                  CRUD + 图片代理 + AI 接口
   └─ tags.js                   标签管理
 ```
+
+详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。
 
 **AI 模型**：默认连接 OpenAI 兼容 API（`/v1/chat/completions`），默认地址 `http://localhost:8000/v1`，默认模型名 `Qwen3.5-4B`。也可在管理员设置页切换 DeepSeek、OpenAI、OpenRouter、Kimi、DashScope、智谱或自定义服务。
 
@@ -197,7 +204,10 @@ openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PORT` | `3100` | 服务监听端口 |
-| `JWT_SECRET` | `linkbox-secret` | JWT 签名密钥，生产环境请修改 |
+| `DATA_DIR` | `server/` | 数据目录，默认随服务端目录 |
+| `DB_PATH` | `server/linkbox.db` | SQLite 数据库路径 |
+| `UPLOADS_DIR` | `server/uploads` | 上传文件目录 |
+| `JWT_SECRET` | `linkbox-dev-secret-change-in-prod` | JWT 签名密钥，生产环境请修改 |
 | `LOCAL_LLM_URL` | `http://localhost:8000/v1` | OpenAI 兼容模型服务地址 |
 
 ---
@@ -234,15 +244,24 @@ journalctl -u linkbox -f   # 查看日志
 ## 测试与诊断
 
 ```bash
-# 后端自动化测试
-cd server && npm test
+# 后端自动化测试（推荐 Node 22 LTS）
+cd server
+npm.cmd exec --yes --package node@22 -- node --test
 
 # 前端生产构建检查
-cd client && npm run build
+cd ../client
+npm.cmd run build
+
+# 移动端生产构建检查
+cd ../mobile
+npm.cmd run build
 
 # 手动检查 AI 设置接口和模型连接
-cd server && node scripts/check-ai-settings.mjs
+cd ../server
+node scripts/check-ai-settings.mjs
 ```
+
+如果系统 Node 版本已经是兼容的 LTS 版本，也可以在 `server/` 下直接运行 `npm test`。更多隔离冒烟测试步骤见 [docs/development.md](docs/development.md)。
 
 ---
 
