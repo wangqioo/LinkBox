@@ -104,6 +104,22 @@ export function createJobQueue({
     return result.changes;
   }
 
+  function retryFailedJobsForLink(linkId) {
+    const now = isoNow();
+    const result = db.prepare(`
+      UPDATE jobs
+      SET status = 'queued',
+          attempts = 0,
+          locked_at = '',
+          last_error = '',
+          next_run_at = ?,
+          updated_at = ?,
+          completed_at = ''
+      WHERE status = 'failed' AND link_id = ?
+    `).run(now, now, linkId);
+    return result.changes;
+  }
+
   function leaseNextJob() {
     const job = db.prepare(`
       SELECT * FROM jobs
@@ -229,6 +245,7 @@ export function createJobQueue({
     enqueue,
     recoverRunningJobs,
     retryFailedJobs,
+    retryFailedJobsForLink,
     leaseNextJob,
     markDone,
     markFailed,

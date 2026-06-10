@@ -4,6 +4,26 @@ export interface Tag {
   color: string;
 }
 
+export interface ProcessingStatus {
+  state: string;
+  stage: string;
+  label: string;
+  canRetry: boolean;
+  failedJobId: number | null;
+  lastError: string;
+  updatedAt: string;
+  activeJob?: {
+    id: number;
+    type: string;
+    label: string;
+    status: string;
+    attempts: number;
+    maxAttempts: number;
+    lastError: string;
+    updatedAt: string;
+  } | null;
+}
+
 export interface LinkItem {
   id: number;
   type?: string;
@@ -22,15 +42,17 @@ export interface LinkItem {
   imported_at: string;
   tags: Tag[];
   status?: string;
+  processing?: ProcessingStatus;
 }
 
 export interface LinkCardProps {
   link: LinkItem;
   allTags: Tag[];
-  onUpdate: (id: number, data: Record<string, any>) => void;
-  onDelete: (id: number) => void;
+  onUpdate: (id: number, data: Record<string, any>) => Promise<void> | void;
+  onDelete: (id: number) => Promise<void> | void;
   onSummarize?: (id: number) => Promise<void>;
   onExtract?: (id: number) => Promise<void>;
+  onRetryProcessing?: (id: number) => Promise<void>;
   onNoteUpdated?: (id: number, html: string) => void;
   isProcessing?: boolean;
   selectMode?: boolean;

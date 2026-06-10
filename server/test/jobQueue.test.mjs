@@ -97,3 +97,45 @@ test('retryFailedJobs returns failed jobs to queued', async () => withDb((db) =>
   assert.equal(row.locked_at, '');
   assert.equal(row.last_error, '');
 }));
+
+test('retryFailedJobsForLink only retries failed jobs for the selected link', async () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO jobs (type, link_id, payload, status, attempts, max_attempts, locked_at, last_error)
+    VALUES
+      ('file.extractMarkdown', 7, '{}', 'failed', 3, 3, 'stale-lock', 'parser missing'),
+      ('link.summarize', 42, '{}', 'failed', 2, 2, 'other-lock', 'LLM offline'),
+      ('link.extractMarkdown', 7, '{}', 'done', 1, 3, '', '')
+  `).run();
+  const queue = createJobQueue({ db, autoStart: false });
+
+  const retried = queue.retryFailedJobsForLink(7);
+  const rows = db.prepare('SELECT link_id, type, status, attempts, locked_at, last_error FROM jobs ORDER BY id').all();
+
+  assert.equal(retried, 1);
+  assert.deepEqual(rows, [
+    {
+      link_id: 7,
+      type: 'file.extractMarkdown',
+      status: 'queued',
+      attempts: 0,
+      locked_at: '',
+      last_error: '',
+    },
+    {
+      link_id: 42,
+      type: 'link.summarize',
+      status: 'failed',
+      attempts: 2,
+      locked_at: 'other-lock',
+      last_error: 'LLM offline',
+    },
+    {
+      link_id: 7,
+      type: 'link.extractMarkdown',
+      status: 'done',
+      attempts: 1,
+      locked_at: '',
+      last_error: '',
+    },
+  ]);
+}));

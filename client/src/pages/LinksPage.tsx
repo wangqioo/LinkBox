@@ -1,24 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
-import { api, type UploadProgress } from '../api/client';
+import { useEffect, useState } from 'react';
 import LinkCard from '../components/LinkCard';
 import AddLinkModal from '../components/AddLinkModal';
 import ImportModal from '../components/ImportModal';
 import { Plus, Upload, Download, Loader2, CheckSquare, Square } from 'lucide-react';
 import LinksFilters from './LinksFilters';
 import LinksPagination from './LinksPagination';
-import type { LinkPageItem, LinkPageTag } from './linksPageTypes';
+import { useLinkActions } from './useLinkActions';
+import { useLinkExports } from './useLinkExports';
+import { useLinksData } from './useLinksData';
 
 const PAGE_SIZE = 500;
 
-function sortLikeMobile(a: LinkPageItem, b: LinkPageItem) {
-  return b.id - a.id;
-}
 export default function LinksPage() {
-  const [links, setLinks] = useState<LinkPageItem[]>([]);
-  const [tags, setTags] = useState<LinkPageTag[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeTag, setActiveTag] = useState('');
@@ -30,47 +23,60 @@ export default function LinksPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [processingIds, setProcessingIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const fetchLinks = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params: Record<string, string> = { page: String(page), limit: String(PAGE_SIZE) };
-      if (debouncedSearch) params.search = debouncedSearch;
-      if (activeTag) params.tag = activeTag;
-      if (activeType) params.type = activeType;
-      if (dateFrom) params.from = dateFrom;
-      if (dateTo) params.to = dateTo;
-      const data = await api.getLinks(params);
-      setLinks([...data.links].sort(sortLikeMobile));
-      setTotal(data.total);
-    } catch { /* ignore */ }
-    setLoading(false);
-  }, [debouncedSearch, activeTag, activeType, dateFrom, dateTo, page]);
+  const {
+    links,
+    tags,
+    total,
+    page,
+    setPage,
+    loading,
+    processingIds,
+    mergeLink,
+    fetchLinks,
+    fetchTags,
+    startPolling,
+  } = useLinksData({
+    pageSize: PAGE_SIZE,
+    search: debouncedSearch,
+    activeTag,
+    activeType,
+    dateFrom,
+    dateTo,
+  });
 
-  // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [debouncedSearch, activeTag, activeType, dateFrom, dateTo]);
-
-  const fetchTags = async () => {
-    try { setTags(await api.getTags()); } catch { /* ignore */ }
-  };
-
-  useEffect(() => { fetchTags(); }, []);
-  useEffect(() => { fetchLinks(); }, [fetchLinks]);
-
-  // Resume polling for any items still processing after page load
-  useEffect(() => {
-    links.forEach(l => {
-      if (l.status === 'processing' && !processingIds.has(l.id)) {
-        startPolling(l.id);
-      }
-    });
-  }, [links.map(l => l.id).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const {
+    handleAddLink,
+    handleAddText,
+    handleAddImage,
+    handleAddAudio,
+    handleAddFile,
+    handleUpdate,
+    handleSummarize,
+    handleExtract,
+    handleRetryProcessing,
+    handleNoteUpdated,
+    handleDelete,
+    handleImport,
+  } = useLinkActions({
+    fetchLinks,
+    fetchTags,
+    mergeLink,
+    startPolling,
+  });
+  const {
+    handleExportJson,
+    handleExportSummaries,
+  } = useLinkExports({
+    showFilters,
+    selectedIds,
+    closeExportMenu: () => setShowExportMenu(false),
+  });
 
   // Auto-select all when filtered results change (only when filter panel is open)
   useEffect(() => {
@@ -85,84 +91,6 @@ export default function LinksPage() {
   }, [showFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  const startPolling = (id: number) => {
-    setProcessingIds(prev => new Set(prev).add(id));
-    const interval = setInterval(async () => {
-      try {
-        const updated = await api.getLink(id);
-        setLinks(prev => prev.map(l => l.id === id ? { ...l, ...updated } : l));
-        if (updated.status === 'done' || updated.status === 'error') {
-          clearInterval(interval);
-          setProcessingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
-        }
-      } catch { /* ignore */ }
-    }, 3000);
-  };
-
-  const handleAddLink = async (data: any) => {
-    const added = await api.addLink(data);
-    fetchLinks();
-    fetchTags();
-    if (added?.id) startPolling(added.id);
-  };
-
-  const handleAddText = async (data: any) => {
-    await api.addText(data);
-    fetchLinks();
-    fetchTags();
-  };
-
-  const handleAddImage = async (formData: FormData, onProgress?: (p: UploadProgress) => void) => {
-    await api.addImage(formData, onProgress);
-    fetchLinks();
-    fetchTags();
-  };
-
-  const handleAddAudio = async (formData: FormData, onProgress?: (p: UploadProgress) => void) => {
-    await api.addAudio(formData, onProgress);
-    fetchLinks();
-    fetchTags();
-  };
-
-  const handleAddFile = async (formData: FormData, onProgress?: (p: UploadProgress) => void) => {
-    const added = await api.addFile(formData, onProgress);
-    fetchLinks();
-    fetchTags();
-    if (added?.id) startPolling(added.id);
-  };
-
-  const handleUpdate = async (id: number, data: Record<string, any>) => {
-    await api.updateLink(id, data);
-    fetchLinks();
-    fetchTags();
-  };
-
-  const handleSummarize = async (id: number) => {
-    const updated = await api.summarizeLink(id);
-    setLinks(prev => prev.map(l => l.id === id ? { ...l, ...updated } : l));
-  };
-
-  const handleExtract = async (id: number) => {
-    const result = await api.extractContent(id);
-    setLinks(prev => prev.map(l => l.id === id ? { ...l, content_md: result.content_md } : l));
-  };
-
-  const handleNoteUpdated = (id: number, html: string) => {
-    setLinks(prev => prev.map(l => l.id === id ? { ...l, html_note: html } : l));
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('确定删除这条收藏？')) return;
-    await api.deleteLink(id);
-    fetchLinks();
-    fetchTags();
-  };
-
-  const handleImport = async (items: any[]) => {
-    await api.importLinks(items);
-    fetchLinks();
-  };
-
   const selectAll = () => setSelectedIds(new Set(links.map(l => l.id)));
   const deselectAll = () => setSelectedIds(new Set());
   const toggleSelect = (id: number) => setSelectedIds(prev => {
@@ -170,44 +98,6 @@ export default function LinksPage() {
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-
-  const handleExportJson = async () => {
-    setShowExportMenu(false);
-    const data = await api.exportLinks();
-    // Filter to selected IDs if in filter/select mode and something is selected
-    const ids = showFilters && selectedIds.size > 0 ? selectedIds : null;
-    const filtered = ids
-      ? {
-          ...data,
-          links: data.links.filter((l: any) => ids.has(l.id)),
-          linkTags: data.linkTags.filter((lt: any) => ids.has(lt.link_id)),
-        }
-      : data;
-    const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
-    const burl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = burl;
-    a.download = `linkbox-export-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(burl);
-  };
-
-  const handleExportSummaries = () => {
-    setShowExportMenu(false);
-    const token = localStorage.getItem('linkbox_token');
-    const ids = showFilters && selectedIds.size > 0 ? Array.from(selectedIds).join(',') : '';
-    const url = '/api/links/export/summaries' + (ids ? `?ids=${ids}` : '');
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.blob())
-      .then(blob => {
-        const burl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = burl;
-        a.download = `linkbox-summaries-${new Date().toISOString().slice(0, 10)}.md`;
-        a.click();
-        URL.revokeObjectURL(burl);
-      });
-  };
 
   const hasFilters = Boolean(activeTag || dateFrom || dateTo || activeType);
   const activeFilterCount = [activeTag, activeType, dateFrom || dateTo].filter(Boolean).length;
@@ -310,7 +200,8 @@ export default function LinksPage() {
           {links.map(link => (
             <LinkCard key={link.id} link={link} allTags={tags}
               onUpdate={handleUpdate} onDelete={handleDelete} onSummarize={handleSummarize}
-              onExtract={handleExtract} onNoteUpdated={handleNoteUpdated} isProcessing={processingIds.has(link.id)}
+              onExtract={handleExtract} onRetryProcessing={handleRetryProcessing}
+              onNoteUpdated={handleNoteUpdated} isProcessing={processingIds.has(link.id)}
               selectMode={showFilters} selected={selectedIds.has(link.id)} onToggleSelect={toggleSelect} />
           ))}
         </div>

@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Download, Sparkles, Loader2, BookOpen, GraduationCap, FileSpreadsheet, Presentation, FileCode, File, Globe } from 'lucide-react';
+import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Download, Sparkles, Loader2, BookOpen, GraduationCap, FileSpreadsheet, Presentation, FileCode, File, Globe, RotateCcw } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import LearningNoteModal from './LearningNoteModal';
 import { LazyHtmlModal, MarkdownModal } from './LinkContentModals';
 import type { LinkCardProps } from './linkCardTypes';
 import { formatLinkDate, getItemTypeLabel, getLinkDomain, proxyImage } from './linkCardUtils';
 
-export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummarize, onExtract, onNoteUpdated, isProcessing = false, selectMode = false, selected = false, onToggleSelect }: LinkCardProps) {
+export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummarize, onExtract, onRetryProcessing, onNoteUpdated, isProcessing = false, selectMode = false, selected = false, onToggleSelect }: LinkCardProps) {
   const [editing, setEditing] = useState(false);
   const [comment, setComment] = useState(link.comment);
   const [editContent, setEditContent] = useState(link.content || '');
@@ -14,6 +14,9 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   const [selectedTags, setSelectedTags] = useState<number[]>(link.tags.map(t => t.id));
   const [summarizing, setSummarizing] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [retryingProcessing, setRetryingProcessing] = useState(false);
+  const [retryError, setRetryError] = useState('');
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [showNote, setShowNote] = useState(false);
   const [showHtml, setShowHtml] = useState(false);
@@ -31,14 +34,22 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
     </div>
   ) : null;
 
-  const save = () => {
+  const save = async () => {
+    if (savingEdit) return;
     const data: Record<string, any> = { comment, tag_ids: selectedTags };
     if (itemType === 'text') {
       data.title = editTitle;
       data.content = editContent;
     }
-    onUpdate(link.id, data);
-    setEditing(false);
+    setSavingEdit(true);
+    try {
+      await onUpdate(link.id, data);
+      setEditing(false);
+    } catch {
+      // The page-level action already shows a toast.
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const cancel = () => {
@@ -92,8 +103,9 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
         </div>
       </div>
       <div className="flex gap-2">
-        <button onClick={save} className="btn-primary text-xs py-1.5">
-          <Check className="w-3 h-3" /> 保存
+        <button onClick={save} disabled={savingEdit} className="btn-primary text-xs py-1.5">
+          {savingEdit ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+          {savingEdit ? '保存中' : '保存'}
         </button>
         <button onClick={cancel} className="btn-secondary text-xs py-1.5">
           <X className="w-3 h-3" /> 取消
@@ -105,7 +117,13 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   const handleSummarize = async () => {
     if (!onSummarize || summarizing) return;
     setSummarizing(true);
-    try { await onSummarize(link.id); } finally { setSummarizing(false); }
+    try {
+      await onSummarize(link.id);
+    } catch {
+      // The page-level action already shows a toast.
+    } finally {
+      setSummarizing(false);
+    }
   };
 
   const handleExtract = async () => {
@@ -114,7 +132,22 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
     try {
       await onExtract(link.id);
       setShowMarkdown(true);
+    } catch {
+      // The page-level action already shows a toast.
     } finally { setExtracting(false); }
+  };
+
+  const handleRetryProcessing = async () => {
+    if (!onRetryProcessing || retryingProcessing) return;
+    setRetryingProcessing(true);
+    setRetryError('');
+    try {
+      await onRetryProcessing(link.id);
+    } catch (error: any) {
+      setRetryError(error.message || '重试失败');
+    } finally {
+      setRetryingProcessing(false);
+    }
   };
 
   const fileExt0 = (link.title || '').match(/\.(\w+)$/)?.[1]?.toLowerCase() || '';
@@ -198,17 +231,44 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   );
 
   const getAutoStatus = () => {
-    if (link.status === 'error') return { text: '处理失败', step: 0, error: true };
+    if (link.processing?.state === 'failed') {
+      return {
+        text: link.processing.lastError || '内容处理失败，可重试后台任务',
+        step: 0,
+        error: true,
+        canRetry: link.processing.canRetry,
+      };
+    }
+    if (link.status === 'error') return { text: '处理失败', step: 0, error: true, canRetry: false };
+    if (link.processing && ['queued', 'running', 'processing'].includes(link.processing.state)) {
+      return {
+        text: link.processing.label || '正在后台处理...',
+        step: link.processing.stage.includes('summarize') ? 2 : 1,
+        error: false,
+        canRetry: false,
+      };
+    }
     if (link.status !== 'processing' && !isProcessing) return null;
-    if (!hasMarkdown && !link.summary) return { text: '正在提取正文...', step: 1, error: false };
-    if (hasMarkdown && !link.summary) return { text: '正在生成摘要...', step: 2, error: false };
+    if (!hasMarkdown && !link.summary) return { text: '正在提取正文...', step: 1, error: false, canRetry: false };
+    if (hasMarkdown && !link.summary) return { text: '正在生成摘要...', step: 2, error: false, canRetry: false };
     return null;
   };
   const autoStatus = getAutoStatus();
   const autoProcessingBanner = autoStatus && (
     autoStatus.error ? (
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-2.5 py-2">
-        <span>⚠ 内容提取失败，可手动点击正文按钮重试</span>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-2.5 py-2">
+        <span className="flex-1 min-w-40">{retryError || autoStatus.text}</span>
+        {onRetryProcessing && autoStatus.canRetry && (
+          <button
+            type="button"
+            onClick={handleRetryProcessing}
+            disabled={retryingProcessing}
+            className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white/70 px-2 py-1 font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200 dark:hover:bg-red-900/40"
+          >
+            {retryingProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+            {retryingProcessing ? '重试中' : '重试'}
+          </button>
+        )}
       </div>
     ) : (
       <div className="mt-2 flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-2.5 py-2">
