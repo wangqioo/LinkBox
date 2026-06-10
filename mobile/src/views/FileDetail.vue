@@ -68,11 +68,19 @@
           <div class="card-label">AI 简介</div>
           <div v-if="file.status === 'pending'" class="state-row">
             <div class="mini-orb"></div>
-            <span>AI 分析中，请稍候...</span>
-            <button class="action-link" @click="triggerAnalyze" :disabled="analyzing">立即分析</button>
+            <div class="state-copy">
+              <span class="state-title">{{ processingLabel }}</span>
+              <span v-if="file.processing?.stage" class="state-detail">{{ file.processing.stage }}</span>
+            </div>
+            <button class="action-link" @click="handlePendingAction" :disabled="analyzing || loading">
+              {{ pendingActionLabel }}
+            </button>
           </div>
           <div v-else-if="file.status === 'failed'" class="state-row failed">
-            <span>✕ {{ file.error || '分析失败' }}</span>
+            <div class="state-copy">
+              <span class="state-title">处理失败</span>
+              <span class="state-detail">{{ processingError }}</span>
+            </div>
             <button class="action-link" @click="triggerAnalyze" :disabled="analyzing">重试</button>
           </div>
           <template v-else>
@@ -299,6 +307,9 @@ const SLABELS = { pending:'分析中', ready:'已完成', failed:'分析失败' 
 const typeIcon   = computed(() => ICONS[file.value?.type]   || '📦')
 const typeLabel  = computed(() => LABELS[file.value?.type]  || '其他')
 const statusLabel = computed(() => SLABELS[file.value?.status] || '')
+const processingLabel = computed(() => file.value?.processing?.label || '后台处理中')
+const processingError = computed(() => file.value?.error || file.value?.processing?.lastError || '请稍后重试')
+const pendingActionLabel = computed(() => file.value?.processing?.activeJob ? '刷新' : '继续处理')
 
 const timeStr = computed(() => {
   if (!file.value?.created_at) return ''
@@ -329,6 +340,14 @@ async function triggerAnalyze() {
   analyzing.value = true
   try { await analyzeFile(file.value.id); await load() }
   finally { analyzing.value = false }
+}
+
+async function handlePendingAction() {
+  if (file.value?.processing?.activeJob) {
+    await load()
+    return
+  }
+  await triggerAnalyze()
 }
 
 async function confirmDelete() {
@@ -467,7 +486,7 @@ onMounted(load)
 }
 
 .state-row {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: flex-start; gap: 8px;
   font-size: 13px; color: var(--text2);
 }
 .state-row.failed { color: var(--red); }
@@ -476,13 +495,36 @@ onMounted(load)
   border: 2px solid rgba(139,114,255,.3);
   border-top-color: var(--accent);
   animation: spin .8s linear infinite; flex-shrink: 0;
+  margin-top: 2px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+.state-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.state-title {
+  color: var(--text);
+  font-weight: 700;
+}
+.state-detail {
+  color: var(--text3);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.state-row.failed .state-title,
+.state-row.failed .state-detail {
+  color: var(--red);
+}
 .action-link {
   margin-left: auto; background: none; border: none;
   color: var(--accent); font-size: 12px; font-weight: 600;
   cursor: pointer; padding: 4px 10px;
   border: 1px solid rgba(139,114,255,.3); border-radius: 10px;
+  flex-shrink: 0;
 }
 .action-link:disabled { opacity: .4; cursor: not-allowed; }
 

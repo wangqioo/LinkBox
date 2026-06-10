@@ -54,6 +54,7 @@
               <span v-if="f.file_size"> · {{ fmtSize(f.file_size) }}</span>
               <span class="dc-time"> · {{ timeStr(f.created_at) }}</span>
             </div>
+            <div v-if="statusText(f)" class="dc-status-text" :class="f.status">{{ statusText(f) }}</div>
             <div v-if="f.summary" class="dc-summary">{{ f.summary }}</div>
           </div>
 
@@ -141,6 +142,12 @@ function timeStr(ts) {
   if (!ts) return ''
   const d = new Date(ts)
   return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
+}
+function statusText(f) {
+  if (!f) return ''
+  if (f.status === 'pending') return f.processing?.label || '后台处理中'
+  if (f.status === 'failed') return f.error || f.processing?.lastError || '处理失败，点开可重试'
+  return ''
 }
 
 function submitSearch() {
@@ -238,6 +245,18 @@ onMounted(async () => {
 }
 .dc-meta { font-size: 11px; color: var(--text3); }
 .dc-time { color: var(--text3); }
+.dc-status-text {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text3);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dc-status-text.pending { color: var(--orange); }
+.dc-status-text.failed { color: var(--red); }
 .dc-summary {
   font-size: 11px; color: var(--text3); margin-top: 3px; line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;

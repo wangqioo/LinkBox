@@ -6,3 +6,4 @@ server/uploads/
 client/dist/
 mobile/dist/
 .env
+.smoke/
