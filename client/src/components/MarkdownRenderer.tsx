@@ -99,7 +99,7 @@ function renderBlock(block: MarkdownBlock, key: number): ReactNode {
       );
     case 'ol':
       return (
-        <ol key={key} className="list-decimal list-inside my-1.5 space-y-0.5">
+        <ol key={key} start={block.start} className="list-decimal list-inside my-1.5 space-y-0.5">
           {block.items.map((item, j) => <li key={j} className="text-sm">{parseInline(item, `ol-${k}-${j}`)}</li>)}
         </ol>
       );

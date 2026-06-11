@@ -238,31 +238,55 @@ function renderMarkdown(md, sources = []) {
   const lines = normalizeCitations(md, sources.length).split(/\r?\n/)
   const html = []
   let listOpen = false
+  let orderedListOpen = false
 
-  for (const raw of lines) {
+  function closeLists() {
+    if (listOpen) { html.push('</ul>'); listOpen = false }
+    if (orderedListOpen) { html.push('</ol>'); orderedListOpen = false }
+  }
+
+  function nextNonBlankLine(start) {
+    for (let i = start; i < lines.length; i += 1) {
+      const line = lines[i].trim()
+      if (line) return line
+    }
+    return ''
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const raw = lines[index]
     const line = raw.trim()
     if (!line) {
-      if (listOpen) { html.push('</ul>'); listOpen = false }
+      const nextLine = nextNonBlankLine(index + 1)
+      if (listOpen && /^[-*]\s+/.test(nextLine)) continue
+      if (orderedListOpen && /^\d+\.\s+/.test(nextLine)) continue
+      closeLists()
       continue
     }
     if (line.startsWith('### ')) {
-      if (listOpen) { html.push('</ul>'); listOpen = false }
+      closeLists()
       html.push(`<h3>${renderInline(line.slice(4))}</h3>`)
     } else if (line.startsWith('## ')) {
-      if (listOpen) { html.push('</ul>'); listOpen = false }
+      closeLists()
       html.push(`<h2>${renderInline(line.slice(3))}</h2>`)
     } else if (line.startsWith('# ')) {
-      if (listOpen) { html.push('</ul>'); listOpen = false }
+      closeLists()
       html.push(`<h2>${renderInline(line.slice(2))}</h2>`)
     } else if (/^[-*]\s+/.test(line)) {
+      if (orderedListOpen) { html.push('</ol>'); orderedListOpen = false }
       if (!listOpen) { html.push('<ul>'); listOpen = true }
       html.push(`<li>${renderInline(line.replace(/^[-*]\s+/, ''))}</li>`)
-    } else {
+    } else if (/^\d+\.\s+/.test(line)) {
       if (listOpen) { html.push('</ul>'); listOpen = false }
+      const start = Number(line.match(/^(\d+)\.\s+/)?.[1] || 1)
+      if (!orderedListOpen) { html.push(`<ol start="${Number.isFinite(start) ? start : 1}">`); orderedListOpen = true }
+      html.push(`<li>${renderInline(line.replace(/^\d+\.\s+/, ''))}</li>`)
+    } else {
+      closeLists()
       html.push(`<p>${renderInline(line)}</p>`)
     }
   }
-  if (listOpen) html.push('</ul>')
+  closeLists()
   return html.join('')
 }
 </script>
@@ -371,7 +395,7 @@ function renderMarkdown(md, sources = []) {
   margin: 4px 0 6px;
 }
 .md :deep(p) { margin: 0 0 7px; }
-.md :deep(ul) { padding-left: 18px; margin: 0 0 8px; }
+.md :deep(ul), .md :deep(ol) { padding-left: 18px; margin: 0 0 8px; }
 .md :deep(li) { margin: 3px 0; }
 .md :deep(code) {
   background: rgba(255,255,255,.1);

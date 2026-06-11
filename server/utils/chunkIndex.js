@@ -1,4 +1,5 @@
 import db from '../db.js';
+import { addTimeScopeConditions, normalizeTimeScope } from './timeScope.js';
 
 const TARGET_CHARS = 1200;
 const OVERLAP_CHARS = 180;
@@ -199,20 +200,15 @@ function limitBySource(ranked, maxSources) {
 }
 
 function normalizeScope(scope = {}) {
-  const date = String(scope.date || '').trim();
   const type = String(scope.type || '').trim();
   return {
-    date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '',
+    ...normalizeTimeScope(scope),
     type: type === 'document' ? 'file' : type,
   };
 }
 
 function scopeWhere(scope, params) {
-  const conditions = [];
-  if (scope.date) {
-    conditions.push('substr(l.imported_at, 1, 10) = ?');
-    params.push(scope.date);
-  }
+  const conditions = addTimeScopeConditions(scope, params, 'l.imported_at');
   if (scope.type) {
     conditions.push('l.type = ?');
     params.push(scope.type);

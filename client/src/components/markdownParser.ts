@@ -4,7 +4,7 @@ export type MarkdownBlock =
   | { kind: 'image'; url: string; alt: string; description?: string }
   | { kind: 'blockquote'; lines: string[] }
   | { kind: 'ul'; items: string[] }
-  | { kind: 'ol'; items: string[] }
+  | { kind: 'ol'; start: number; items: string[] }
   | { kind: 'hr' }
   | { kind: 'html'; html: string }
   | { kind: 'table'; header: string[]; rows: string[][] }
@@ -188,7 +188,9 @@ export function parseBlocks(content: string): MarkdownBlock[] {
       continue;
     }
 
-    if (line.match(/^\d+\.\s/)) {
+    const orderedMatch = line.match(/^(\d+)\.\s/);
+    if (orderedMatch) {
+      const start = Number(orderedMatch[1]);
       const items: string[] = [];
       while (i < lines.length) {
         if (lines[i].match(/^\d+\.\s/)) {
@@ -206,7 +208,7 @@ export function parseBlocks(content: string): MarkdownBlock[] {
         }
         break;
       }
-      blocks.push({ kind: 'ol', items });
+      blocks.push({ kind: 'ol', start: Number.isFinite(start) ? start : 1, items });
       continue;
     }
 

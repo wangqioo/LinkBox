@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { scoreTextFields, tokenizeQuery } from './chunkIndex.js';
+import { addTimeScopeConditions } from './timeScope.js';
 
 export const DOCUMENT_PARSER_VERSION = 'linkbox-canonical-v1';
 const TARGET_CHARS = 1400;
@@ -358,10 +359,7 @@ export function searchDocumentChunks({ db, userId, query, limit = 12, scope = {}
   const params = [userId];
   const conditions = ['d.user_id = ?'];
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(scope.date || ''))) {
-    conditions.push('substr(l.imported_at, 1, 10) = ?');
-    params.push(scope.date);
-  }
+  conditions.push(...addTimeScopeConditions(scope, params, 'l.imported_at'));
   if (scope.type) {
     conditions.push('l.type = ?');
     params.push(scope.type === 'document' ? 'file' : scope.type);

@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { initDocumentSchema } from './documentIndex.js';
 import { scoreTextFields, tokenizeQuery } from './chunkIndex.js';
+import { addTimeScopeConditions } from './timeScope.js';
 
 export const LOCAL_EMBEDDING_PROVIDER = 'local';
 export const LOCAL_EMBEDDING_MODEL = 'linkbox-local-hash-v1';
@@ -252,10 +253,7 @@ export async function indexMissingDocumentEmbeddingsAsync(
 
 function scopeConditions(scope, params) {
   const conditions = ['d.user_id = ?'];
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(scope.date || ''))) {
-    conditions.push('substr(l.imported_at, 1, 10) = ?');
-    params.push(scope.date);
-  }
+  conditions.push(...addTimeScopeConditions(scope, params, 'l.imported_at'));
   if (scope.type) {
     conditions.push('l.type = ?');
     params.push(scope.type === 'document' ? 'file' : scope.type);

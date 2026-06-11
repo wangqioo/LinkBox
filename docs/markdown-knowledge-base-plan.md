@@ -145,21 +145,30 @@ Prefer semantic Markdown chunks over fixed-size slicing:
 
 ## Retrieval Strategy
 
-Start with SQLite-friendly hybrid keyword retrieval:
+Start with SQLite-friendly hybrid retrieval:
 
 - high weight: title, tags, user comment, document summary
 - medium weight: chunk content and heading path
 - light boost: recency
 - return chunks with document title, source URL/file name, and heading path
 
-Later add optional embeddings:
+Embeddings should be used as a first-class retrieval path when available:
 
 ```text
 keyword candidates + vector candidates -> merge -> rerank -> AI context
 ```
 
 Do not make vector search the only retrieval path. Personal knowledge bases need
-structured signals such as tags, dates, titles, and source metadata.
+structured signals such as tags, dates, titles, and source metadata. However,
+keyword retrieval must not gate vector retrieval: if embeddings are enabled,
+vector candidates should be requested even when keyword search returns no
+matches. Treat vectors as the primary semantic recall path and keyword matches as
+precision boosts and fallback signals.
+
+Time expressions in assistant questions should narrow retrieval before ranking.
+Supported phrases include today, yesterday, the day before yesterday, this week,
+last week, recent N days, ISO dates, and Chinese month/day expressions. All
+filters apply to `links.imported_at`.
 
 ## AI Context Contract
 
@@ -208,6 +217,9 @@ The current working tree can already be used as a Markdown-first knowledge base:
 - assistant retrieval prefers document chunks and preserves source/chunk context
 - assistant retrieval applies a local reranker after document keyword/embedding
   candidates are merged
+- assistant retrieval can infer date ranges from natural-language questions and
+  applies them to document keyword search, vector search, legacy chunks, and
+  field fallback
 - background enrichment jobs refresh document indexes after link, file, and image
   processing
 - `document.embed` jobs can asynchronously backfill embeddings
@@ -216,7 +228,8 @@ The current working tree can already be used as a Markdown-first knowledge base:
 
 Embedding is currently optional. Without embedding configuration, LinkBox still
 works through SQLite-friendly keyword retrieval. With embedding enabled, the
-pipeline can merge keyword candidates and vector candidates.
+pipeline should merge keyword candidates and vector candidates on every document
+retrieval request, even when one side returns no candidates.
 
 Supported embedding modes:
 
@@ -266,6 +279,8 @@ Current behavior:
 - set `ASSISTANT_ENABLE_RERANK=0` to disable it
 - scoring boosts title/heading matches, phrase matches, token coverage,
   dual keyword+embedding hits, and recency tie-breaks
+- next retrieval tuning step: make embedding recall independent from keyword
+  recall so semantic vector matches are not hidden by zero keyword hits
 
 Suggested files:
 

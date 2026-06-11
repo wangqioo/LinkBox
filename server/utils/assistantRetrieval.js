@@ -3,6 +3,7 @@ import { indexAllMissingChunks, scoreTextFields, searchRelevantChunks, tokenizeQ
 import { indexAllMissingDocuments, searchDocumentChunks } from './documentIndex.js';
 import { searchEmbeddedDocumentChunks } from './documentEmbeddings.js';
 import { rerankDocumentCandidates } from './documentRerank.js';
+import { addTimeScopeConditions, normalizeTimeScope, resolveTimeScope } from './timeScope.js';
 
 const DEFAULT_MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
 const DEFAULT_MAX_FALLBACK_SOURCES = Number(process.env.ASSISTANT_MAX_FALLBACK_SOURCES || 2);
@@ -33,20 +34,15 @@ function shouldUseFallbackSources(task, question) {
 }
 
 function normalizeScope(scope = {}) {
-  const date = String(scope.date || '').trim();
   const type = String(scope.type || '').trim();
   return {
-    date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '',
+    ...normalizeTimeScope(scope),
     type: type === 'document' ? 'file' : type,
   };
 }
 
 function scopeWhere(scope, params) {
-  const conditions = [];
-  if (scope.date) {
-    conditions.push('substr(l.imported_at, 1, 10) = ?');
-    params.push(scope.date);
-  }
+  const conditions = addTimeScopeConditions(scope, params, 'l.imported_at');
   if (scope.type) {
     conditions.push('l.type = ?');
     params.push(scope.type);
@@ -103,17 +99,20 @@ export function retrieveSources({
   maxFallbackSources = DEFAULT_MAX_FALLBACK_SOURCES,
   enableEmbeddings = process.env.ASSISTANT_ENABLE_EMBEDDINGS === '1',
   enableRerank = process.env.ASSISTANT_ENABLE_RERANK !== '0',
+  now = new Date(),
 } = {}) {
   indexAllMissingDocuments(db);
-  const scope = normalizeScope(rawScope);
+  const scope = normalizeScope({
+    ...rawScope,
+    ...resolveTimeScope({ question, scope: rawScope, now }),
+  });
   const documentChunks = searchDocumentChunks({ db, userId, query: question, task, limit: maxSources, scope });
-  if (documentChunks.length) {
+  const embeddingChunks = enableEmbeddings
+    ? searchEmbeddedDocumentChunks({ db, userId, query: question, limit: maxSources, scope })
+    : [];
+  if (documentChunks.length || embeddingChunks.length) {
     const merged = enableEmbeddings
-      ? mergeRetrievalCandidates(
-          documentChunks,
-          searchEmbeddedDocumentChunks({ db, userId, query: question, limit: maxSources, scope }),
-          maxSources,
-        )
+      ? mergeRetrievalCandidates(documentChunks, embeddingChunks, maxSources)
       : documentChunks;
     const reranked = enableRerank
       ? rerankDocumentCandidates(merged, { query: question, limit: maxSources })

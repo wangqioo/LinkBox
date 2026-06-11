@@ -100,6 +100,33 @@ test('retrieveSources can merge embedding candidates when hybrid retrieval is en
   assert.ok(sources.every(source => source.source_index));
 }));
 
+test('retrieveSources returns embedding candidates when keyword retrieval has no matches', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
+    VALUES (1, 5, 'file', '', 'Vector Only Notes', '', '2026-06-11T00:00:00.000Z', ?)
+  `).run(`# Vector Only Notes
+
+## Embeddings
+
+semantic embedding retrieval pipeline`);
+  indexDocumentForItem(db, 1);
+
+  const sources = retrieveSources({
+    db,
+    userId: 5,
+    question: 'conceptual lookup',
+    task: 'ask',
+    maxSources: 4,
+    enableEmbeddings: true,
+    enableRerank: false,
+  });
+
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].id, 1);
+  assert.deepEqual(sources[0].retrieval_modes, ['embedding']);
+  assert.equal(sources[0].source_index, 1);
+}));
+
 test('retrieveSources reranks merged candidates without dropping source metadata', () => withDb((db) => {
   db.prepare(`
     INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
@@ -128,4 +155,29 @@ test('retrieveSources reranks merged candidates without dropping source metadata
   assert.equal(sources[0].rerank_mode, 'local');
   assert.ok(sources[0].chunk_id);
   assert.match(sources[0].chunk_text, /Hybrid retrieval strategy/);
+}));
+
+test('retrieveSources infers natural-language time ranges from the question', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
+    VALUES
+      (1, 5, 'file', '', 'Older AI Notes', '', '2026-06-10T08:00:00.000Z', ?),
+      (2, 5, 'file', '', 'Yesterday AI Notes', '', '2026-06-11T09:00:00.000Z', ?)
+  `).run(
+    '# Older AI Notes\n\n## AI\n\nolder artificial intelligence notes',
+    '# Yesterday AI Notes\n\n## AI\n\nyesterday artificial intelligence notes',
+  );
+  indexDocumentForItem(db, 1);
+  indexDocumentForItem(db, 2);
+
+  const sources = retrieveSources({
+    db,
+    userId: 5,
+    question: '昨天的 AI 资料',
+    task: 'ask',
+    maxSources: 4,
+    now: new Date('2026-06-12T10:00:00+08:00'),
+  });
+
+  assert.deepEqual(sources.map(source => source.id), [2]);
 }));
