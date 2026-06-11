@@ -65,8 +65,24 @@ export interface QueueStats {
 
 export interface SystemStatus {
   queue: QueueStats;
+  documents?: DocumentMaintenanceStats;
   env: Record<string, string>;
   uptimeSeconds: number;
+}
+
+export interface DocumentMaintenanceStats {
+  items_with_content: number;
+  documents: number;
+  missing_documents: number;
+  chunks: number;
+  embeddings: number;
+  missing_embeddings: number;
+  embedding_jobs: {
+    queued: number;
+    running: number;
+    done: number;
+    failed: number;
+  };
 }
 
 export interface AssistantSource {
@@ -90,6 +106,75 @@ export interface AssistantSourceChunk {
 export interface AssistantAnswer {
   answer: string;
   sources: AssistantSource[];
+}
+
+export interface DocumentInspectionChunk {
+  id: number;
+  document_id: number;
+  chunk_index: number;
+  heading_path: string;
+  chunk_type: string;
+  content: string;
+  content_hash: string;
+  token_count: number;
+  char_start: number;
+  char_end: number;
+  metadata_json: string;
+}
+
+export interface DocumentInspectionAnnotation {
+  id: number;
+  document_id: number;
+  type: string;
+  content_json: string;
+  model: string;
+  created_at: string;
+}
+
+export interface DocumentInspectionEmbeddingModel {
+  provider: string;
+  model: string;
+  dimension: number;
+  count: number;
+}
+
+export interface DocumentInspection {
+  item: {
+    id: number;
+    user_id: number;
+    type: string;
+    url: string;
+    title: string;
+    summary: string;
+    status: string;
+    imported_at: string;
+  };
+  document: {
+    id: number;
+    item_id: number;
+    user_id: number;
+    title: string;
+    markdown: string;
+    markdown_hash: string;
+    parser_version: string;
+    language: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  };
+  chunks: DocumentInspectionChunk[];
+  annotations: DocumentInspectionAnnotation[];
+  embeddings: {
+    indexed: number;
+    missing: number;
+    models: DocumentInspectionEmbeddingModel[];
+  };
+  stats: {
+    chunk_count: number;
+    token_count: number;
+    markdown_chars: number;
+    updated_at: string;
+  };
 }
 
 export interface AdminUserSummary {
@@ -202,6 +287,13 @@ export const api = {
     return request(`/links${qs}`);
   },
   getLink: (id: number) => request(`/links/${id}`),
+  getLinkDocument: (id: number): Promise<DocumentInspection> => request(`/links/${id}/document`),
+  reindexLinkDocument: (id: number): Promise<DocumentInspection> =>
+    request(`/links/${id}/document/reindex`, { method: 'POST' }),
+  rechunkLinkDocument: (id: number): Promise<DocumentInspection> =>
+    request(`/links/${id}/document/rechunk`, { method: 'POST' }),
+  annotateLinkDocument: (id: number): Promise<DocumentInspection> =>
+    request(`/links/${id}/document/annotate`, { method: 'POST' }),
   addLink: (data: { url: string; comment?: string; tag_ids?: number[]; imported_at?: string }) =>
     request('/links', { method: 'POST', body: JSON.stringify(data) }),
   addText: (data: { title: string; content: string; comment?: string; tag_ids?: number[]; imported_at?: string }) =>
@@ -287,6 +379,10 @@ export const api = {
   getSystemStatus: (): Promise<SystemStatus> => request('/settings/system'),
   retryFailedJobs: (): Promise<{ ok: boolean; retried: number; queue: QueueStats }> =>
     request('/settings/system/retry-failed-jobs', { method: 'POST' }),
+  reindexDocuments: (): Promise<{ ok: boolean; indexed: number; chunks: number; stats: DocumentMaintenanceStats }> =>
+    request('/settings/system/reindex-documents', { method: 'POST' }),
+  backfillDocumentEmbeddings: (): Promise<{ ok: boolean; enqueued: number; queue: QueueStats; stats: DocumentMaintenanceStats }> =>
+    request('/settings/system/backfill-embeddings', { method: 'POST' }),
 
   // Admin
   getAdminUsers: (): Promise<AdminUserSummary[]> => request('/admin/users'),

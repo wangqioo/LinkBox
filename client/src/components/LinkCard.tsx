@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Download, Sparkles, Loader2, BookOpen, GraduationCap, FileSpreadsheet, Presentation, FileCode, File, Globe, RotateCcw } from 'lucide-react';
+import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Download, Sparkles, Loader2, BookOpen, GraduationCap, FileSpreadsheet, Presentation, FileCode, File, Globe, RotateCcw, FileSearch } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import LearningNoteModal from './LearningNoteModal';
+import DocumentInspectorModal from './DocumentInspectorModal';
 import { LazyHtmlModal, MarkdownModal } from './LinkContentModals';
 import type { LinkCardProps } from './linkCardTypes';
 import { formatLinkDate, getItemTypeLabel, getLinkDomain, proxyImage } from './linkCardUtils';
@@ -20,6 +21,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [showNote, setShowNote] = useState(false);
   const [showHtml, setShowHtml] = useState(false);
+  const [showDocumentInspector, setShowDocumentInspector] = useState(false);
 
   const itemType = link.type || 'link';
 
@@ -180,6 +182,13 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
           title="AI 学习笔记"
           className={`btn-ghost p-1.5 opacity-0 group-hover:opacity-100 ${link.html_note ? 'text-violet-500' : 'text-gray-400'}`}>
           <GraduationCap className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {hasMarkdown && (
+        <button onClick={() => setShowDocumentInspector(true)}
+          title="查看文档索引"
+          className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100 text-indigo-500">
+          <FileSearch className="w-3.5 h-3.5" />
         </button>
       )}
       {canSummarize && (
@@ -416,6 +425,9 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
     return (
       <>
+        {showDocumentInspector && (
+          <DocumentInspectorModal linkId={link.id} title={link.title || '文件文档'} onClose={() => setShowDocumentInspector(false)} />
+        )}
         {showHtml && hasHtml && (
           <LazyHtmlModal linkId={link.id} title={link.title || '网页预览'} onClose={() => setShowHtml(false)} />
         )}
@@ -480,6 +492,9 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
   return (
     <>
+      {showDocumentInspector && (
+        <DocumentInspectorModal linkId={link.id} title={link.title || link.url} onClose={() => setShowDocumentInspector(false)} />
+      )}
       {showMarkdown && (
         <MarkdownModal linkId={link.id} title={link.title || link.url} onClose={() => setShowMarkdown(false)} />
       )}

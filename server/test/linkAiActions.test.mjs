@@ -112,6 +112,7 @@ test('summarizeLinkItem rejects missing or unsupported items', async () => withD
 test('extractLinkContent extracts markdown, stores it, and indexes the link', async () => withDb(async (db) => {
   db.prepare("INSERT INTO links (id, user_id, type, url) VALUES (1, 5, 'link', 'https://article.example')").run();
   const indexed = [];
+  const indexedDocuments = [];
 
   const result = await extractLinkContent(db, {
     linkId: 1,
@@ -124,6 +125,7 @@ test('extractLinkContent extracts markdown, stores it, and indexes the link', as
       wordCount: 123,
     }),
     indexLink: linkId => indexed.push(linkId),
+    indexDocument: linkId => indexedDocuments.push(linkId),
   });
 
   assert.deepEqual(result, {
@@ -137,6 +139,7 @@ test('extractLinkContent extracts markdown, stores it, and indexes the link', as
   });
   assert.equal(db.prepare('SELECT content_md FROM links WHERE id = 1').get().content_md, '# From https://article.example');
   assert.deepEqual(indexed, [1]);
+  assert.deepEqual(indexedDocuments, [1]);
 }));
 
 test('extractLinkContent validates item ownership, type, and url', async () => withDb(async (db) => {

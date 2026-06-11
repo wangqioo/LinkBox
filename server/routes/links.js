@@ -14,6 +14,10 @@ router.get('/image-proxy', handleImageProxyRequest);
 router.use(authMiddleware);
 
 router.get('/', controller.list);
+router.get('/:id/document', controller.getDocument);
+router.post('/:id/document/reindex', controller.reindexDocument);
+router.post('/:id/document/rechunk', controller.rechunkDocument);
+router.post('/:id/document/annotate', controller.annotateDocument);
 router.get('/:id', controller.get);
 router.post('/', controller.createLink);
 router.post('/text', controller.createText);

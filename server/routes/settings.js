@@ -3,6 +3,11 @@ import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getAIConfig, updateAIConfig, testAIConfig } from '../utils/aiConfig.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
+import {
+  backfillMissingDocumentEmbeddings,
+  getDocumentMaintenanceStats,
+  reindexAllDocuments,
+} from '../utils/documentMaintenance.js';
 
 const router = Router();
 
@@ -52,6 +57,7 @@ router.get('/', authMiddleware, requireAdmin, (req, res) => {
 router.get('/system', authMiddleware, requireAdmin, (req, res) => {
   res.json({
     queue: getRuntimeQueue().stats(),
+    documents: getDocumentMaintenanceStats(db),
     env: {
       backgroundQueueConcurrency: process.env.BACKGROUND_QUEUE_CONCURRENCY || '1',
       localLlmUrl: process.env.LOCAL_LLM_URL || '',
@@ -60,6 +66,29 @@ router.get('/system', authMiddleware, requireAdmin, (req, res) => {
       assistantMaxTokens: process.env.ASSISTANT_MAX_TOKENS || '',
     },
     uptimeSeconds: Math.round(process.uptime()),
+  });
+});
+
+// POST /api/settings/system/reindex-documents - rebuild canonical documents/chunks
+router.post('/system/reindex-documents', authMiddleware, requireAdmin, (req, res) => {
+  const result = reindexAllDocuments(db);
+  res.json({
+    ok: true,
+    indexed: result.documents,
+    chunks: result.chunks,
+    stats: getDocumentMaintenanceStats(db),
+  });
+});
+
+// POST /api/settings/system/backfill-embeddings - enqueue missing document embeddings
+router.post('/system/backfill-embeddings', authMiddleware, requireAdmin, (req, res) => {
+  const result = backfillMissingDocumentEmbeddings(db, getRuntimeQueue());
+  getRuntimeQueue().drain();
+  res.json({
+    ok: true,
+    ...result,
+    queue: getRuntimeQueue().stats(),
+    stats: getDocumentMaintenanceStats(db),
   });
 });
 

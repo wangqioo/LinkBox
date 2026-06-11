@@ -23,6 +23,12 @@ import {
 } from './linkAiActions.js';
 import { deleteLinkItem, updateLinkItem } from './linkMutationService.js';
 import { exportAllData, exportSummariesMarkdown } from './linkExportService.js';
+import {
+  annotateDocumentInspection,
+  getDocumentInspection,
+  rechunkDocumentInspection,
+  reindexDocumentInspection,
+} from './documentInspector.js';
 import { UPLOADS_DIR } from './uploadMiddleware.js';
 
 function parseMultipartTags(req, res) {
@@ -274,6 +280,50 @@ export function createItemController({
       } catch (e) {
         console.error('learning-note error:', e.message);
         res.status(e.status || 500).json({ error: e.status ? e.message : `生成失败: ${e.message}` });
+      }
+    },
+
+    getDocument(req, res) {
+      try {
+        res.json(getDocumentInspection(db, {
+          itemId: req.params.id,
+          userId: req.userId,
+        }));
+      } catch (err) {
+        res.status(err.status || 500).json({ error: err.status ? err.message : `读取文档失败: ${err.message}` });
+      }
+    },
+
+    reindexDocument(req, res) {
+      try {
+        res.json(reindexDocumentInspection(db, {
+          itemId: req.params.id,
+          userId: req.userId,
+        }));
+      } catch (err) {
+        res.status(err.status || 500).json({ error: err.status ? err.message : `重建文档失败: ${err.message}` });
+      }
+    },
+
+    rechunkDocument(req, res) {
+      try {
+        res.json(rechunkDocumentInspection(db, {
+          itemId: req.params.id,
+          userId: req.userId,
+        }));
+      } catch (err) {
+        res.status(err.status || 500).json({ error: err.status ? err.message : `重切文档失败: ${err.message}` });
+      }
+    },
+
+    annotateDocument(req, res) {
+      try {
+        res.json(annotateDocumentInspection(db, {
+          itemId: req.params.id,
+          userId: req.userId,
+        }));
+      } catch (err) {
+        res.status(err.status || 500).json({ error: err.status ? err.message : `生成文档标注失败: ${err.message}` });
       }
     },
   };

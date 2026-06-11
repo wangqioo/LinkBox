@@ -2,6 +2,12 @@
 
 Date: 2026-06-11
 
+Status: usable as of 2026-06-11. The Markdown document layer, chunk index,
+assistant retrieval, inspection UI, manual document actions, and optional
+embedding/rerank pipeline have been implemented in the working tree. Remaining
+work is now product hardening and configuration polish, not a blocker for basic
+use.
+
 ## Goal
 
 Promote Markdown from an item field into LinkBox's canonical knowledge
@@ -82,6 +88,7 @@ document_embeddings
   model
   dimension
   vector
+  content_hash
   created_at
 
 document_annotations
@@ -172,20 +179,164 @@ original item and highlighted chunk.
 
 ## Migration Plan
 
-1. Add `documents` and `document_chunks` tables.
-2. Write a migration/indexing job that converts existing `links.content_md` into
-   `documents.markdown`.
-3. Move new import jobs to write documents first, then chunks.
-4. Update assistant retrieval to read from chunks instead of directly from
-   `links.content_md`.
-5. Add a document/chunk inspection UI for debugging.
-6. Add manual actions: reparse, rechunk, reindex, regenerate AI annotations.
-7. Add optional embedding and rerank adapters after keyword retrieval is stable.
+1. [x] Add `documents` and `document_chunks` tables.
+2. [x] Write a migration/indexing path that converts existing
+   `links.content_md` into `documents.markdown`.
+3. [x] Move new import jobs to write canonical documents and chunks after
+   extraction/summarization.
+4. [x] Update assistant retrieval to read from `document_chunks` before falling
+   back to legacy chunks and fields.
+5. [x] Add a document/chunk inspection UI for debugging.
+6. [x] Add manual actions: rechunk, reindex, and generate local inspection
+   annotations.
+7. [x] Add optional embedding adapters after keyword retrieval is stable.
+8. [x] Add rerank adapters for keyword + embedding candidates.
+9. [x] Add admin operations for bulk document reindexing and embedding backfill.
+10. [ ] Add UI/config documentation for real embedding providers.
+11. [ ] Decide whether Markdown document history should be append-only or
+    overwrite-in-place.
+
+## Implemented State
+
+The current working tree can already be used as a Markdown-first knowledge base:
+
+- new tables are created by `initDocumentSchema`
+- canonical Markdown is stored in `documents`
+- heading-aware chunks are stored in `document_chunks`
+- local inspection annotations are stored in `document_annotations`
+- optional embeddings are stored in `document_embeddings`
+- assistant retrieval prefers document chunks and preserves source/chunk context
+- assistant retrieval applies a local reranker after document keyword/embedding
+  candidates are merged
+- background enrichment jobs refresh document indexes after link, file, and image
+  processing
+- `document.embed` jobs can asynchronously backfill embeddings
+- document inspection UI shows canonical Markdown, chunks, annotations, and
+  embedding coverage
+
+Embedding is currently optional. Without embedding configuration, LinkBox still
+works through SQLite-friendly keyword retrieval. With embedding enabled, the
+pipeline can merge keyword candidates and vector candidates.
+
+Supported embedding modes:
+
+- local deterministic hash embedding: no external dependency, useful for testing
+  and keeping the pipeline operational
+- OpenAI-compatible `/embeddings`: configured through environment variables:
+  `EMBEDDING_PROVIDER=openai-compatible`, `EMBEDDING_BASE_URL`,
+  `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL`
+
+## Remaining Development Plan
+
+### 1. Bulk Maintenance Operations
+
+Goal: make the feature maintainable on existing databases.
+
+Tasks:
+
+- add an admin API to reindex all missing/outdated documents
+- add an admin API to enqueue `document.embed` for missing embeddings
+- expose counts for documents, chunks, embeddings, and failed embedding jobs
+- add tests around ownership, idempotency, and job de-duplication
+
+Suggested files:
+
+- `server/routes/settings.js`
+- `server/utils/documentIndex.js`
+- `server/utils/documentEmbeddings.js`
+- `server/test/enrichmentJobs.test.mjs`
+- `client/src/pages/SettingsPage.tsx`
+
+### 2. Rerank Adapter
+
+Goal: improve retrieval quality after keyword and embedding candidate merge.
+
+Tasks:
+
+- [x] define a rerank contract that accepts candidates and returns ordered candidate
+  IDs with scores
+- [x] implement a local heuristic reranker first
+- [ ] optionally add an OpenAI-compatible LLM reranker later
+- [x] keep reranking optional and bounded by a small candidate limit
+- [x] add tests proving rerank changes candidate order without removing citations
+
+Current behavior:
+
+- local rerank is enabled by default for document candidates
+- set `ASSISTANT_ENABLE_RERANK=0` to disable it
+- scoring boosts title/heading matches, phrase matches, token coverage,
+  dual keyword+embedding hits, and recency tie-breaks
+
+Suggested files:
+
+- `server/utils/assistantRetrieval.js`
+- `server/utils/documentRerank.js`
+- `server/test/assistantRetrieval.test.mjs`
+
+### 3. Embedding Configuration UI
+
+Goal: make real embedding providers configurable without editing environment
+variables.
+
+Tasks:
+
+- add embedding provider fields to settings
+- keep embedding config separate from chat/vision model config
+- add a test endpoint for `/embeddings`
+- show embedding status and last error in system settings
+
+Suggested files:
+
+- `server/utils/aiConfig.js`
+- `server/routes/settings.js`
+- `client/src/api/client.ts`
+- `client/src/pages/AISettingsPanel.tsx`
+- `client/src/pages/settingsConfig.ts`
+
+### 4. AI Annotations
+
+Goal: upgrade local inspection annotations into useful knowledge metadata.
+
+Tasks:
+
+- add annotation types such as `summary`, `entities`, `todos`, `claims`, and
+  `questions`
+- use the configured LLM to generate annotation JSON
+- keep local inspection summary as a no-network fallback
+- show annotation type and model clearly in the inspection UI
+
+Suggested files:
+
+- `server/utils/documentInspector.js`
+- `server/utils/aiConfig.js`
+- `server/test/itemController.test.mjs`
+- `client/src/components/DocumentInspectorModal.tsx`
+
+### 5. Document Versioning
+
+Goal: decide whether document updates should preserve history.
+
+Current behavior overwrites the canonical document for `(item_id,
+parser_version)`. That is simple and works for daily use. If LinkBox needs audit
+or reproducible AI outputs, add a version table instead of overwriting.
+
+Decision needed:
+
+- keep overwrite-in-place for simplicity
+- or add append-only `document_versions` for history and rollback
+
+## Recommended Next Order
+
+1. Bulk maintenance operations.
+2. Rerank adapter.
+3. Embedding configuration UI.
+4. AI annotations.
+5. Document versioning, only if history becomes necessary.
 
 ## Open Questions
 
-- Whether to keep a compatibility copy of `links.content_md` during migration.
+- Whether to keep a compatibility copy of `links.content_md` long term.
 - How much frontmatter should be stored in Markdown versus normalized columns.
-- Which chunk metadata should be visible in the UI.
 - Whether Markdown versions should be append-only or overwritten with history.
-- Which embedding backend should be the first optional adapter.
+- Which embedding backend should be the first production default.
+- Whether rerank should use a local heuristic, an LLM, or both.

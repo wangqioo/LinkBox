@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Save } from 'lucide-react';
 import AISettingsPanel from './AISettingsPanel';
 import BackgroundJobsPanel from './BackgroundJobsPanel';
+import DocumentMaintenancePanel from './DocumentMaintenancePanel';
 import SiteCookiesSettings from './SiteCookiesSettings';
 import { applyProviderPreset, DEFAULT_AI_CONFIG } from './settingsConfig';
 import { useToast } from '../context/ToastContext';
@@ -20,7 +21,10 @@ export default function SettingsPage() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [loadingSystem, setLoadingSystem] = useState(false);
   const [retryingJobs, setRetryingJobs] = useState(false);
+  const [reindexingDocuments, setReindexingDocuments] = useState(false);
+  const [backfillingEmbeddings, setBackfillingEmbeddings] = useState(false);
   const [queueMessage, setQueueMessage] = useState('');
+  const [documentMessage, setDocumentMessage] = useState('');
   const [error, setError] = useState('');
 
   const isAdmin = user?.id === 1;
@@ -37,6 +41,7 @@ export default function SettingsPage() {
   const refreshSystemStatus = async () => {
     setLoadingSystem(true);
     setQueueMessage('');
+    setDocumentMessage('');
     try {
       setSystemStatus(await api.getSystemStatus());
     } catch (e: any) {
@@ -45,6 +50,44 @@ export default function SettingsPage() {
       toast.error('系统状态加载失败', message);
     } finally {
       setLoadingSystem(false);
+    }
+  };
+
+  const handleReindexDocuments = async () => {
+    setReindexingDocuments(true);
+    setError('');
+    setDocumentMessage('');
+    try {
+      const result = await api.reindexDocuments();
+      setSystemStatus((prev) => prev ? { ...prev, documents: result.stats } : prev);
+      const message = `已重建 ${result.indexed} 个文档，生成 ${result.chunks} 个切块`;
+      setDocumentMessage(message);
+      toast.success('文档索引已重建', message);
+    } catch (e: any) {
+      const message = e.message || '重建文档索引失败';
+      setError(message);
+      toast.error('重建文档索引失败', message);
+    } finally {
+      setReindexingDocuments(false);
+    }
+  };
+
+  const handleBackfillEmbeddings = async () => {
+    setBackfillingEmbeddings(true);
+    setError('');
+    setDocumentMessage('');
+    try {
+      const result = await api.backfillDocumentEmbeddings();
+      setSystemStatus((prev) => prev ? { ...prev, queue: result.queue, documents: result.stats } : prev);
+      const message = result.enqueued ? `已入队 ${result.enqueued} 个 embedding 任务` : '没有缺失 embedding 需要补齐';
+      setDocumentMessage(message);
+      toast.success('Embedding 任务已更新', message);
+    } catch (e: any) {
+      const message = e.message || '补齐 Embeddings 失败';
+      setError(message);
+      toast.error('补齐 Embeddings 失败', message);
+    } finally {
+      setBackfillingEmbeddings(false);
     }
   };
 
@@ -144,6 +187,16 @@ export default function SettingsPage() {
         onProviderChange={handleProviderChange}
         onFieldChange={updateAIField}
         onTestAI={handleTestAI}
+      />
+      <DocumentMaintenancePanel
+        stats={systemStatus?.documents || null}
+        loading={loadingSystem}
+        reindexing={reindexingDocuments}
+        backfilling={backfillingEmbeddings}
+        message={documentMessage}
+        onRefresh={refreshSystemStatus}
+        onReindex={handleReindexDocuments}
+        onBackfillEmbeddings={handleBackfillEmbeddings}
       />
       <BackgroundJobsPanel
         systemStatus={systemStatus}

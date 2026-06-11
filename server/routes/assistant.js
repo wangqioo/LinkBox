@@ -2,7 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { callAIChat, streamAIChat } from '../utils/aiConfig.js';
-import { indexAllMissingChunks, scoreTextFields, searchRelevantChunks, tokenizeQuery } from '../utils/chunkIndex.js';
+import { retrieveSources } from '../utils/assistantRetrieval.js';
 
 const router = Router();
 const MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
@@ -35,25 +35,6 @@ const TASKS = {
 };
 
 router.use(authMiddleware);
-
-function tokenize(text) {
-  return tokenizeQuery(text);
-}
-
-function scoreItem(item, tokens) {
-  let score = scoreTextFields(item, tokens, {
-    title: 8,
-    summary: 5,
-    comment: 4,
-    url: 3,
-    content_md: 1,
-    content: 1,
-  });
-
-  if (item.summary) score += 1;
-  if (item.content_md) score += 1;
-  return score;
-}
 
 function textForItem(item) {
   return [
@@ -194,76 +175,6 @@ function normalizeTask(task) {
   return TASKS[task] ? task : 'ask';
 }
 
-function shouldUseFallbackSources(task, question) {
-  if (task === 'ask') return false;
-  if (task === 'recent') return true;
-  return tokenize(question).length < 2;
-}
-
-function normalizeScope(scope = {}) {
-  const date = String(scope.date || '').trim();
-  const type = String(scope.type || '').trim();
-  return {
-    date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '',
-    type: type === 'document' ? 'file' : type,
-  };
-}
-
-function scopeWhere(scope, params) {
-  const conditions = [];
-  if (scope.date) {
-    conditions.push('substr(l.imported_at, 1, 10) = ?');
-    params.push(scope.date);
-  }
-  if (scope.type) {
-    conditions.push('l.type = ?');
-    params.push(scope.type);
-  }
-  return conditions;
-}
-
-function retrieveSources(userId, question, task = 'ask', rawScope = {}) {
-  indexAllMissingChunks();
-  const scope = normalizeScope(rawScope);
-  const chunks = searchRelevantChunks({ userId, query: question, task, limit: MAX_SOURCES, scope });
-  if (chunks.length) {
-    return chunks.map((item, index) => ({ ...item, source_index: index + 1 }));
-  }
-
-  const params = [userId];
-  const scopedConditions = scopeWhere(scope, params);
-  const rows = db.prepare(`
-    SELECT id, type, url, title, description, comment, content, content_md, summary, imported_at
-    FROM links l
-    WHERE l.user_id = ?
-      AND (
-        COALESCE(l.content_md, '') != ''
-        OR COALESCE(l.summary, '') != ''
-        OR COALESCE(l.content, '') != ''
-        OR COALESCE(l.title, '') != ''
-      )
-      ${scopedConditions.length ? `AND ${scopedConditions.join(' AND ')}` : ''}
-    ORDER BY l.imported_at DESC
-    LIMIT 1000
-  `).all(...params);
-
-  if (task === 'recent') {
-    return rows.slice(0, MAX_SOURCES).map((item, index) => ({ ...item, source_index: index + 1 }));
-  }
-
-  const tokens = tokenize(question);
-  const ranked = rows
-    .map(item => ({ ...item, score: scoreItem(item, tokens) }))
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score || String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
-    .slice(0, MAX_SOURCES)
-    .map((item, index) => ({ ...item, source_index: index + 1 }));
-
-  if (ranked.length) return ranked;
-  if (!shouldUseFallbackSources(task, question)) return [];
-  return rows.slice(0, MAX_FALLBACK_SOURCES).map((item, index) => ({ ...item, source_index: index + 1 }));
-}
-
 function buildMessages(question, ranked, task = 'ask') {
   const taskConfig = TASKS[normalizeTask(task)];
   const grouped = groupSources(ranked);
@@ -306,7 +217,15 @@ router.post('/chat', async (req, res) => {
   if (!question) return res.status(400).json({ error: '问题不能为空' });
   const task = normalizeTask(req.body?.task);
 
-  const ranked = retrieveSources(req.userId, question, task, req.body?.scope);
+  const ranked = retrieveSources({
+    db,
+    userId: req.userId,
+    question,
+    task,
+    scope: req.body?.scope,
+    maxSources: MAX_SOURCES,
+    maxFallbackSources: MAX_FALLBACK_SOURCES,
+  });
   if (!ranked.length) {
     return res.json({
       answer: '没有在你的资料库里找到足够相关的内容。可以换个关键词，或先收藏/上传相关资料。',
@@ -337,7 +256,15 @@ router.post('/chat/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  const ranked = retrieveSources(req.userId, question, task, req.body?.scope);
+  const ranked = retrieveSources({
+    db,
+    userId: req.userId,
+    question,
+    task,
+    scope: req.body?.scope,
+    maxSources: MAX_SOURCES,
+    maxFallbackSources: MAX_FALLBACK_SOURCES,
+  });
   const sources = publicSources(ranked);
   writeSse(res, 'sources', { sources });
 

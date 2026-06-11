@@ -3,6 +3,7 @@ import {
   summarizeMarkdown as defaultSummarizeMarkdown,
 } from './aiSummarize.js';
 import { indexLinkContent as defaultIndexLinkContent } from './chunkIndex.js';
+import { indexDocumentForItem as defaultIndexDocumentForItem } from './documentIndex.js';
 import { extractPageMarkdown as defaultExtractPageMarkdown } from './extractContent.js';
 import { generateLearningNote as defaultGenerateLearningNote } from './generateLearningNote.js';
 import { attachTags } from './linkCreateService.js';
@@ -51,6 +52,7 @@ export async function extractLinkContent(db, {
   userId,
   extractPageMarkdown = defaultExtractPageMarkdown,
   indexLink = defaultIndexLinkContent,
+  indexDocument = itemId => defaultIndexDocumentForItem(db, itemId),
 }) {
   const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(linkId, userId);
   if (!link) throw new LinkActionError(404, '不存在');
@@ -60,6 +62,7 @@ export async function extractLinkContent(db, {
   const result = await extractPageMarkdown(link.url);
   db.prepare('UPDATE links SET content_md = ? WHERE id = ?').run(result.markdown, link.id);
   indexLink(link.id);
+  indexDocument(link.id);
 
   return {
     content_md: result.markdown,

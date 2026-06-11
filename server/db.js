@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync } from 'fs';
+import { initDocumentSchema } from './utils/documentIndex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -128,6 +129,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run ON jobs(status, next_run_at);
   CREATE INDEX IF NOT EXISTS idx_jobs_link ON jobs(link_id);
 `);
+
+initDocumentSchema(db);
 
 // Uploads directory is created above so multer/static serving can use a Docker volume.
 

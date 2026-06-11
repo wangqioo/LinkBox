@@ -6,6 +6,8 @@ import { extractPageMarkdown } from './extractContent.js';
 import { fileToMarkdown } from './fileToMarkdown.js';
 import { describeImage } from './imageVisionService.js';
 import { indexLinkContent } from './chunkIndex.js';
+import { indexDocumentForItem } from './documentIndex.js';
+import { indexMissingDocumentEmbeddingsAsync } from './documentEmbeddings.js';
 
 function updateStatus(linkId, status) {
   db.prepare('UPDATE links SET status = ? WHERE id = ?').run(status, linkId);
@@ -15,7 +17,39 @@ function getLink(linkId) {
   return db.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
 }
 
-export function registerEnrichmentJobs(queue, { uploadsDir }) {
+export function registerEnrichmentJobs(queue, options = {}) {
+  return registerEnrichmentJobsWithDeps(queue, options);
+}
+
+export function enqueueDocumentEmbedding(database, queue, linkId) {
+  const existing = database.prepare(`
+    SELECT id
+    FROM jobs
+    WHERE type = 'document.embed'
+      AND link_id = ?
+      AND status IN ('queued', 'running')
+    LIMIT 1
+  `).get(linkId);
+  if (existing) return null;
+  return queue.enqueue('document.embed', { linkId, maxAttempts: 2 });
+}
+
+export function registerEnrichmentJobsWithDeps(queue, {
+  uploadsDir,
+  db: database = db,
+  embedDocuments = indexMissingDocumentEmbeddingsAsync,
+} = {}) {
+  function refreshDocument(linkId) {
+    const result = indexDocumentForItem(database, linkId);
+    if (result.documentId) enqueueDocumentEmbedding(database, queue, linkId);
+    return result;
+  }
+
+  queue.register('document.embed', async ({ link_id: linkId }) => {
+    if (linkId) indexDocumentForItem(database, linkId);
+    await embedDocuments(database);
+  });
+
   queue.register('link.fetchMetadata', async ({ link_id: linkId, payload }) => {
     const link = getLink(linkId);
     if (!link) return;
@@ -43,6 +77,7 @@ export function registerEnrichmentJobs(queue, { uploadsDir }) {
 
     db.prepare('UPDATE links SET content_md = ? WHERE id = ?').run(extracted.markdown, linkId);
     indexLinkContent(linkId);
+    refreshDocument(linkId);
     queue.enqueue('link.summarize', { linkId });
   });
 
@@ -60,6 +95,8 @@ export function registerEnrichmentJobs(queue, { uploadsDir }) {
 
     db.prepare('UPDATE links SET summary = ?, status = ? WHERE id = ?')
       .run(summary || link.summary || '', 'done', linkId);
+    indexLinkContent(linkId);
+    refreshDocument(linkId);
   });
 
   queue.register('image.describe', async ({ link_id: linkId, payload }) => {
@@ -77,6 +114,7 @@ export function registerEnrichmentJobs(queue, { uploadsDir }) {
     db.prepare('UPDATE links SET content_md = ?, summary = ?, status = ? WHERE id = ?')
       .run(markdown, description || '', 'done', linkId);
     indexLinkContent(linkId);
+    refreshDocument(linkId);
   });
 
   queue.register('file.extractMarkdown', async ({ link_id: linkId, payload }) => {
@@ -101,6 +139,7 @@ export function registerEnrichmentJobs(queue, { uploadsDir }) {
     const thumbnail = imgMatch ? imgMatch[1] : null;
     db.prepare('UPDATE links SET content_md = ?, thumbnail = ? WHERE id = ?').run(markdown, thumbnail, linkId);
     indexLinkContent(linkId);
+    refreshDocument(linkId);
     queue.enqueue('file.summarize', { linkId });
   });
 
@@ -116,5 +155,7 @@ export function registerEnrichmentJobs(queue, { uploadsDir }) {
     const summary = await summarizeMarkdown(link.content_md, link.title || '');
     db.prepare('UPDATE links SET summary = ?, status = ? WHERE id = ?')
       .run(summary || link.summary || '', 'done', linkId);
+    indexLinkContent(linkId);
+    refreshDocument(linkId);
   });
 }

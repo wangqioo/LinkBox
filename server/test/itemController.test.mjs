@@ -6,6 +6,8 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { createItemController } from '../utils/itemController.js';
 import { createJobQueue, initJobSchema } from '../utils/jobQueue.js';
+import { initDocumentSchema, indexDocumentForItem } from '../utils/documentIndex.js';
+import { indexMissingDocumentEmbeddings } from '../utils/documentEmbeddings.js';
 
 function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-item-controller-test-'));
@@ -43,6 +45,7 @@ function withDb(fn) {
       );
     `);
     initJobSchema(db);
+    initDocumentSchema(db);
     db.prepare("INSERT INTO tags (id, user_id, name) VALUES (1, 5, 'AI')").run();
     return fn(db);
   } finally {
@@ -163,4 +166,143 @@ test('retryProcessing requeues failed jobs and returns updated item status', () 
   assert.equal(job.attempts, 0);
   assert.equal(job.last_error, '');
   assert.equal(drained, true);
+}));
+
+test('getDocument returns owned canonical document and chunks', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, imported_at, content_md)
+    VALUES (1, 5, 'link', 'https://example.com', 'Example', '2026-06-11T00:00:00.000Z', ?)
+  `).run(`# Example
+
+## Section
+
+Body text.`);
+  indexDocumentForItem(db, 1);
+  const controller = createItemController({ db });
+  const res = createResponse();
+
+  controller.getDocument({ userId: 5, params: { id: 1 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.jsonBody.item.id, 1);
+  assert.equal(res.jsonBody.document.title, 'Example');
+  assert.match(res.jsonBody.document.markdown, /source_url: https:\/\/example.com/);
+  assert.equal(res.jsonBody.chunks.length, 1);
+  assert.equal(res.jsonBody.chunks[0].heading_path, 'Example > Section');
+  assert.equal(res.jsonBody.stats.chunk_count, 1);
+}));
+
+test('getDocument reports embedding coverage for indexed chunks', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, imported_at, content_md)
+    VALUES (1, 5, 'link', 'https://example.com', 'Example', '2026-06-11T00:00:00.000Z', ?)
+  `).run(`# Example
+
+## Embeddings
+
+Vector-ready body.`);
+  indexDocumentForItem(db, 1);
+  indexMissingDocumentEmbeddings(db);
+  const controller = createItemController({ db });
+  const res = createResponse();
+
+  controller.getDocument({ userId: 5, params: { id: 1 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.jsonBody.embeddings.indexed, 1);
+  assert.equal(res.jsonBody.embeddings.missing, 0);
+  assert.equal(res.jsonBody.embeddings.models[0].provider, 'local');
+  assert.equal(res.jsonBody.embeddings.models[0].dimension, 64);
+}));
+
+test('getDocument rejects foreign items and reports missing document', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title)
+    VALUES (1, 8, 'text', 'Foreign'), (2, 5, 'text', 'No document')
+  `).run();
+  const controller = createItemController({ db });
+  const foreignRes = createResponse();
+  const missingRes = createResponse();
+
+  controller.getDocument({ userId: 5, params: { id: 1 } }, foreignRes);
+  controller.getDocument({ userId: 5, params: { id: 2 } }, missingRes);
+
+  assert.equal(foreignRes.statusCode, 404);
+  assert.deepEqual(foreignRes.jsonBody, { error: '不存在' });
+  assert.equal(missingRes.statusCode, 404);
+  assert.deepEqual(missingRes.jsonBody, { error: '文档尚未生成' });
+}));
+
+test('reindexDocument rebuilds owned document chunks', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, imported_at, content_md)
+    VALUES (1, 5, 'file', 'Plan.md', '2026-06-11T00:00:00.000Z', ?)
+  `).run(`# Plan
+
+## Old
+
+Old text.`);
+  indexDocumentForItem(db, 1);
+  db.prepare('UPDATE links SET content_md = ? WHERE id = 1').run(`# Plan
+
+## New
+
+New text.`);
+  const controller = createItemController({ db });
+  const res = createResponse();
+
+  controller.reindexDocument({ userId: 5, params: { id: 1 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.jsonBody.stats.chunk_count, 1);
+  assert.equal(res.jsonBody.chunks[0].heading_path, 'Plan.md > New');
+  assert.match(res.jsonBody.chunks[0].content, /New text/);
+}));
+
+test('rechunkDocument rebuilds chunks from the existing canonical markdown only', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, imported_at, content_md)
+    VALUES (1, 5, 'file', 'Plan.md', '2026-06-11T00:00:00.000Z', ?)
+  `).run(`# Plan
+
+## Original
+
+Original text.`);
+  indexDocumentForItem(db, 1);
+  db.prepare('UPDATE links SET content_md = ? WHERE id = 1').run(`# Plan
+
+## Changed Source
+
+Changed source text.`);
+  db.prepare('DELETE FROM document_chunks').run();
+  const controller = createItemController({ db });
+  const res = createResponse();
+
+  controller.rechunkDocument({ userId: 5, params: { id: 1 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.jsonBody.chunks[0].heading_path, 'Plan.md > Original');
+  assert.match(res.jsonBody.chunks[0].content, /Original text/);
+}));
+
+test('annotateDocument stores a generated document annotation', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, imported_at, summary, content_md)
+    VALUES (1, 5, 'file', 'Plan.md', '2026-06-11T00:00:00.000Z', 'Short summary', ?)
+  `).run(`# Plan
+
+## Section
+
+Important text.`);
+  indexDocumentForItem(db, 1);
+  const controller = createItemController({ db });
+  const res = createResponse();
+
+  controller.annotateDocument({ userId: 5, params: { id: 1 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.jsonBody.annotations.length, 1);
+  assert.equal(res.jsonBody.annotations[0].type, 'inspection_summary');
+  assert.match(res.jsonBody.annotations[0].content_json, /Short summary/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM document_annotations').get().count, 1);
 }));
