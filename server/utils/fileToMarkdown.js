@@ -2,13 +2,13 @@
 import { readFileSync, mkdirSync, readdirSync, copyFileSync, existsSync } from 'fs';
 import { extname, join } from 'path';
 import { execSync } from 'child_process';
-import { getAIConfig } from './aiConfig.js';
 import {
   decodeXmlEntities,
   extractHtmlText,
   findImagePlaceholders,
   replaceImagePlaceholdersWithDescriptions,
 } from './fileMarkdownUtils.js';
+import { describeImage as describeImageWithVision } from './imageVisionService.js';
 import {
   extractDrawingEmbedRefs,
   extractWordText,
@@ -51,45 +51,7 @@ function saveExtractedImage(srcPath, uploadsDir) {
  */
 export async function describeImage(localPath) {
   try {
-    const imgBuf = readFileSync(localPath);
-    const ext = extname(localPath).toLowerCase();
-    const mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
-    const b64 = imgBuf.toString('base64');
-
-    const aiConfig = getAIConfig({ includeSecret: true });
-    const payload = {
-      model: aiConfig.visionModel || aiConfig.model,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } },
-          { type: 'text', text: '请用一句简短的中文描述这张图片的内容，不超过30个字。' }
-        ]
-      }],
-      max_tokens: 80,
-      temperature: aiConfig.temperature,
-    };
-    if (aiConfig.supportsThinkingParam) {
-      payload.chat_template_kwargs = { enable_thinking: aiConfig.enableThinking };
-    }
-
-    const resp = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(aiConfig.apiKey ? { Authorization: `Bearer ${aiConfig.apiKey}` } : {}),
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30000)
-    });
-
-    if (!resp.ok) {
-      console.warn(`[file2md] Vision LLM returned ${resp.status}`);
-      return '';
-    }
-
-    const data = await resp.json();
-    const text = data?.choices?.[0]?.message?.content?.trim() || '';
+    const text = await describeImageWithVision(localPath, { promptType: 'document' });
     console.log(`[file2md] Image described: ${text}`);
     return text;
   } catch (e) {

@@ -3,7 +3,8 @@ import db from '../db.js';
 import { fetchLinkMeta } from './fetchMeta.js';
 import { summarizeContent, summarizeMarkdown } from './aiSummarize.js';
 import { extractPageMarkdown } from './extractContent.js';
-import { describeImage, fileToMarkdown } from './fileToMarkdown.js';
+import { fileToMarkdown } from './fileToMarkdown.js';
+import { describeImage } from './imageVisionService.js';
 import { indexLinkContent } from './chunkIndex.js';
 
 function updateStatus(linkId, status) {
@@ -66,7 +67,9 @@ export function registerEnrichmentJobs(queue, { uploadsDir }) {
     if (!link) return;
 
     updateStatus(linkId, 'processing');
-    const description = await describeImage(payload.diskPath);
+    const description = await describeImage(payload.diskPath, {
+      originalName: link.title || link.image_path || '',
+    });
     const markdown = description
       ? `![image](${link.image_path})\n\n> 图片描述：${description}`
       : `![image](${link.image_path})`;

@@ -151,7 +151,7 @@ function getPreset(providerId) {
 
 function getDefaultApiKey(providerId) {
   const preset = getPreset(providerId);
-  return envValue(preset.apiKeyEnv) || (providerId === 'custom' ? DEFAULTS.apiKey : '');
+  return envValue(preset.apiKeyEnv) || '';
 }
 
 function resolveProviderConfig({ provider, baseUrl, model, visionModel, enableThinking }) {
