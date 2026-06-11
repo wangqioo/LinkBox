@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { Plus, Pencil, Trash2, Check, X, Tags } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 interface Tag { id: number; name: string; color: string; link_count: number; created_at: string; }
 
@@ -16,6 +17,7 @@ const COLORS = [
 ];
 
 export default function TagsPage() {
+  const toast = useToast();
   const [tags, setTags] = useState<Tag[]>([]);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(COLORS[0]);
@@ -23,24 +25,38 @@ export default function TagsPage() {
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const fetchTags = async () => {
     setLoading(true);
-    try { setTags(await api.getTags()); } catch { /* ignore */ }
-    setLoading(false);
+    try {
+      setTags(await api.getTags());
+    } catch (e) {
+      toast.error('标签加载失败', e instanceof Error ? e.message : '请稍后重试');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchTags(); }, []);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!newName.trim() || creating) return;
+    setCreating(true);
     try {
       await api.addTag(newName.trim(), newColor);
+      toast.success('标签已创建', newName.trim());
       setNewName('');
       setNewColor(COLORS[Math.floor(Math.random() * COLORS.length)]);
-      fetchTags();
-    } catch { /* ignore */ }
+      await fetchTags();
+    } catch (e) {
+      toast.error('创建标签失败', e instanceof Error ? e.message : '请稍后重试');
+    } finally {
+      setCreating(false);
+    }
   };
 
   const startEdit = (tag: Tag) => {
@@ -50,16 +66,32 @@ export default function TagsPage() {
   };
 
   const saveEdit = async () => {
-    if (!editingId || !editName.trim()) return;
-    await api.updateTag(editingId, { name: editName.trim(), color: editColor });
-    setEditingId(null);
-    fetchTags();
+    if (!editingId || !editName.trim() || savingId) return;
+    setSavingId(editingId);
+    try {
+      await api.updateTag(editingId, { name: editName.trim(), color: editColor });
+      toast.success('标签已更新', editName.trim());
+      setEditingId(null);
+      await fetchTags();
+    } catch (e) {
+      toast.error('更新标签失败', e instanceof Error ? e.message : '请稍后重试');
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm('删除标签后，相关链接的标签会被移除。确定？')) return;
-    await api.deleteTag(id);
-    fetchTags();
+    setDeletingId(id);
+    try {
+      await api.deleteTag(id);
+      toast.success('标签已删除');
+      await fetchTags();
+    } catch (e) {
+      toast.error('删除标签失败', e instanceof Error ? e.message : '请稍后重试');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -81,8 +113,8 @@ export default function TagsPage() {
         </div>
         <div className="flex gap-2">
           <input className="input flex-1" placeholder="标签名称" value={newName} onChange={e => setNewName(e.target.value)} />
-          <button type="submit" className="btn-primary shrink-0">
-            <Plus className="w-4 h-4" /> 创建
+          <button type="submit" disabled={creating || !newName.trim()} className="btn-primary shrink-0">
+            <Plus className="w-4 h-4" /> {creating ? '创建中…' : '创建'}
           </button>
         </div>
       </form>
@@ -112,10 +144,10 @@ export default function TagsPage() {
                     <input className="input" value={editName} onChange={e => setEditName(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && saveEdit()} autoFocus />
                   </div>
-                  <button onClick={saveEdit} className="btn-ghost p-1.5 text-green-600">
+                  <button onClick={saveEdit} disabled={savingId === tag.id} className="btn-ghost p-1.5 text-green-600">
                     <Check className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setEditingId(null)} className="btn-ghost p-1.5">
+                  <button onClick={() => setEditingId(null)} disabled={savingId === tag.id} className="btn-ghost p-1.5">
                     <X className="w-4 h-4" />
                   </button>
                 </>
@@ -124,10 +156,10 @@ export default function TagsPage() {
                   <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
                   <span className="font-medium text-sm flex-1">{tag.name}</span>
                   <span className="text-xs text-gray-400">{tag.link_count} 条链接</span>
-                  <button onClick={() => startEdit(tag)} className="btn-ghost p-1.5">
+                  <button onClick={() => startEdit(tag)} disabled={deletingId === tag.id} className="btn-ghost p-1.5">
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => handleDelete(tag.id)} className="btn-ghost p-1.5 text-red-500">
+                  <button onClick={() => handleDelete(tag.id)} disabled={deletingId === tag.id} className="btn-ghost p-1.5 text-red-500">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </>

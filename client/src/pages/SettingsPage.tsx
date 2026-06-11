@@ -6,9 +6,11 @@ import AISettingsPanel from './AISettingsPanel';
 import BackgroundJobsPanel from './BackgroundJobsPanel';
 import SiteCookiesSettings from './SiteCookiesSettings';
 import { applyProviderPreset, DEFAULT_AI_CONFIG } from './settingsConfig';
+import { useToast } from '../context/ToastContext';
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [aiConfig, setAIConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
   const [saving, setSaving] = useState(false);
@@ -38,7 +40,9 @@ export default function SettingsPage() {
     try {
       setSystemStatus(await api.getSystemStatus());
     } catch (e: any) {
-      setError(e.message || '系统状态加载失败');
+      const message = e.message || '系统状态加载失败';
+      setError(message);
+      toast.error('系统状态加载失败', message);
     } finally {
       setLoadingSystem(false);
     }
@@ -51,9 +55,13 @@ export default function SettingsPage() {
     try {
       const result = await api.retryFailedJobs();
       setSystemStatus((prev) => prev ? { ...prev, queue: result.queue } : prev);
-      setQueueMessage(result.retried ? `已重新入队 ${result.retried} 个失败任务` : '没有失败任务需要重试');
+      const message = result.retried ? `已重新入队 ${result.retried} 个失败任务` : '没有失败任务需要重试';
+      setQueueMessage(message);
+      toast.success('后台任务已更新', message);
     } catch (e: any) {
-      setError(e.message || '重试失败任务失败');
+      const message = e.message || '重试失败任务失败';
+      setError(message);
+      toast.error('重试失败任务失败', message);
     } finally {
       setRetryingJobs(false);
     }
@@ -70,9 +78,12 @@ export default function SettingsPage() {
       const result = await api.updateAIConfig(payload);
       setAIConfig({ ...DEFAULT_AI_CONFIG, ...result.config, apiKey: '' });
       setSaved(true);
+      toast.success('设置已保存');
       setTimeout(() => setSaved(false), 2000);
     } catch (e: any) {
-      setError(e.message || '保存失败');
+      const message = e.message || '保存失败';
+      setError(message);
+      toast.error('保存失败', message);
     } finally {
       setSaving(false);
     }
@@ -88,8 +99,11 @@ export default function SettingsPage() {
       const result = await api.testAIConfig(payload);
       const count = result.models?.length ? `，发现 ${result.models.length} 个模型` : '';
       setAITestResult(`连接成功：${result.provider || aiConfig.provider} / ${result.model}${count}`);
+      toast.success('AI 接口连接成功', `${result.provider || aiConfig.provider} / ${result.model}${count}`);
     } catch (e: any) {
-      setError(e.message || 'AI 接口测试失败');
+      const message = e.message || 'AI 接口测试失败';
+      setError(message);
+      toast.error('AI 接口测试失败', message);
     } finally {
       setTestingAI(false);
     }

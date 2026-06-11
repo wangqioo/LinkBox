@@ -17,6 +17,10 @@ modules such as `better-sqlite3` add avoidable build friction inside containers.
 - RKLLM adapter: `http://127.0.0.1:8000/v1`
 - Data directory: `/var/lib/linkbox`
 - App checkout: `/opt/linkbox`
+- SSH management entrypoint: `lckfb@150.158.146.192:6277`
+
+For the full deploy and rollback commands used from the Windows development
+machine, see [deployment.md](./deployment.md).
 
 ## Edge-mode environment
 

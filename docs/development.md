@@ -173,6 +173,10 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 - [architecture-redesign.md](./architecture-redesign.md): target architecture,
   phases, and success criteria.
+- [deployment.md](./deployment.md): deployment targets, update commands,
+  rollback steps, and verification checks for the home server and RK3576.
+- [markdown-knowledge-base-plan.md](./markdown-knowledge-base-plan.md):
+  Markdown-first knowledge base redesign plan for future AI retrieval work.
 - [taishanpi-deploy.md](./taishanpi-deploy.md): deployment notes for Taishan Pi.
 - [mobile-frontend.md](./mobile-frontend.md): mobile frontend notes.
 
@@ -180,15 +184,18 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 Recommended next work after the pause:
 
-1. Add Playwright E2E coverage for login, add item, processing state, retry,
+1. Redesign the knowledge base around canonical Markdown documents, structured
+   chunks, cited AI context, and future hybrid retrieval. See
+   [markdown-knowledge-base-plan.md](./markdown-knowledge-base-plan.md).
+2. Add Playwright E2E coverage for login, add item, processing state, retry,
    export, and delete.
-2. Apply the same toast and processing-status contract to settings, assistant,
+3. Apply the same toast and processing-status contract to settings, assistant,
    background jobs, and tag management.
-3. Extract reusable processing banner components for desktop and mobile.
-4. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
-5. Introduce a small application error helper for consistent route error
+4. Extract reusable processing banner components for desktop and mobile.
+5. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
+6. Introduce a small application error helper for consistent route error
    handling.
-6. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
+7. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
    `pdftotext`, and LibreOffice.
-7. Configure Git author identity so future commits do not use the fallback
+8. Configure Git author identity so future commits do not use the fallback
    `unknown <100448405@huaqin.com>` committer name.
