@@ -4,9 +4,9 @@ Date: 2026-06-15
 
 ## Current Status
 
-Implementation has reached the first committed checkpoint in
-`b890d85 Refactor LinkBox item architecture and feedback`, and the current
-working tree contains a 2026-06-15 architecture deepening pass that is ready for
+Implementation has reached the committed checkpoint
+`7fa0a03 Deepen assistant and asset architecture`, and the current working tree
+contains a 2026-06-15 item intake deepening pass that is ready for
 review/commit.
 
 Completed:
@@ -27,21 +27,9 @@ Completed:
 
 Added in the 2026-06-15 working tree:
 
-- Assistant turn assembly has a dedicated module. `routes/assistant.js` now
-  acts as the HTTP/SSE adapter while `utils/assistantTurn.js` owns source
-  grouping, context trimming, prompt construction, public source shaping, task
-  normalization, and citation cleanup.
-- Upload-derived asset facts have a dedicated module. Desktop and mobile upload
-  flows use `utils/uploadedAsset.js` for decoded original names, public/disk
-  paths, size metadata, type classification, HTML detection, and processing
-  payloads.
-- Markdown parsing has been deepened on the desktop client. Inline token
-  parsing, citation normalization, and sanitized table HTML now live in
-  `client/src/components/markdownParser.ts`; `MarkdownRenderer` is a React
-  adapter over parsed output.
-- Mobile assistant Markdown handling now has a tested utility at
-  `mobile/src/utils/markdownParser.js`, and `ChatBox.vue` reuses it for
-  citation normalization.
+- Item intake and durable job scheduling have a dedicated module at
+  `utils/itemIntake.js`. Desktop item routes and mobile upload/analyze flows now
+  delegate accept, import, retry, and reschedule behavior there.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -88,6 +76,7 @@ server/
       itemProcessingStatus.js
       uploadMiddleware.js
       uploadedAsset.js
+      itemIntake.js
     jobs/
       jobQueue.js
       jobRepository.js
@@ -200,12 +189,12 @@ Medium term:
 - Centralize upload-derived asset normalization so desktop and mobile upload
   adapters do not rebuild file paths, decoded names, and extraction metadata.
 - Move assistant turn assembly out of `routes/assistant.js`.
+- Deepen item intake and durable jobs into one module that owns accept/retry,
+  import, reschedule, initial status, and queue adapter usage.
 - Introduce a small `AppError` helper so route error handling is consistent.
 
 Remaining Phase 2 focus:
 
-- Deepen item intake and durable jobs into one module that owns accept/retry,
-  initial status, job catalog, and queue adapter usage.
 - Consolidate item write/tag/response shaping so create/update/delete paths
   return the same item presentation shape as list/detail where intended.
 
@@ -238,15 +227,12 @@ Remaining Phase 2 focus:
 
 Next slice:
 
-- Deepen item intake and durable jobs. This is the highest-leverage remaining
-  seam because desktop item routes, mobile upload/analyze routes, admin retry,
-  and processing status all currently need to understand queue behavior.
-
-Then:
-
 - Collapse retrieval around canonical documents. Make keyword, embedding,
   rerank, source limiting, and fallback behavior one retrieval interface, with
   legacy `link_chunks` as an adapter or migration fallback.
+
+Then:
+
 - Unify item presentation across desktop and mobile. Prepare a shared display
   model for type, status, action capability, retry state, and labels.
 - Unify extraction and post-extraction side effects. Make background and manual

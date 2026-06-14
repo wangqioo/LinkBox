@@ -1,19 +1,10 @@
 import { indexLinkContent, removeLinkContentIndex } from './chunkIndex.js';
 import { getRuntimeQueue } from './runtimeQueue.js';
-import {
-  enqueueFileProcessing,
-  enqueueImageProcessing,
-  enqueueLinkProcessing,
-} from './processingJobs.js';
 import { parseTagIds } from './linkPayloads.js';
-import { getItemById, getItemForUser, listItemsForUser } from './itemRepository.js';
+import { getItemForUser, listItemsForUser } from './itemRepository.js';
 import {
   createAudioItem,
-  createFileItem,
-  createImageItem,
-  createLinkItem,
   createTextItem,
-  importLinkItems,
 } from './linkCreateService.js';
 import {
   extractLinkContent,
@@ -30,6 +21,13 @@ import {
 } from './documentInspector.js';
 import { UPLOADS_DIR } from './uploadMiddleware.js';
 import { normalizeUploadedAsset } from './uploadedAsset.js';
+import {
+  acceptImportedLinkItems,
+  acceptFileItem,
+  acceptImageItem,
+  acceptLinkItem,
+  retryItemProcessing,
+} from './itemIntake.js';
 
 function parseMultipartTags(req, res) {
   try {
@@ -67,7 +65,7 @@ export function createItemController({
       const { url, title, comment, tag_ids, imported_at } = req.body;
       if (!url) return res.status(400).json({ error: 'URL 不能为空' });
 
-      const { link, processing } = createLinkItem(db, {
+      const { link } = acceptLinkItem(db, getQueue(), {
         userId: req.userId,
         url,
         title,
@@ -75,9 +73,7 @@ export function createItemController({
         tagIds: tag_ids,
         importedAt: imported_at || new Date().toISOString(),
       });
-      res.json(link);
-
-      enqueueLinkProcessing(getQueue(), processing);
+      return res.json(link);
     },
 
     createText(req, res) {
@@ -104,7 +100,7 @@ export function createItemController({
       const parsedTags = parseMultipartTags(req, res);
       if (parsedTags === null) return;
 
-      const { link, processing } = createImageItem(db, {
+      const { link } = acceptImageItem(db, getQueue(), {
         userId: req.userId,
         imagePath: asset.publicPath,
         diskPath: asset.diskPath,
@@ -114,9 +110,7 @@ export function createItemController({
         tagIds: parsedTags,
         importedAt: imported_at || new Date().toISOString(),
       });
-      res.json(link);
-
-      enqueueImageProcessing(getQueue(), processing);
+      return res.json(link);
     },
 
     uploadAudio(req, res) {
@@ -146,7 +140,7 @@ export function createItemController({
       const parsedTags = parseMultipartTags(req, res);
       if (parsedTags === null) return;
 
-      const { link, processing } = createFileItem(db, {
+      const { link } = acceptFileItem(db, getQueue(), {
         userId: req.userId,
         filePath: asset.publicPath,
         diskPath: asset.diskPath,
@@ -157,9 +151,7 @@ export function createItemController({
         tagIds: parsedTags,
         importedAt: imported_at || new Date().toISOString(),
       });
-      res.json(link);
-
-      if (processing) enqueueFileProcessing(getQueue(), processing);
+      return res.json(link);
     },
 
     async summarize(req, res) {
@@ -189,19 +181,15 @@ export function createItemController({
     },
 
     retryProcessing(req, res) {
-      const link = getItemForUser(db, { linkId: req.params.id, userId: req.userId });
-      if (!link) return res.status(404).json({ error: '不存在' });
-
-      const queue = getQueue();
-      const retried = queue.retryFailedJobsForLink(link.id);
-      if (!retried) {
-        return res.status(409).json({ error: '没有可重试的失败任务' });
+      try {
+        const { link, retried } = retryItemProcessing(db, getQueue(), {
+          linkId: req.params.id,
+          userId: req.userId,
+        });
+        return res.json({ ...link, retried });
+      } catch (err) {
+        return res.status(err.status || 500).json({ error: err.status ? err.message : `重试失败: ${err.message}` });
       }
-
-      db.prepare('UPDATE links SET status = ? WHERE id = ?').run('processing', link.id);
-      queue.drain();
-
-      return res.json({ ...getItemById(db, link.id), retried });
     },
 
     update(req, res) {
@@ -238,15 +226,11 @@ export function createItemController({
       const { links } = req.body;
       if (!Array.isArray(links)) return res.status(400).json({ error: '请提供链接数组' });
 
-      const { imported, toFetch } = importLinkItems(db, {
+      const { imported } = acceptImportedLinkItems(db, getQueue(), {
         userId: req.userId,
         items: links,
       });
-      res.json({ imported });
-
-      for (const { id, url, title } of toFetch) {
-        enqueueLinkProcessing(getQueue(), { linkId: id, url, title });
-      }
+      return res.json({ imported });
     },
 
     exportSummaries(req, res) {

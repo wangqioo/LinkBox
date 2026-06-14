@@ -133,6 +133,50 @@ test('createLink rejects empty URLs before writing or enqueueing', () => withDb(
   assert.deepEqual(enqueued, []);
 }));
 
+test('importLinks saves imported items and enqueues background processing', () => withDb((db) => {
+  const enqueued = [];
+  const controller = createItemController({
+    db,
+    getQueue: () => ({
+      enqueue(type, options) {
+        enqueued.push({ type, options });
+      },
+    }),
+  });
+  const req = {
+    userId: 5,
+    body: {
+      links: [
+        'https://a.example',
+        { url: 'https://b.example', title: 'B' },
+        { title: 'missing url' },
+      ],
+    },
+  };
+  const res = createResponse();
+
+  controller.importLinks(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.jsonBody, { imported: 2 });
+  assert.deepEqual(enqueued, [
+    {
+      type: 'link.fetchMetadata',
+      options: {
+        linkId: 1,
+        payload: { url: 'https://a.example', title: '' },
+      },
+    },
+    {
+      type: 'link.fetchMetadata',
+      options: {
+        linkId: 2,
+        payload: { url: 'https://b.example', title: 'B' },
+      },
+    },
+  ]);
+}));
+
 test('retryProcessing requeues failed jobs and returns updated item status', () => withDb((db) => {
   db.prepare(`
     INSERT INTO links (id, user_id, type, url, title, imported_at, status)

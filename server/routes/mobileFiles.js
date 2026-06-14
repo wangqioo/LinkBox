@@ -9,13 +9,18 @@ import { authMiddleware } from '../middleware/auth.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
 import { indexLinkContent, removeLinkContentIndex } from '../utils/chunkIndex.js';
 import { attachProcessingStatus } from '../utils/itemProcessingStatus.js';
-import { createAudioItem, createFileItem, createImageItem, createLinkItem, createTextItem } from '../utils/linkCreateService.js';
-import { isHtmlFile } from '../utils/linkPayloads.js';
+import { createAudioItem, createTextItem } from '../utils/linkCreateService.js';
 import { summarizeLinkItem } from '../utils/linkAiActions.js';
-import { enqueueFileProcessing, enqueueImageProcessing, enqueueLinkProcessing } from '../utils/processingJobs.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { toMobileFile } from '../utils/mobileFilePresenter.js';
 import { normalizeUploadedAsset } from '../utils/uploadedAsset.js';
+import {
+  acceptFileItem,
+  acceptImageItem,
+  acceptLinkItem,
+  retryItemProcessing,
+  scheduleItemProcessing,
+} from '../utils/itemIntake.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
@@ -72,22 +77,21 @@ function refreshLinkIndex(linkId) {
 router.post('/upload', upload.single('file'), async (req, res) => {
   const importedAt = new Date().toISOString();
   const analyzeNow = req.body?.analyze_now === 'true';
+  const queue = getRuntimeQueue();
 
   if (req.file) {
     const asset = normalizeUploadedAsset(req.file, { uploadsDir: UPLOADS_DIR });
     const type = asset.uploadType;
-    const queue = getRuntimeQueue();
 
     if (type === 'image') {
-      const { link, processing } = createImageItem(db, {
+      const { link } = acceptImageItem(db, queue, {
         userId: req.userId,
         imagePath: asset.publicPath,
         diskPath: asset.diskPath,
         originalName: asset.originalName,
         importedAt,
+        drain: analyzeNow,
       });
-      enqueueImageProcessing(queue, processing);
-      if (analyzeNow) queue.drain();
       return res.json(getMobileFileForUser(link.id, req.userId));
     }
 
@@ -101,18 +105,15 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.json(getMobileFileForUser(link.id, req.userId));
     }
 
-    const { link, processing } = createFileItem(db, {
+    const { link } = acceptFileItem(db, queue, {
       userId: req.userId,
       filePath: asset.publicPath,
       diskPath: asset.diskPath,
       originalName: asset.originalName,
       sizeBytes: asset.sizeBytes,
       importedAt,
+      drain: analyzeNow,
     });
-    if (processing) {
-      enqueueFileProcessing(queue, processing);
-      if (analyzeNow) queue.drain();
-    }
     return res.json(getMobileFileForUser(link.id, req.userId));
   }
 
@@ -121,14 +122,12 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return res.status(400).json({ error: 'Please enter a valid URL' });
     }
-    const { link, processing } = createLinkItem(db, {
+    const { link } = acceptLinkItem(db, queue, {
       userId: req.userId,
       url,
       importedAt,
+      drain: analyzeNow,
     });
-    const queue = getRuntimeQueue();
-    enqueueLinkProcessing(queue, processing);
-    if (analyzeNow) queue.drain();
     return res.json(getMobileFileForUser(link.id, req.userId));
   }
 
@@ -300,37 +299,42 @@ router.post('/:id/analyze', async (req, res) => {
   }
 
   if (current?.processing?.state === 'failed') {
-    const retried = queue.retryFailedJobsForLink(link.id);
-    if (retried) {
-      db.prepare('UPDATE links SET status = ? WHERE id = ?').run('processing', link.id);
-      queue.drain();
+    try {
+      retryItemProcessing(db, queue, { linkId: link.id, userId: req.userId });
       return res.json(getMobileFileForUser(link.id, req.userId));
+    } catch (err) {
+      if (err.status !== 409) {
+        return res.status(err.status || 500).json({ error: err.status ? err.message : err.message || 'Analyze failed' });
+      }
     }
   }
 
   if (link.type === 'link' && link.url) {
-    db.prepare('UPDATE links SET status = ? WHERE id = ?').run('processing', link.id);
-    enqueueLinkProcessing(queue, { linkId: link.id, url: link.url, title: '' });
-    queue.drain();
+    scheduleItemProcessing(db, queue, {
+      linkId: link.id,
+      userId: req.userId,
+      drain: true,
+    });
     return res.json(getMobileFileForUser(link.id, req.userId));
   }
 
   if (link.type === 'image' && link.image_path) {
-    db.prepare('UPDATE links SET status = ? WHERE id = ?').run('processing', link.id);
-    enqueueImageProcessing(queue, { linkId: link.id, diskPath: uploadedDiskPath(link) });
-    queue.drain();
+    scheduleItemProcessing(db, queue, {
+      linkId: link.id,
+      userId: req.userId,
+      diskPath: uploadedDiskPath(link),
+      drain: true,
+    });
     return res.json(getMobileFileForUser(link.id, req.userId));
   }
 
   if (link.type === 'file' && link.image_path) {
-    db.prepare('UPDATE links SET status = ? WHERE id = ?').run('processing', link.id);
-    enqueueFileProcessing(queue, {
+    scheduleItemProcessing(db, queue, {
       linkId: link.id,
+      userId: req.userId,
       diskPath: uploadedDiskPath(link),
-      originalName: link.title,
-      isHtml: isHtmlFile(link.title),
+      drain: true,
     });
-    queue.drain();
     return res.json(getMobileFileForUser(link.id, req.userId));
   }
 

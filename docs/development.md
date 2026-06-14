@@ -10,39 +10,36 @@ without rediscovering the architecture, commands, and validation steps.
 The previous committed checkpoint was:
 
 ```bash
-b890d85 Refactor LinkBox item architecture and feedback
+7fa0a03 Deepen assistant and asset architecture
 ```
 
-The current working tree has advanced through a 2026-06-15 architecture
+The current working tree has advanced through a 2026-06-15 item intake
 deepening pass. It is ready for review/commit after the user decides how to
 integrate it.
 
 At the previous committed checkpoint:
 
-- The backend item route has been split into controller, repository, upload,
-  image proxy, and processing status helpers.
-- Item list/detail responses expose a derived `processing` object based on the
-  durable jobs table.
-- Failed per-item background jobs can be retried from the item card.
-- Desktop link page state has been moved into focused hooks:
-  `useLinksData`, `useLinkActions`, and `useLinkExports`.
-- A global toast provider is available in the desktop client for user feedback.
-- Backend tests, desktop build, mobile build, and an isolated HTTP smoke test
-  have passed.
-
-The 2026-06-15 pass adds:
-
-- `server/routes/assistant.js` is now a thin HTTP/SSE adapter. Source grouping,
+- `server/routes/assistant.js` is a thin HTTP/SSE adapter. Source grouping,
   public source shaping, prompt construction, context trimming, task
   normalization, and citation cleanup live in `server/utils/assistantTurn.js`.
-- Desktop and mobile upload flows now share `server/utils/uploadedAsset.js` for
+- Desktop and mobile upload flows share `server/utils/uploadedAsset.js` for
   decoded names, public/disk paths, size metadata, upload type classification,
   extraction support, HTML detection, and processing payloads.
 - The desktop Markdown renderer delegates inline parsing, citation
-  normalization, and table HTML sanitization to `client/src/components/markdownParser.ts`.
-- Mobile assistant chat now reuses a small Markdown/citation utility at
+  normalization, and table HTML sanitization to
+  `client/src/components/markdownParser.ts`.
+- Mobile assistant chat reuses a small Markdown/citation utility at
   `mobile/src/utils/markdownParser.js`, with tests covering unsafe HTML,
   citation normalization, image proxying, and table sanitization.
+- Backend unit tests, desktop build, mobile build, and `git diff --check` all
+  passed before the item intake pass started.
+
+The current 2026-06-15 item intake pass adds:
+
+- Item acceptance and durable job scheduling now live in
+  `server/utils/itemIntake.js`. Desktop item routes and mobile upload/analyze
+  flows delegate accept, import, retry, and reschedule behavior there instead
+  of handling raw queue details inline.
 
 ## Recommended Runtime
 
@@ -83,6 +80,7 @@ server/utils/itemProcessingStatus.js Derived processing contract
 server/utils/uploadMiddleware.js    Multer upload setup and file filters
 server/utils/uploadedAsset.js       Upload-derived asset normalization
 server/utils/assistantTurn.js       Assistant prompt/source/citation assembly
+server/utils/itemIntake.js          Item acceptance, import, retry, and reschedule
 server/utils/imageProxyService.js   Proxied image fetching and headers
 server/utils/jobQueue.js            SQLite durable job queue
 ```
@@ -168,7 +166,7 @@ git diff --check
 
 Expected counts at the 2026-06-15 checkpoint:
 
-- Server: 123 passing tests.
+- Server: 130 passing tests.
 - Desktop client: 4 passing tests.
 - Mobile utility focused tests: 4 passing tests.
 
@@ -229,27 +227,24 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 Recommended next work after the pause:
 
-1. Deepen item intake and durable jobs. Move accept/retry/job-catalog behavior
-   behind one module so desktop routes, mobile routes, admin retries, and
-   processing status updates stop sharing raw queue details.
-2. Collapse retrieval around canonical documents. Keep legacy `link_chunks`
+1. Collapse retrieval around canonical documents. Keep legacy `link_chunks`
    only as an adapter or retire it after canonical document coverage is
    reliable; move shared scoring/tokenization away from legacy chunk indexing.
-3. Unify item presentation across desktop and mobile. Prepare one item display
+2. Unify item presentation across desktop and mobile. Prepare one item display
    model for type labels, processing states, retry affordances, and action
    capability.
-4. Unify extraction and post-extraction side effects. Make manual extract and
+3. Unify extraction and post-extraction side effects. Make manual extract and
    background extract share one `extract -> persist -> index -> summarize`
    path where possible.
-5. Add Playwright E2E coverage for login, add item, processing state, retry,
+4. Add Playwright E2E coverage for login, add item, processing state, retry,
    export, and delete.
-6. Apply the same toast and processing-status contract to settings, assistant,
+5. Apply the same toast and processing-status contract to settings, assistant,
    background jobs, and tag management.
-7. Extract reusable processing banner components for desktop and mobile.
-8. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
-9. Introduce a small application error helper for consistent route error
+6. Extract reusable processing banner components for desktop and mobile.
+7. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
+8. Introduce a small application error helper for consistent route error
    handling.
-10. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
+9. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
    `pdftotext`, and LibreOffice.
-11. Configure Git author identity so future commits do not use the fallback
+10. Configure Git author identity so future commits do not use the fallback
    `unknown <100448405@huaqin.com>` committer name.
