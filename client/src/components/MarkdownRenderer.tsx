@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { parseBlocks, proxyImg } from './markdownParser';
-import type { MarkdownBlock } from './markdownParser';
+import { parseBlocks, parseInlineTokens } from './markdownParser';
+import type { MarkdownBlock, MarkdownInline } from './markdownParser';
 
 interface Props {
   content: string;
@@ -9,49 +9,34 @@ interface Props {
   maxLines?: number;
 }
 
-function normalizeCitations(text: string) {
-  return String(text || '')
-    .replace(/\[资料(\d+)\s*-\s*(\d+)\]/g, (_match, start, end) => {
-      const from = Number(start);
-      const to = Number(end);
-      if (!Number.isFinite(from) || !Number.isFinite(to) || from > to || to - from > 20) return '';
-      return Array.from({ length: to - from + 1 }, (_v, index) => `[资料${from + index}]`).join('');
-    })
-    .replace(/\[资料(\d+)(?!\])/g, (_match, n) => `[资料${n}]`);
-}
-function parseInline(text: string, keyBase: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const normalized = normalizeCitations(text);
-  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|\[资料(\d+)\]/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  let idx = 0;
-  while ((m = pattern.exec(normalized)) !== null) {
-    if (m.index > last) nodes.push(normalized.slice(last, m.index));
-    if (m[1] !== undefined) {
-      nodes.push(<img key={`${keyBase}-img-${idx++}`} src={proxyImg(m[2].trim())} alt={m[1].trim()}
+function renderInlineToken(token: MarkdownInline, key: string): ReactNode {
+  switch (token.kind) {
+    case 'text':
+      return token.text;
+    case 'image':
+      return <img key={key} src={token.url} alt={token.alt}
         className="max-w-full rounded my-1 block" loading="lazy"
-        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />);
-    } else if (m[3] !== undefined) {
-      nodes.push(<a key={`${keyBase}-a-${idx++}`} href={m[4]} target="_blank" rel="noopener noreferrer"
-        className="text-indigo-600 dark:text-indigo-400 underline underline-offset-2 break-all">{m[3]}</a>);
-    } else if (m[5] !== undefined) {
-      nodes.push(<code key={`${keyBase}-c-${idx++}`}
-        className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-[0.85em] font-mono">{m[5]}</code>);
-    } else if (m[6] !== undefined) {
-      nodes.push(<strong key={`${keyBase}-b-${idx++}`}>{m[6]}</strong>);
-    } else if (m[7] !== undefined) {
-      nodes.push(<em key={`${keyBase}-i-${idx++}`}>{m[7]}</em>);
-    } else if (m[8] !== undefined) {
-      nodes.push(<span key={`${keyBase}-ref-${idx++}`}
+        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />;
+    case 'link':
+      return <a key={key} href={token.href} target="_blank" rel="noopener noreferrer"
+        className="text-indigo-600 dark:text-indigo-400 underline underline-offset-2 break-all">{token.text}</a>;
+    case 'code':
+      return <code key={key}
+        className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-[0.85em] font-mono">{token.text}</code>;
+    case 'strong':
+      return <strong key={key}>{token.text}</strong>;
+    case 'em':
+      return <em key={key}>{token.text}</em>;
+    case 'citation':
+      return <span key={key}
         className="inline-flex items-center rounded bg-indigo-50 dark:bg-indigo-950 px-1.5 py-0.5 text-[0.85em] font-medium text-indigo-600 dark:text-indigo-300">
-        资料{m[8]}
-      </span>);
-    }
-    last = m.index + m[0].length;
+        资料{token.number}
+      </span>;
   }
-  if (last < normalized.length) nodes.push(normalized.slice(last));
-  return nodes;
+}
+
+function parseInline(text: string, keyBase: string): ReactNode[] {
+  return parseInlineTokens(text).map((token, index) => renderInlineToken(token, `${keyBase}-${token.kind}-${index}`));
 }
 
 // ---------------------------------------------------------------------------

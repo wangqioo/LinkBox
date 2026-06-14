@@ -94,6 +94,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { streamAssistant } from '../api/files'
+import { normalizeCitations } from '../utils/markdownParser'
 
 const props = defineProps({
   date: { type: String, default: '' },
@@ -202,29 +203,6 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
-}
-
-function normalizeCitations(value, maxSourceNumber = 0) {
-  return String(value || '')
-    .replace(/\[资料(\d+)\s*-\s*(\d+)\]/g, (_match, start, end) => {
-      const from = Number(start)
-      const to = maxSourceNumber ? Math.min(Number(end), maxSourceNumber) : Number(end)
-      if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return ''
-      return Array.from({ length: to - from + 1 }, (_v, index) => `[资料${from + index}]`).join('')
-    })
-    .replace(/\[资料(\d+)\]/g, (match, n) => {
-      const value = Number(n)
-      if (!Number.isFinite(value)) return match
-      if (maxSourceNumber && (value < 1 || value > maxSourceNumber)) return ''
-      return match
-    })
-    .replace(/(\[资料\d+\])(?:\s*[、,，]\s*\d+)+/g, '$1')
-    .replace(/\[资料(\d+)(?!\])/g, (match, n) => {
-      const value = Number(n)
-      if (!Number.isFinite(value)) return match
-      if (maxSourceNumber && value > maxSourceNumber) return match
-      return `[资料${value}]`
-    })
 }
 
 function renderInline(value) {

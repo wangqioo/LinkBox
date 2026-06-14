@@ -1,11 +1,13 @@
 # LinkBox Architecture Redesign
 
-Date: 2026-06-10
+Date: 2026-06-15
 
 ## Current Status
 
-Implementation has reached the first checkpoint in commit
-`b890d85 Refactor LinkBox item architecture and feedback`.
+Implementation has reached the first committed checkpoint in
+`b890d85 Refactor LinkBox item architecture and feedback`, and the current
+working tree contains a 2026-06-15 architecture deepening pass that is ready for
+review/commit.
 
 Completed:
 
@@ -22,6 +24,24 @@ Completed:
   delete, import, and export flows.
 - Backend unit tests, desktop build, mobile build, `git diff --check`, and an
   isolated HTTP smoke test passed before pausing feature work.
+
+Added in the 2026-06-15 working tree:
+
+- Assistant turn assembly has a dedicated module. `routes/assistant.js` now
+  acts as the HTTP/SSE adapter while `utils/assistantTurn.js` owns source
+  grouping, context trimming, prompt construction, public source shaping, task
+  normalization, and citation cleanup.
+- Upload-derived asset facts have a dedicated module. Desktop and mobile upload
+  flows use `utils/uploadedAsset.js` for decoded original names, public/disk
+  paths, size metadata, type classification, HTML detection, and processing
+  payloads.
+- Markdown parsing has been deepened on the desktop client. Inline token
+  parsing, citation normalization, and sanitized table HTML now live in
+  `client/src/components/markdownParser.ts`; `MarkdownRenderer` is a React
+  adapter over parsed output.
+- Mobile assistant Markdown handling now has a tested utility at
+  `mobile/src/utils/markdownParser.js`, and `ChatBox.vue` reuses it for
+  citation normalization.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -67,6 +87,7 @@ server/
       itemRepository.js
       itemProcessingStatus.js
       uploadMiddleware.js
+      uploadedAsset.js
     jobs/
       jobQueue.js
       jobRepository.js
@@ -81,6 +102,7 @@ server/
       spreadsheetXmlUtils.js
     assistant/
       retriever.js
+      assistantTurn.js
       assistantService.js
     admin/
     tags/
@@ -175,7 +197,17 @@ Medium term:
 - Extract `routes/links.js` into item controller helpers.
 - Move upload middleware and image proxy logic out of the route file.
 - Introduce repository functions for item lookup, list, and ownership checks.
+- Centralize upload-derived asset normalization so desktop and mobile upload
+  adapters do not rebuild file paths, decoded names, and extraction metadata.
+- Move assistant turn assembly out of `routes/assistant.js`.
 - Introduce a small `AppError` helper so route error handling is consistent.
+
+Remaining Phase 2 focus:
+
+- Deepen item intake and durable jobs into one module that owns accept/retry,
+  initial status, job catalog, and queue adapter usage.
+- Consolidate item write/tag/response shaping so create/update/delete paths
+  return the same item presentation shape as list/detail where intended.
 
 ### Phase 3: Frontend Link Feature
 
@@ -188,8 +220,9 @@ Medium term:
 ### Phase 4: AI And Assistant Quality
 
 - Wrap AI providers behind a small interface.
-- Split assistant retrieval into retriever, prompt builder, and response
-  streamer.
+- Split assistant retrieval into retriever, assistant turn builder, and response
+  streamer. The assistant turn builder now exists; retrieval and streaming can
+  be deepened further.
 - Return source chunks with stable item IDs and scores for debugging.
 - Add admin-visible indexing and retrieval diagnostics.
 
@@ -201,31 +234,30 @@ Medium term:
 - Convert boot-time schema changes into migration files.
 - Keep Docker, systemd, and README values aligned.
 
-## Four-Week Execution Plan
+## Forward Plan
 
-Week 1:
+Next slice:
 
-- Land processing status contract.
-- Add per-item retry tests and frontend display.
-- Add Node version guidance.
+- Deepen item intake and durable jobs. This is the highest-leverage remaining
+  seam because desktop item routes, mobile upload/analyze routes, admin retry,
+  and processing status all currently need to understand queue behavior.
 
-Week 2:
+Then:
 
-- Split item route responsibilities.
-- Add repository and AppError helpers.
-- Expand route/service tests around item ownership and retry behavior.
+- Collapse retrieval around canonical documents. Make keyword, embedding,
+  rerank, source limiting, and fallback behavior one retrieval interface, with
+  legacy `link_chunks` as an adapter or migration fallback.
+- Unify item presentation across desktop and mobile. Prepare a shared display
+  model for type, status, action capability, retry state, and labels.
+- Unify extraction and post-extraction side effects. Make background and manual
+  extraction share indexing/document/summarization behavior where possible.
 
-Week 3:
+Still needed before a broader release:
 
-- Refactor desktop links feature into hooks and smaller components.
-- Apply the same processing banner to mobile cards.
-- Remove duplicated polling logic.
-
-Week 4:
-
-- Improve assistant retrieval boundaries.
 - Add operational health checks.
 - Write migration plan for item/content/assets tables.
+- Add Playwright E2E coverage for login, add item, processing state, retry,
+  export, and delete.
 
 ## Success Criteria
 

@@ -1,19 +1,23 @@
 # LinkBox Development Guide
 
-Last updated: 2026-06-10
+Last updated: 2026-06-15
 
 This document records the current development state so future work can resume
 without rediscovering the architecture, commands, and validation steps.
 
 ## Current Checkpoint
 
-The latest implementation checkpoint before pausing feature work is:
+The previous committed checkpoint was:
 
 ```bash
 b890d85 Refactor LinkBox item architecture and feedback
 ```
 
-At this point:
+The current working tree has advanced through a 2026-06-15 architecture
+deepening pass. It is ready for review/commit after the user decides how to
+integrate it.
+
+At the previous committed checkpoint:
 
 - The backend item route has been split into controller, repository, upload,
   image proxy, and processing status helpers.
@@ -25,6 +29,20 @@ At this point:
 - A global toast provider is available in the desktop client for user feedback.
 - Backend tests, desktop build, mobile build, and an isolated HTTP smoke test
   have passed.
+
+The 2026-06-15 pass adds:
+
+- `server/routes/assistant.js` is now a thin HTTP/SSE adapter. Source grouping,
+  public source shaping, prompt construction, context trimming, task
+  normalization, and citation cleanup live in `server/utils/assistantTurn.js`.
+- Desktop and mobile upload flows now share `server/utils/uploadedAsset.js` for
+  decoded names, public/disk paths, size metadata, upload type classification,
+  extraction support, HTML detection, and processing payloads.
+- The desktop Markdown renderer delegates inline parsing, citation
+  normalization, and table HTML sanitization to `client/src/components/markdownParser.ts`.
+- Mobile assistant chat now reuses a small Markdown/citation utility at
+  `mobile/src/utils/markdownParser.js`, with tests covering unsafe HTML,
+  citation normalization, image proxying, and table sanitization.
 
 ## Recommended Runtime
 
@@ -58,10 +76,13 @@ Important backend modules:
 
 ```text
 server/routes/links.js              Wires HTTP routes to the item controller
+server/routes/assistant.js          Assistant HTTP/SSE adapter
 server/utils/itemController.js      Item HTTP handlers
 server/utils/itemRepository.js      Item lookup/list ownership helpers
 server/utils/itemProcessingStatus.js Derived processing contract
 server/utils/uploadMiddleware.js    Multer upload setup and file filters
+server/utils/uploadedAsset.js       Upload-derived asset normalization
+server/utils/assistantTurn.js       Assistant prompt/source/citation assembly
 server/utils/imageProxyService.js   Proxied image fetching and headers
 server/utils/jobQueue.js            SQLite durable job queue
 ```
@@ -76,6 +97,16 @@ client/src/pages/useLinkExports.ts      JSON and Markdown export actions
 client/src/pages/linksPageUtils.ts      Small pure helpers
 client/src/context/ToastContext.tsx     Global toast provider
 client/src/components/LinkCard.tsx      Item card and processing UI
+client/src/components/markdownParser.ts Markdown block/inline parser and sanitizer
+client/src/components/MarkdownRenderer.tsx React adapter for parsed Markdown
+```
+
+Important mobile frontend modules:
+
+```text
+mobile/src/components/ChatBox.vue       Assistant chat UI adapter
+mobile/src/utils/markdownParser.js      Mobile Markdown/citation utility
+mobile/src/utils/mobileOrganizer.js     Tested local organization helpers
 ```
 
 ## Processing Status Contract
@@ -114,23 +145,37 @@ Current states used by the desktop client:
 Run these before handing off broad architecture changes:
 
 ```bash
-# Desktop production build
+# Desktop tests and production build
 cd client
-npm.cmd run build
+npm test
+npm run build
 
-# Mobile production build
+# Mobile focused utility tests and production build
 cd ../mobile
-npm.cmd run build
+npm run build
 
-# Server tests with Node 22
-cd ../server
-npm.cmd exec --yes --package node@22 -- node --test
+cd ..
+node --test mobile/src/utils/markdownParser.test.mjs mobile/src/utils/mobileOrganizer.test.mjs
+
+# Server tests
+cd server
+npm test
 
 # Whitespace check
+cd ..
 git diff --check
 ```
 
-Expected server test count at this checkpoint: 78 passing tests.
+Expected counts at the 2026-06-15 checkpoint:
+
+- Server: 123 passing tests.
+- Desktop client: 4 passing tests.
+- Mobile utility focused tests: 4 passing tests.
+
+Known warning: direct Node execution of mobile ES modules reports
+`MODULE_TYPELESS_PACKAGE_JSON` because `mobile/package.json` does not declare
+`"type": "module"`. The warning is non-fatal; the mobile production build
+passes.
 
 ## Isolated Smoke Test
 
@@ -184,18 +229,27 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 Recommended next work after the pause:
 
-1. Redesign the knowledge base around canonical Markdown documents, structured
-   chunks, cited AI context, and future hybrid retrieval. See
-   [markdown-knowledge-base-plan.md](./markdown-knowledge-base-plan.md).
-2. Add Playwright E2E coverage for login, add item, processing state, retry,
+1. Deepen item intake and durable jobs. Move accept/retry/job-catalog behavior
+   behind one module so desktop routes, mobile routes, admin retries, and
+   processing status updates stop sharing raw queue details.
+2. Collapse retrieval around canonical documents. Keep legacy `link_chunks`
+   only as an adapter or retire it after canonical document coverage is
+   reliable; move shared scoring/tokenization away from legacy chunk indexing.
+3. Unify item presentation across desktop and mobile. Prepare one item display
+   model for type labels, processing states, retry affordances, and action
+   capability.
+4. Unify extraction and post-extraction side effects. Make manual extract and
+   background extract share one `extract -> persist -> index -> summarize`
+   path where possible.
+5. Add Playwright E2E coverage for login, add item, processing state, retry,
    export, and delete.
-3. Apply the same toast and processing-status contract to settings, assistant,
+6. Apply the same toast and processing-status contract to settings, assistant,
    background jobs, and tag management.
-4. Extract reusable processing banner components for desktop and mobile.
-5. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
-6. Introduce a small application error helper for consistent route error
+7. Extract reusable processing banner components for desktop and mobile.
+8. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
+9. Introduce a small application error helper for consistent route error
    handling.
-7. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
+10. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
    `pdftotext`, and LibreOffice.
-8. Configure Git author identity so future commits do not use the fallback
+11. Configure Git author identity so future commits do not use the fallback
    `unknown <100448405@huaqin.com>` committer name.

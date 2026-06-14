@@ -1,4 +1,3 @@
-import { join } from 'path';
 import { indexLinkContent, removeLinkContentIndex } from './chunkIndex.js';
 import { getRuntimeQueue } from './runtimeQueue.js';
 import {
@@ -6,7 +5,7 @@ import {
   enqueueImageProcessing,
   enqueueLinkProcessing,
 } from './processingJobs.js';
-import { decodeUploadName, parseTagIds } from './linkPayloads.js';
+import { parseTagIds } from './linkPayloads.js';
 import { getItemById, getItemForUser, listItemsForUser } from './itemRepository.js';
 import {
   createAudioItem,
@@ -30,6 +29,7 @@ import {
   reindexDocumentInspection,
 } from './documentInspector.js';
 import { UPLOADS_DIR } from './uploadMiddleware.js';
+import { normalizeUploadedAsset } from './uploadedAsset.js';
 
 function parseMultipartTags(req, res) {
   try {
@@ -99,17 +99,16 @@ export function createItemController({
     uploadImage(req, res) {
       if (!req.file) return res.status(400).json({ error: '请上传图片' });
 
-      const imagePath = `/uploads/${req.file.filename}`;
-      const diskPath = join(uploadsDir, req.file.filename);
+      const asset = normalizeUploadedAsset(req.file, { uploadsDir });
       const { comment, imported_at, title } = req.body;
       const parsedTags = parseMultipartTags(req, res);
       if (parsedTags === null) return;
 
       const { link, processing } = createImageItem(db, {
         userId: req.userId,
-        imagePath,
-        diskPath,
-        originalName: decodeUploadName(req.file.originalname),
+        imagePath: asset.publicPath,
+        diskPath: asset.diskPath,
+        originalName: asset.originalName,
         title,
         comment,
         tagIds: parsedTags,
@@ -123,14 +122,14 @@ export function createItemController({
     uploadAudio(req, res) {
       if (!req.file) return res.status(400).json({ error: '请上传录音' });
 
-      const audioPath = `/uploads/${req.file.filename}`;
+      const asset = normalizeUploadedAsset(req.file, { uploadsDir });
       const { comment, imported_at, title } = req.body;
       const parsedTags = parseMultipartTags(req, res);
       if (parsedTags === null) return;
 
       const { link } = createAudioItem(db, {
         userId: req.userId,
-        audioPath,
+        audioPath: asset.publicPath,
         title,
         comment,
         tagIds: parsedTags,
@@ -142,20 +141,17 @@ export function createItemController({
     uploadFile(req, res) {
       if (!req.file) return res.status(400).json({ error: '请上传文件' });
 
-      const filePath = `/uploads/${req.file.filename}`;
+      const asset = normalizeUploadedAsset(req.file, { uploadsDir });
       const { comment, imported_at, title } = req.body;
       const parsedTags = parseMultipartTags(req, res);
       if (parsedTags === null) return;
 
-      const originalName = decodeUploadName(req.file.originalname);
-      const diskPath = join(uploadsDir, req.file.filename);
-
       const { link, processing } = createFileItem(db, {
         userId: req.userId,
-        filePath,
-        diskPath,
-        originalName,
-        sizeBytes: req.file.size,
+        filePath: asset.publicPath,
+        diskPath: asset.diskPath,
+        originalName: asset.originalName,
+        sizeBytes: asset.sizeBytes,
         title,
         comment,
         tagIds: parsedTags,

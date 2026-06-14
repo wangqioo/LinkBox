@@ -10,10 +10,109 @@ export type MarkdownBlock =
   | { kind: 'table'; header: string[]; rows: string[][] }
   | { kind: 'paragraph'; lines: string[] };
 
+export type MarkdownInline =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; url: string; alt: string }
+  | { kind: 'link'; href: string; text: string }
+  | { kind: 'code'; text: string }
+  | { kind: 'strong'; text: string }
+  | { kind: 'em'; text: string }
+  | { kind: 'citation'; number: number };
+
 export const proxyImg = (url: string) => {
   const u = url.trim();
   return u.startsWith('http') ? '/api/links/image-proxy?url=' + encodeURIComponent(u) : u;
 };
+
+export function escapeHtml(text: string) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function normalizeCitations(text: string) {
+  return String(text || '')
+    .replace(/\[资料(\d+)\s*-\s*(\d+)\]/g, (_match, start, end) => {
+      const from = Number(start);
+      const to = Number(end);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || from > to || to - from > 20) return '';
+      return Array.from({ length: to - from + 1 }, (_v, index) => `[资料${from + index}]`).join('');
+    })
+    .replace(/\[资料(\d+)(?!\])/g, (_match, n) => `[资料${n}]`);
+}
+
+export function parseInlineTokens(text: string): MarkdownInline[] {
+  const tokens: MarkdownInline[] = [];
+  const normalized = normalizeCitations(text);
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|\[资料(\d+)\]/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = pattern.exec(normalized)) !== null) {
+    if (m.index > last) tokens.push({ kind: 'text', text: normalized.slice(last, m.index) });
+    if (m[1] !== undefined) {
+      tokens.push({ kind: 'image', url: proxyImg(m[2].trim()), alt: m[1].trim() });
+    } else if (m[3] !== undefined) {
+      tokens.push({ kind: 'link', href: m[4].trim(), text: m[3] });
+    } else if (m[5] !== undefined) {
+      tokens.push({ kind: 'code', text: m[5] });
+    } else if (m[6] !== undefined) {
+      tokens.push({ kind: 'strong', text: m[6] });
+    } else if (m[7] !== undefined) {
+      tokens.push({ kind: 'em', text: m[7] });
+    } else if (m[8] !== undefined) {
+      tokens.push({ kind: 'citation', number: Number(m[8]) });
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < normalized.length) tokens.push({ kind: 'text', text: normalized.slice(last) });
+  return tokens;
+}
+
+const ALLOWED_HTML_TAGS = new Set([
+  'div', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'colgroup', 'col',
+  'p', 'br', 'span', 'strong', 'b', 'em', 'i', 'u',
+]);
+
+function sanitizeAttributes(tagName: string, attrs: string) {
+  const allowed: string[] = [];
+  const attrPattern = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+  let attr: RegExpExecArray | null;
+
+  while ((attr = attrPattern.exec(attrs)) !== null) {
+    const name = attr[1].toLowerCase();
+    const rawValue = attr[2] ?? attr[3] ?? attr[4] ?? '';
+    if (name === 'data-linkbox-table' && tagName === 'div') {
+      allowed.push('data-linkbox-table=""');
+      continue;
+    }
+    if ((name === 'rowspan' || name === 'colspan') && (tagName === 'td' || tagName === 'th')) {
+      const value = rawValue.match(/^\d{1,3}$/) ? rawValue : '1';
+      allowed.push(`${name}="${escapeHtml(value)}"`);
+    }
+  }
+
+  return allowed.length ? ` ${allowed.join(' ')}` : '';
+}
+
+function sanitizeHtmlBlock(html: string): string | null {
+  if (!/(<\s*table[\s>])|data-linkbox-table/i.test(html)) return null;
+
+  return html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<\s*(script|style|iframe|object|embed|link|meta|svg|math|template)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    .replace(/<\s*(script|style|iframe|object|embed|link|meta|svg|math|template)[^>]*\/?\s*>/gi, '')
+    .replace(/<\s*(\/?)\s*([a-zA-Z][\w:-]*)([^>]*)>/g, (_match, slash, name, attrs) => {
+      const tagName = String(name).toLowerCase();
+      if (!ALLOWED_HTML_TAGS.has(tagName)) return '';
+      if (slash) return `</${tagName}>`;
+      const isSelfClosing = /\/\s*$/.test(attrs) || tagName === 'br' || tagName === 'col';
+      return `<${tagName}${sanitizeAttributes(tagName, attrs)}${isSelfClosing ? ' />' : '>'}`;
+    });
+}
 
 function extractCells(lines: string[], startI: number, endI: number): string[] {
   const cells: string[] = [];
@@ -221,7 +320,12 @@ export function parseBlocks(content: string): MarkdownBlock[] {
     if (line.match(/^<[a-zA-Z]/)) {
       const htmlLines: string[] = [];
       while (i < lines.length && lines[i].trim() !== '') { htmlLines.push(lines[i]); i++; }
-      blocks.push({ kind: 'html', html: htmlLines.join('\n') });
+      const sanitized = sanitizeHtmlBlock(htmlLines.join('\n'));
+      if (sanitized) {
+        blocks.push({ kind: 'html', html: sanitized });
+      } else {
+        blocks.push({ kind: 'paragraph', lines: htmlLines });
+      }
       continue;
     }
 

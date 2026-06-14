@@ -10,15 +10,15 @@ import { extractPageMarkdown } from '../utils/extractContent.js';
 import { indexLinkContent, removeLinkContentIndex } from '../utils/chunkIndex.js';
 import { attachProcessingStatus } from '../utils/itemProcessingStatus.js';
 import { createAudioItem, createFileItem, createImageItem, createLinkItem, createTextItem } from '../utils/linkCreateService.js';
-import { decodeUploadName, isHtmlFile } from '../utils/linkPayloads.js';
+import { isHtmlFile } from '../utils/linkPayloads.js';
 import { summarizeLinkItem } from '../utils/linkAiActions.js';
 import { enqueueFileProcessing, enqueueImageProcessing, enqueueLinkProcessing } from '../utils/processingJobs.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { toMobileFile } from '../utils/mobileFilePresenter.js';
+import { normalizeUploadedAsset } from '../utils/uploadedAsset.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(__dirname, '../uploads');
-const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
 
 const storage = multer.diskStorage({
   destination: UPLOADS_DIR,
@@ -74,18 +74,16 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   const analyzeNow = req.body?.analyze_now === 'true';
 
   if (req.file) {
-    const originalName = decodeUploadName(req.file.originalname);
-    const filePath = `/uploads/${req.file.filename}`;
-    const ext = extname(originalName).toLowerCase();
-    const type = req.file.mimetype?.startsWith('audio/') ? 'audio' : IMAGE_EXTS.has(ext) ? 'image' : 'file';
+    const asset = normalizeUploadedAsset(req.file, { uploadsDir: UPLOADS_DIR });
+    const type = asset.uploadType;
     const queue = getRuntimeQueue();
 
     if (type === 'image') {
       const { link, processing } = createImageItem(db, {
         userId: req.userId,
-        imagePath: filePath,
-        diskPath: req.file.path,
-        originalName,
+        imagePath: asset.publicPath,
+        diskPath: asset.diskPath,
+        originalName: asset.originalName,
         importedAt,
       });
       enqueueImageProcessing(queue, processing);
@@ -96,8 +94,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     if (type === 'audio') {
       const { link } = createAudioItem(db, {
         userId: req.userId,
-        audioPath: filePath,
-        title: originalName,
+        audioPath: asset.publicPath,
+        title: asset.originalName,
         importedAt,
       });
       return res.json(getMobileFileForUser(link.id, req.userId));
@@ -105,10 +103,10 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     const { link, processing } = createFileItem(db, {
       userId: req.userId,
-      filePath,
-      diskPath: req.file.path,
-      originalName,
-      sizeBytes: req.file.size,
+      filePath: asset.publicPath,
+      diskPath: asset.diskPath,
+      originalName: asset.originalName,
+      sizeBytes: asset.sizeBytes,
       importedAt,
     });
     if (processing) {
