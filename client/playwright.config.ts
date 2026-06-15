@@ -42,17 +42,35 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 30000,
     },
+    {
+      command: 'npm run dev -- --host 127.0.0.1 --port 5175',
+      cwd: '../mobile',
+      env: {
+        VITE_API_PROXY: 'http://127.0.0.1:3310',
+      },
+      url: 'http://127.0.0.1:5175/mobile/',
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
   ],
   projects: [
     {
       name: 'chromium',
-      testIgnore: /responsive\.spec\.ts/,
+      testIgnore: [/responsive\.spec\.ts/, /mobile-image-batch\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'mobile-chromium',
       testMatch: /responsive\.spec\.ts/,
       use: { ...devices['Pixel 5'] },
+    },
+    {
+      name: 'mobile-app-chromium',
+      testMatch: /mobile-image-batch\.spec\.ts/,
+      use: {
+        ...devices['Pixel 5'],
+        baseURL: 'http://127.0.0.1:5175/mobile/',
+      },
     },
   ],
 });
