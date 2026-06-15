@@ -4,6 +4,7 @@ import {
   isHtmlFile,
   shouldExtractFile,
 } from './linkPayloads.js';
+import { presentItem } from './itemPresentation.js';
 
 export function attachTags(db, linkId) {
   return db.prepare('SELECT t.* FROM tags t JOIN link_tags lt ON t.id = lt.tag_id WHERE lt.link_id = ?').all(linkId);
@@ -19,7 +20,7 @@ export function setTags(db, linkId, tagIds) {
 
 export function getLinkWithTags(db, linkId) {
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
-  return link ? { ...link, tags: attachTags(db, link.id) } : null;
+  return link ? presentItem({ ...link, tags: attachTags(db, link.id) }) : null;
 }
 
 export function createLinkItem(db, {

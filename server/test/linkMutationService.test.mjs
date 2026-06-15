@@ -50,6 +50,7 @@ test('updateLinkItem updates provided fields and replaces tags', () => withDb((d
   assert.equal(result.link.comment, 'c');
   assert.equal(result.link.content, 'updated');
   assert.equal(result.link.imported_at, '2026-02-02');
+  assert.equal(result.link.display.status, 'idle');
   assert.deepEqual(result.link.tags.map(tag => tag.name), ['Read']);
 }));
 

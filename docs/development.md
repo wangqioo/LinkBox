@@ -46,6 +46,10 @@ At this checkpoint:
   `server/utils/extractedContentPersistence.js` for storing extracted content,
   preserving raw HTML/thumbnails, refreshing indexes, queueing embeddings, and
   scheduling summaries.
+- A server-side E2E smoke entrypoint exists at
+  `server/scripts/e2e-smoke.mjs` and is exposed as `npm run test:e2e`. It starts
+  the real server with isolated database/uploads paths and covers auth, create,
+  upload, list, update, export, and delete flows.
 
 ## Recommended Runtime
 
@@ -167,6 +171,7 @@ node --test mobile/src/utils/markdownParser.test.mjs mobile/src/utils/mobileOrga
 # Server tests
 cd server
 npm test
+npm run test:e2e
 
 # Whitespace check
 cd ..
@@ -178,6 +183,8 @@ Expected counts at the 2026-06-15 architecture follow-up checkpoint:
 - Server: 143 passing tests.
 - Desktop client: 4 passing tests.
 - Mobile utility focused tests: 4 passing tests.
+- Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
+  database and uploads directory.
 
 Known warning: direct Node execution of mobile ES modules reports
 `MODULE_TYPELESS_PACKAGE_JSON` because `mobile/package.json` does not declare
@@ -236,15 +243,15 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 Recommended next work after this checkpoint:
 
-1. Add Playwright E2E coverage for login, add text/link/file item, processing
-   state, retry, export, and delete using isolated database/uploads paths.
-2. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
+1. Add Playwright browser E2E coverage on top of the server-side E2E smoke for
+   login, add text/link/file item, processing state, retry, export, and delete.
+2. Expand E2E coverage for failed job retry and assistant chat with a mock AI
+   endpoint.
+3. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
    `pdftotext`, and LibreOffice.
-3. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
-4. Introduce a small application error helper for consistent route error
+4. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
+5. Introduce a small application error helper for consistent route error
    handling.
-5. Consolidate item write/tag/response shaping so create/update/delete paths
-   return the same presentation shape as list/detail where intended.
 6. Extract reusable processing banner components for desktop and mobile.
 7. Move shared scoring/tokenization away from the legacy chunk index before
    retiring `link_chunks`.

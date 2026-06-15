@@ -34,6 +34,9 @@ Completed:
 - Background extraction and manual link extraction share
   `utils/extractedContentPersistence.js` for extracted Markdown, raw HTML,
   thumbnails, legacy chunks, canonical documents, embeddings, and summary jobs.
+- A server-side E2E smoke script starts the real app against isolated
+  database/uploads paths and covers auth, create, upload, list, update, export,
+  and delete flows.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -237,11 +240,13 @@ Remaining Phase 2 focus:
 
 Next slice:
 
-- Add Playwright E2E coverage for login, add item, processing state, retry,
-  export, and delete against isolated database/uploads paths.
+- Add Playwright browser E2E coverage on top of the server-side E2E smoke for
+  login, add item, processing state, retry, export, and delete.
 
 Still needed before a broader release:
 
+- Expand server-side E2E coverage for failed job retry and assistant chat with a
+  mock AI endpoint.
 - Add operational health checks.
 - Write migration plan for item/content/assets tables.
 - Convert boot-time schema changes into explicit migrations.

@@ -65,6 +65,8 @@ test('createLinkItem saves a processing link with tags and enqueue payload', () 
   assert.equal(result.link.url, 'https://example.com');
   assert.equal(result.link.title, 'https://example.com');
   assert.equal(result.link.status, 'processing');
+  assert.equal(result.link.display.type, 'link');
+  assert.equal(result.link.display.status, 'processing');
   assert.deepEqual(result.link.tags.map(tag => tag.name), ['AI', 'Read']);
   assert.deepEqual(result.processing, {
     linkId: result.link.id,
@@ -88,6 +90,7 @@ test('createTextItem saves text content and indexes the created link', () => wit
   assert.equal(result.link.type, 'text');
   assert.equal(result.link.title, 'Note');
   assert.equal(result.link.content, 'Body');
+  assert.equal(result.link.display.type, 'text');
   assert.deepEqual(result.link.tags.map(tag => tag.name), ['AI']);
   assert.deepEqual(indexed, [result.link.id]);
 }));
@@ -133,6 +136,8 @@ test('createImageItem saves image metadata and returns image processing payload'
   assert.equal(result.link.image_path, '/uploads/a.png');
   assert.equal(result.link.thumbnail, '/uploads/a.png');
   assert.equal(result.link.status, 'processing');
+  assert.equal(result.link.display.type, 'image');
+  assert.equal(result.link.display.primaryAssetUrl, '/uploads/a.png');
   assert.deepEqual(result.processing, {
     linkId: result.link.id,
     diskPath: '/tmp/a.png',
@@ -152,6 +157,7 @@ test('createAudioItem saves audio uploads without background processing', () => 
   assert.equal(result.link.type, 'audio');
   assert.equal(result.link.title, '录音');
   assert.equal(result.link.image_path, '/uploads/a.wav');
+  assert.equal(result.link.display.type, 'audio');
   assert.deepEqual(result.link.tags.map(tag => tag.name), ['AI']);
 }));
 
@@ -172,6 +178,8 @@ test('createFileItem saves supported files as processing and returns extraction 
   assert.equal(result.link.title, 'report.html');
   assert.equal(result.link.description, 'report.html (2 KB)');
   assert.equal(result.link.status, 'processing');
+  assert.equal(result.link.display.type, 'document');
+  assert.equal(result.link.display.status, 'processing');
   assert.deepEqual(result.processing, {
     linkId: result.link.id,
     diskPath: '/tmp/report.html',
@@ -190,5 +198,6 @@ test('createFileItem saves unsupported files as done without extraction payload'
   });
 
   assert.equal(result.link.status, 'done');
+  assert.equal(result.link.display.status, 'done');
   assert.equal(result.processing, null);
 }));
