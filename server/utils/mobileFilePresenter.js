@@ -1,3 +1,5 @@
+import { presentItem } from './itemPresentation.js';
+
 const ACTIVE_PROCESSING_STATES = new Set(['queued', 'running', 'processing']);
 const FILE_SIZE_UNITS = {
   B: 1,
@@ -7,11 +9,17 @@ const FILE_SIZE_UNITS = {
 };
 
 export function normalizeMobileType(link = {}) {
+  if (link.display?.type) return link.display.type;
   if (link.type === 'file') return 'document';
   return link.type || 'link';
 }
 
 export function normalizeMobileStatus(link = {}) {
+  if (link.display?.status) {
+    if (link.display.status === 'failed' || link.display.status === 'error') return 'failed';
+    if (ACTIVE_PROCESSING_STATES.has(link.display.status)) return 'pending';
+    return 'ready';
+  }
   const state = link.processing?.state || '';
   if (state === 'failed' || link.status === 'error') return 'failed';
   if (ACTIVE_PROCESSING_STATES.has(state) || link.status === 'processing') return 'pending';
@@ -34,36 +42,39 @@ export function parseMobileFileSize(link = {}) {
 }
 
 export function toMobileFile(link = {}) {
-  const title = link.title || link.url || link.file_name || `Item ${link.id}`;
-  const content = link.content || link.content_md || '';
-  const displaySummary = link.summary || link.description || (link.type === 'text' ? content : '');
-  const status = normalizeMobileStatus(link);
+  const item = presentItem(link);
+  const title = item.title || item.url || item.file_name || `Item ${item.id}`;
+  const content = item.content || item.content_md || '';
+  const displaySummary = item.summary || item.description || (item.type === 'text' ? content : '');
+  const status = normalizeMobileStatus(item);
+  const assetUrl = item.display.primaryAssetUrl;
 
   return {
-    id: String(link.id),
+    id: String(item.id),
     filename: title,
     original_filename: title,
-    type: normalizeMobileType(link),
-    url: link.url || '',
-    comment: link.comment || '',
-    file_path: link.image_path || '',
-    file_size: parseMobileFileSize(link),
+    type: normalizeMobileType(item),
+    url: item.url || assetUrl,
+    comment: item.comment || '',
+    file_path: item.image_path || '',
+    file_size: parseMobileFileSize(item),
     mime_type: '',
     content,
-    content_md: link.content_md || '',
-    has_content: Boolean(link.content_md),
+    content_md: item.content_md || '',
+    has_content: Boolean(item.content_md),
     summary: displaySummary,
-    description: link.description || '',
+    description: item.description || '',
     keywords: [],
     highlights: [],
-    og_image: link.thumbnail || link.image_path || '',
-    favicon_url: link.url ? `/api/mobile/files/favicon?url=${encodeURIComponent(link.url)}` : '',
-    created_at: link.imported_at || link.created_at,
-    analyzed_at: link.imported_at || link.created_at,
+    og_image: item.thumbnail || item.image_path || '',
+    favicon_url: item.url ? `/api/mobile/files/favicon?url=${encodeURIComponent(item.url)}` : '',
+    created_at: item.imported_at || item.created_at,
+    analyzed_at: item.imported_at || item.created_at,
     status,
-    processing: link.processing || null,
+    processing: item.processing || null,
+    can_retry: item.display.canRetry,
     error: status === 'failed'
-      ? link.processing?.lastError || 'Processing failed'
+      ? item.processing?.lastError || 'Processing failed'
       : null,
   };
 }

@@ -1,4 +1,5 @@
 import { attachProcessingStatus } from './itemProcessingStatus.js';
+import { presentItem } from './itemPresentation.js';
 import { buildLinkListQuery } from './linkListQuery.js';
 
 export function attachTags(db, linkId) {
@@ -16,7 +17,7 @@ export function listItemsForUser(db, { userId, query = {} }) {
   const result = attachProcessingStatus(
     db,
     links.map(link => ({ ...link, tags: attachTags(db, link.id) })),
-  );
+  ).map(item => presentItem(item));
 
   return { links: result, total, page, limit };
 }
@@ -24,11 +25,11 @@ export function listItemsForUser(db, { userId, query = {} }) {
 export function getItemForUser(db, { linkId, userId }) {
   const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(linkId, userId);
   if (!link) return null;
-  return attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) });
+  return presentItem(attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) }));
 }
 
 export function getItemById(db, linkId) {
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
   if (!link) return null;
-  return attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) });
+  return presentItem(attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) }));
 }

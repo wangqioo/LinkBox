@@ -84,7 +84,10 @@ test('listItemsForUser returns owned items with tags and processing status', () 
   assert.deepEqual(result.links.map(item => item.id), [2, 1]);
   assert.deepEqual(result.links[0].tags.map(tag => tag.name), ['Read']);
   assert.equal(result.links[0].has_content_md, 1);
+  assert.equal(result.links[0].display.type, 'document');
+  assert.equal(result.links[0].display.status, 'done');
   assert.equal(result.links[1].processing.state, 'queued');
+  assert.equal(result.links[1].display.status, 'queued');
   assert.equal(result.links[1].processing.label, '抓取网页信息');
 }));
 
@@ -97,5 +100,6 @@ test('getItemForUser enforces ownership and attaches processing status', () => w
   assert.equal(owned.id, 1);
   assert.deepEqual(owned.tags.map(tag => tag.name), ['AI']);
   assert.equal(owned.processing.state, 'queued');
+  assert.equal(owned.display.canRetry, false);
   assert.equal(foreign, null);
 }));

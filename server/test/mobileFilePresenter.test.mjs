@@ -41,6 +41,22 @@ test('toMobileFile carries processing details and last error for clients', () =>
   assert.equal(file.processing.state, 'failed');
 });
 
+test('toMobileFile sources type and retry state from shared presentation', () => {
+  const result = toMobileFile({
+    id: 9,
+    type: 'file',
+    title: 'Plan.pdf',
+    image_path: '/uploads/plan.pdf',
+    status: 'done',
+    processing: { state: 'failed', canRetry: true, lastError: 'parse failed' },
+  });
+
+  assert.equal(result.type, 'document');
+  assert.equal(result.status, 'failed');
+  assert.equal(result.can_retry, true);
+  assert.equal(result.url, '/uploads/plan.pdf');
+});
+
 test('parseMobileFileSize extracts byte sizes from upload descriptions', () => {
   assert.equal(parseMobileFileSize({ description: 'report.pdf (2 KB)' }), 2048);
   assert.equal(parseMobileFileSize({ description: 'deck.pptx (1.5 MB)' }), 1572864);
