@@ -10,12 +10,12 @@ without rediscovering the architecture, commands, and validation steps.
 The current architecture follow-up checkpoint is:
 
 ```bash
-f77bf01 Unify extracted content persistence
+HEAD Add admin system health checks
 ```
 
 This includes the earlier 2026-06-15 item intake pass and the follow-up
 architecture slices for assistant retrieval, item presentation, and extracted
-content persistence.
+content persistence, plus isolated server smoke coverage.
 
 At this checkpoint:
 
@@ -50,6 +50,11 @@ At this checkpoint:
   `server/scripts/e2e-smoke.mjs` and is exposed as `npm run test:e2e`. It starts
   the real server with isolated database/uploads paths and covers auth, create,
   upload, list, update, export, and delete flows.
+- Operational health checks live in `server/utils/systemHealth.js` and are
+  exposed through the admin `GET /api/settings/system` response. They report
+  SQLite, uploads, queue, AI endpoint, `pdftotext`, and LibreOffice status, with
+  core dependency failures marked unhealthy and optional capability gaps marked
+  degraded.
 
 ## Recommended Runtime
 
@@ -96,6 +101,7 @@ server/utils/itemIntake.js          Item acceptance, import, retry, and reschedu
 server/utils/extractedContentPersistence.js Extraction post-processing path
 server/utils/imageProxyService.js   Proxied image fetching and headers
 server/utils/jobQueue.js            SQLite durable job queue
+server/utils/systemHealth.js        Admin operational health checks
 ```
 
 Important desktop frontend modules:
@@ -180,7 +186,7 @@ git diff --check
 
 Expected counts at the 2026-06-15 architecture follow-up checkpoint:
 
-- Server: 143 passing tests.
+- Server: 146 passing tests.
 - Desktop client: 4 passing tests.
 - Mobile utility focused tests: 4 passing tests.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
@@ -247,8 +253,8 @@ Recommended next work after this checkpoint:
    login, add text/link/file item, processing state, retry, export, and delete.
 2. Expand E2E coverage for failed job retry and assistant chat with a mock AI
    endpoint.
-3. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
-   `pdftotext`, and LibreOffice.
+3. Add a UI surface for the new admin health checks, including degraded
+   capability warnings and failed-job counts.
 4. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
 5. Introduce a small application error helper for consistent route error
    handling.

@@ -5,7 +5,7 @@ Date: 2026-06-15
 ## Current Status
 
 Implementation has reached the committed checkpoint
-`f77bf01 Unify extracted content persistence`.
+`HEAD Add admin system health checks`.
 
 Completed:
 
@@ -37,6 +37,9 @@ Completed:
 - A server-side E2E smoke script starts the real app against isolated
   database/uploads paths and covers auth, create, upload, list, update, export,
   and delete flows.
+- Admin operational health checks are centralized in `utils/systemHealth.js` and
+  surfaced through `GET /api/settings/system`, covering SQLite, uploads, queue,
+  AI endpoint, `pdftotext`, and LibreOffice.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -231,8 +234,8 @@ Remaining Phase 2 focus:
 ### Phase 5: Operations
 
 - Lock Node to an LTS line, preferably Node 22.
-- Add health checks for SQLite, uploads, AI endpoint, `pdftotext`, LibreOffice,
-  and job queue state.
+- Health checks for SQLite, uploads, AI endpoint, `pdftotext`, LibreOffice, and
+  job queue state now exist behind the admin system-status endpoint.
 - Convert boot-time schema changes into migration files.
 - Keep Docker, systemd, and README values aligned.
 
@@ -247,7 +250,7 @@ Still needed before a broader release:
 
 - Expand server-side E2E coverage for failed job retry and assistant chat with a
   mock AI endpoint.
-- Add operational health checks.
+- Add a frontend/admin UI surface for degraded health checks and failed jobs.
 - Write migration plan for item/content/assets tables.
 - Convert boot-time schema changes into explicit migrations.
 - Retire or narrow legacy `link_chunks` after canonical document retrieval has

@@ -3,6 +3,8 @@ import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getAIConfig, updateAIConfig, testAIConfig } from '../utils/aiConfig.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
+import { UPLOADS_DIR } from '../utils/uploadMiddleware.js';
+import { getSystemHealth } from '../utils/systemHealth.js';
 import {
   backfillMissingDocumentEmbeddings,
   getDocumentMaintenanceStats,
@@ -53,14 +55,25 @@ router.get('/', authMiddleware, requireAdmin, (req, res) => {
   res.json(settings);
 });
 
-// GET /api/settings/system - lightweight operational status
-router.get('/system', authMiddleware, requireAdmin, (req, res) => {
+// GET /api/settings/system - operational status
+router.get('/system', authMiddleware, requireAdmin, async (req, res) => {
+  const queue = getRuntimeQueue();
+  const health = await getSystemHealth({
+    db,
+    queue,
+    uploadsDir: UPLOADS_DIR,
+  });
+
   res.json({
-    queue: getRuntimeQueue().stats(),
+    health,
+    queue: queue.stats(),
     documents: getDocumentMaintenanceStats(db),
     env: {
       backgroundQueueConcurrency: process.env.BACKGROUND_QUEUE_CONCURRENCY || '1',
       localLlmUrl: process.env.LOCAL_LLM_URL || '',
+      uploadsDir: UPLOADS_DIR,
+      pdftotextBin: process.env.PDFTOTEXT_BIN || 'pdftotext',
+      libreofficeBin: process.env.LIBREOFFICE_BIN || 'libreoffice',
       assistantMaxSources: process.env.ASSISTANT_MAX_SOURCES || '',
       assistantMaxContextChars: process.env.ASSISTANT_MAX_CONTEXT_CHARS || '',
       assistantMaxTokens: process.env.ASSISTANT_MAX_TOKENS || '',

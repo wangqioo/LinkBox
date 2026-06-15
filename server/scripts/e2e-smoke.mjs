@@ -77,6 +77,14 @@ async function main() {
   assert.equal(loggedIn.res.status, 200);
   assert.equal(loggedIn.data.user.username, username);
 
+  const system = await request('/api/settings/system', { token });
+  assert.equal(system.res.status, 200);
+  assert.ok(['healthy', 'degraded'].includes(system.data.health.status));
+  assert.equal(system.data.health.checks.sqlite.status, 'ok');
+  assert.equal(system.data.health.checks.uploads.status, 'ok');
+  assert.equal(system.data.health.checks.queue.status, 'ok');
+  assert.equal(typeof system.data.health.summary.ok, 'number');
+
   const textItem = await request('/api/links/text', {
     method: 'POST',
     token,
