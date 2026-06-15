@@ -44,3 +44,17 @@ test('groupImageBatches places a gallery at the newest row position for that bat
   assert.deepEqual(result.map(item => item.kind), ['item', 'image-batch', 'item'])
   assert.equal(result[1].id, 'batch:b2')
 })
+
+test('groupImageBatches keeps intervening non-images before the completed gallery', () => {
+  const rows = [
+    { id: '30', type: 'image', batch_id: 'b3', batch_index: 0 },
+    { id: '31', type: 'document', original_filename: 'doc.pdf' },
+    { id: '32', type: 'image', batch_id: 'b3', batch_index: 1 },
+  ]
+
+  const result = groupImageBatches(rows)
+
+  assert.deepEqual(result.map(item => item.kind), ['item', 'image-batch'])
+  assert.equal(result[0].file.id, '31')
+  assert.deepEqual(result[1].images.map(image => image.id), ['30', '32'])
+})

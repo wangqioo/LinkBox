@@ -86,80 +86,89 @@
             @touchend.passive="onCardTE(f.id)"
           >
             <div class="fm-row-inner">
+              <ImageBatchCard
+                v-if="f.kind === 'image-batch'"
+                :images="f.images"
+                :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
+                @open="handleCardClick"
+                @active-change="rememberBatchActive(f, $event)"
+                @delete-active="confirmDelete"
+              />
+
               <div
-                v-if="f.type === 'image'"
+                v-else-if="f.file.type === 'image'"
                 class="fm-img-card"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
-                @click="handleCardClick(f)"
+                @click="handleCardClick(f.file, f.id)"
               >
-                <div class="fm-img-inner" :class="imgBgClass(f)">
-                  <img :src="downloadUrl(f.id)" class="img-thumb" loading="lazy" @error="e => e.target.style.display='none'" />
+                <div class="fm-img-inner" :class="imgBgClass(f.file)">
+                  <img :src="downloadUrl(f.file.id)" class="img-thumb" loading="lazy" @error="e => e.target.style.display='none'" />
                 </div>
                 <div class="fm-img-lbl">
-                  <span class="img-lbl-name">{{ f.original_filename }}</span>
-                  <span class="status-dot" :class="f.status"></span>
+                  <span class="img-lbl-name">{{ f.file.original_filename }}</span>
+                  <span class="status-dot" :class="f.file.status"></span>
                 </div>
-                <FileHints :file="f" />
+                <FileHints :file="f.file" />
               </div>
 
               <div
-                v-else-if="f.type === 'link'"
+                v-else-if="f.file.type === 'link'"
                 class="fm-link-card"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
-                @click="handleCardClick(f)"
+                @click="handleCardClick(f.file, f.id)"
               >
-                <div class="fm-link-preview" :class="linkBgClass(f)">
-                  <img v-if="f.og_image" :src="imgUrl(f.og_image)" class="link-og-img" loading="lazy" @error="e => e.target.style.display='none'" />
+                <div class="fm-link-preview" :class="linkBgClass(f.file)">
+                  <img v-if="f.file.og_image" :src="imgUrl(f.file.og_image)" class="link-og-img" loading="lazy" @error="e => e.target.style.display='none'" />
                   <template v-else>
-                    <img v-if="f.favicon_url" :src="f.favicon_url" class="link-fav-big" loading="lazy" @error="e => e.target.style.display='none'" />
+                    <img v-if="f.file.favicon_url" :src="f.file.favicon_url" class="link-fav-big" loading="lazy" @error="e => e.target.style.display='none'" />
                     <span v-else class="fallback-ico">🔗</span>
                   </template>
                 </div>
                 <div class="fm-link-info">
-                  <div class="fm-link-title">{{ f.original_filename }}</div>
+                  <div class="fm-link-title">{{ f.file.original_filename }}</div>
                   <div class="fm-link-url">
-                    <img v-if="f.favicon_url" :src="f.favicon_url" class="link-fav-sm" @error="e => e.target.style.display='none'" />
-                    {{ linkHost(f.url || f.original_filename) }}
+                    <img v-if="f.file.favicon_url" :src="f.file.favicon_url" class="link-fav-sm" @error="e => e.target.style.display='none'" />
+                    {{ linkHost(f.file.url || f.file.original_filename) }}
                   </div>
-                  <FileHints :file="f" in-card />
+                  <FileHints :file="f.file" in-card />
                 </div>
               </div>
 
               <div
-                v-else-if="f.type === 'text'"
+                v-else-if="f.file.type === 'text'"
                 class="fm-text-bubble"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
-                @click="handleCardClick(f)"
+                @click="handleCardClick(f.file, f.id)"
               >
-                <div class="text-bubble-content">{{ f.content || f.summary || f.original_filename }}</div>
-                <FileHints :file="f" bubble />
+                <div class="text-bubble-content">{{ f.file.content || f.file.summary || f.file.original_filename }}</div>
+                <FileHints :file="f.file" bubble />
               </div>
 
               <div
                 v-else
                 class="fm-file-card"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
-                @click="handleCardClick(f)"
+                @click="handleCardClick(f.file, f.id)"
               >
-                <div class="fm-file-ico" :style="{ background: fileIconBg(f.type) }">
-                  {{ fileIcon(f.type) }}
+                <div class="fm-file-ico" :style="{ background: fileIconBg(f.file.type) }">
+                  {{ fileIcon(f.file.type) }}
                 </div>
                 <div class="fm-file-body">
-                  <div class="fm-file-name">{{ f.original_filename }}</div>
+                  <div class="fm-file-name">{{ f.file.original_filename }}</div>
                   <div class="fm-file-meta">
-                    <span>{{ fileLabel(f.type) }}</span>
-                    <span v-if="f.file_size"> · {{ fmtSize(f.file_size) }}</span>
-                    <span class="status-dot" :class="f.status"></span>
+                    <span>{{ fileLabel(f.file.type) }}</span>
+                    <span v-if="f.file.file_size"> · {{ fmtSize(f.file.file_size) }}</span>
+                    <span class="status-dot" :class="f.file.status"></span>
                   </div>
-                  <FileHints :file="f" in-card />
+                  <FileHints :file="f.file" in-card />
                 </div>
-                <button class="fm-file-open" @click.stop="router.push(`/file/${f.id}`)">↗</button>
+                <button class="fm-file-open" @click.stop="router.push(`/file/${f.file.id}`)">↗</button>
               </div>
 
               <button
                 class="delete-action"
                 :class="{ visible: (swipe[f.id] || 0) < -20 }"
-                @click.stop="confirmDelete(f)"
+                @click.stop="confirmDelete(rowDeleteTarget(f))"
                 aria-label="删除"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -167,7 +176,7 @@
                 </svg>
               </button>
             </div>
-            <div class="fm-time">{{ timeStr(f.created_at) }}</div>
+            <div class="fm-time">{{ timeStr(f.created_at || f.file?.created_at) }}</div>
           </div>
         </template>
       </template>
@@ -325,7 +334,9 @@
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { deleteFile, downloadUrl, getFiles, getStats, imgUrl, uploadFile, uploadLink, uploadText } from '../api/files'
+import ImageBatchCard from '../components/ImageBatchCard.vue'
 import { useTheme } from '../composables/useTheme'
+import { groupImageBatches } from '../utils/imageBatchGallery'
 import { buildTodayDigest, organizeFile } from '../utils/mobileOrganizer'
 
 const FileHints = defineComponent({
@@ -373,6 +384,7 @@ const feedEl = ref(null)
 const uploadToast = ref('')
 const swipe = reactive({})
 const swipeMeta = reactive({})
+const activeBatchImageIds = reactive({})
 
 const FILE_ICONS = { image: '🖼', video: '🎬', document: '📄', audio: '🎵', link: '🔗', text: '💬', other: '📦' }
 const FILE_LABELS = { image: '图片', video: '视频', document: '文档', audio: '音频', link: '链接', text: '文字', other: '其他' }
@@ -397,8 +409,9 @@ function createImageBatchId() {
 function fileIcon(t) { return FILE_ICONS[t] || '📦' }
 function fileLabel(t) { return FILE_LABELS[t] || '其他' }
 function fileIconBg(t) { return FILE_BG[t] || FILE_BG.other }
-function imgBgClass(f) { return ['img-bg-a', 'img-bg-b', 'img-bg-c'][f.id.charCodeAt(0) % 3] }
-function linkBgClass(f) { return ['link-bg-a', 'link-bg-b', 'link-bg-c'][f.id.charCodeAt(0) % 3] }
+function itemColorIndex(f) { return String(f?.id || '0').charCodeAt(0) % 3 }
+function imgBgClass(f) { return ['img-bg-a', 'img-bg-b', 'img-bg-c'][itemColorIndex(f)] }
+function linkBgClass(f) { return ['link-bg-a', 'link-bg-b', 'link-bg-c'][itemColorIndex(f)] }
 function linkHost(url) {
   try { return new URL(url).hostname.replace('www.', '') } catch { return url }
 }
@@ -434,7 +447,7 @@ const dateGroups = computed(() => {
   return Object.keys(map).sort((a, b) => a.localeCompare(b)).map(date => ({
     date,
     label: date === today ? '今天' : date === yesterday ? '昨天' : date,
-    files: map[date].sort((a, b) => Number(a.id) - Number(b.id)),
+    files: groupImageBatches(map[date].sort((a, b) => Number(a.id) - Number(b.id))),
   }))
 })
 
@@ -507,12 +520,26 @@ function onCardTE(id) {
   swipe[id] = (swipe[id] || 0) < -36 ? -64 : 0
   if (swipeMeta[id]) swipeMeta[id].moving = false
 }
-function handleCardClick(f) {
-  if ((swipe[f.id] || 0) < -10) {
-    swipe[f.id] = 0
+function handleCardClick(f, rowId = f?.id) {
+  if ((swipe[rowId] || 0) < -10) {
+    swipe[rowId] = 0
     return
   }
   router.push(`/file/${f.id}`)
+}
+
+function rememberBatchActive(row, image) {
+  if (row?.id && image?.id) activeBatchImageIds[row.id] = image.id
+}
+
+function activeBatchImage(row) {
+  if (row?.kind !== 'image-batch') return null
+  const activeId = activeBatchImageIds[row.id]
+  return row.images.find(image => image.id === activeId) || row.images[0] || null
+}
+
+function rowDeleteTarget(row) {
+  return row?.kind === 'image-batch' ? activeBatchImage(row) : row?.file
 }
 
 const isRecording = ref(false)
@@ -677,6 +704,7 @@ async function doUpload(file, url, metadata = {}) {
 }
 
 function confirmDelete(f) {
+  if (!f) return
   deleteTarget.value = f
 }
 async function doDelete() {

@@ -1,5 +1,6 @@
 export function groupImageBatches(files = []) {
   const batchCounts = new Map()
+  const batchSeen = new Map()
   for (const file of files) {
     if (file?.type !== 'image' || !file.batch_id) continue
     batchCounts.set(file.batch_id, (batchCounts.get(file.batch_id) || 0) + 1)
@@ -10,6 +11,9 @@ export function groupImageBatches(files = []) {
     if (file?.type !== 'image' || !file.batch_id || batchCounts.get(file.batch_id) < 2) {
       return [{ kind: 'item', id: `item:${file.id}`, file }]
     }
+    const seen = (batchSeen.get(file.batch_id) || 0) + 1
+    batchSeen.set(file.batch_id, seen)
+    if (seen < batchCounts.get(file.batch_id)) return []
     if (emitted.has(file.batch_id)) return []
     emitted.add(file.batch_id)
     const images = files

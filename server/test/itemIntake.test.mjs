@@ -35,7 +35,9 @@ function withDb(fn) {
         summary TEXT DEFAULT '',
         status TEXT DEFAULT '',
         content_md TEXT DEFAULT '',
-        html_note TEXT DEFAULT ''
+        html_note TEXT DEFAULT '',
+        batch_id TEXT DEFAULT '',
+        batch_index INTEGER DEFAULT 0
       );
       CREATE TABLE tags (
         id INTEGER PRIMARY KEY,
@@ -107,11 +109,15 @@ test('acceptImageItem schedules image description and can drain immediately', ()
     diskPath: '/tmp/photo.png',
     originalName: 'photo.png',
     importedAt: '2026-06-15T00:00:00.000Z',
+    batchId: 'batch-abc',
+    batchIndex: 2,
     drain: true,
   });
 
   assert.equal(result.link.type, 'image');
   assert.equal(result.link.status, 'processing');
+  assert.equal(result.link.batch_id, 'batch-abc');
+  assert.equal(result.link.batch_index, 2);
   assert.equal(queue.drained, true);
   assert.deepEqual(queue.calls, [{
     type: 'image.describe',

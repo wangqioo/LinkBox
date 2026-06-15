@@ -34,7 +34,7 @@
 - Modify: `server/routes/mobileFiles.js`
 - Modify: `server/utils/mobileFilePresenter.js`
 
-- [ ] **Step 1: Write failing migration and image persistence tests**
+- [x] **Step 1: Write failing migration and image persistence tests**
 
 Add this assertion to `server/test/dbMigrations.test.mjs` after `status` in the expected column list:
 
@@ -71,7 +71,7 @@ Add these assertions after the existing image path assertions:
   assert.equal(result.link.batch_index, 1);
 ```
 
-- [ ] **Step 2: Run backend tests and verify they fail**
+- [x] **Step 2: Run backend tests and verify they fail**
 
 Run:
 
@@ -82,7 +82,7 @@ npm test -- test/dbMigrations.test.mjs test/linkCreateService.test.mjs
 
 Expected: FAIL because `batch_id` and `batch_index` are missing.
 
-- [ ] **Step 3: Implement migration and persistence**
+- [x] **Step 3: Implement migration and persistence**
 
 In `server/utils/dbMigrations.js`, append this migration:
 
@@ -134,7 +134,7 @@ In `server/utils/mobileFilePresenter.js`, include:
     batch_index: Number(item.batch_index || 0),
 ```
 
-- [ ] **Step 4: Run backend tests and verify they pass**
+- [x] **Step 4: Run backend tests and verify they pass**
 
 Run:
 
@@ -145,7 +145,7 @@ npm test -- test/dbMigrations.test.mjs test/linkCreateService.test.mjs test/mobi
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit backend batch persistence**
+- [x] **Step 5: Commit backend batch persistence**
 
 ```bash
 cd /Users/wq/LinkBox
@@ -159,7 +159,7 @@ git commit -m "feat: persist mobile image upload batches"
 - Create: `mobile/src/utils/imageBatchGallery.js`
 - Create: `mobile/src/utils/imageBatchGallery.test.mjs`
 
-- [ ] **Step 1: Write failing grouping tests**
+- [x] **Step 1: Write failing grouping tests**
 
 Create `mobile/src/utils/imageBatchGallery.test.mjs`:
 
@@ -212,7 +212,7 @@ test('groupImageBatches places a gallery at the newest row position for that bat
 })
 ```
 
-- [ ] **Step 2: Run grouping tests and verify they fail**
+- [x] **Step 2: Run grouping tests and verify they fail**
 
 Run:
 
@@ -223,7 +223,7 @@ node --test src/utils/imageBatchGallery.test.mjs
 
 Expected: FAIL because `imageBatchGallery.js` does not exist.
 
-- [ ] **Step 3: Implement grouping helper**
+- [x] **Step 3: Implement grouping helper**
 
 Create `mobile/src/utils/imageBatchGallery.js`:
 
@@ -258,7 +258,7 @@ export function groupImageBatches(files = []) {
 }
 ```
 
-- [ ] **Step 4: Run grouping tests and verify they pass**
+- [x] **Step 4: Run grouping tests and verify they pass**
 
 Run:
 
@@ -269,7 +269,7 @@ node --test src/utils/imageBatchGallery.test.mjs
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit grouping helper**
+- [x] **Step 5: Commit grouping helper**
 
 ```bash
 cd /Users/wq/LinkBox
@@ -283,7 +283,7 @@ git commit -m "feat: group mobile image batches"
 - Modify: `mobile/src/api/files.js`
 - Modify: `mobile/src/views/Home.vue`
 
-- [ ] **Step 1: Update upload API to accept metadata**
+- [x] **Step 1: Update upload API to accept metadata**
 
 In `mobile/src/api/files.js`, replace `uploadFile` with:
 
@@ -299,7 +299,7 @@ export async function uploadFile(file, analyzeNow = false, metadata = {}) {
 }
 ```
 
-- [ ] **Step 2: Generate batch metadata in Home file selection**
+- [x] **Step 2: Generate batch metadata in Home file selection**
 
 In `mobile/src/views/Home.vue`, add helpers near the existing constants:
 
@@ -350,7 +350,7 @@ async function doUpload(file, url, metadata = {}) {
     if (file) await uploadFile(file, analyzeNow.value, metadata)
 ```
 
-- [ ] **Step 3: Build mobile app**
+- [x] **Step 3: Build mobile app**
 
 Run:
 
@@ -361,7 +361,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit upload metadata**
+- [x] **Step 4: Commit upload metadata**
 
 ```bash
 cd /Users/wq/LinkBox
@@ -375,7 +375,7 @@ git commit -m "feat: tag mobile multi-image uploads"
 - Create: `mobile/src/components/ImageBatchCard.vue`
 - Modify: `mobile/src/views/Home.vue`
 
-- [ ] **Step 1: Create gallery component**
+- [x] **Step 1: Create gallery component**
 
 Create `mobile/src/components/ImageBatchCard.vue`:
 
@@ -524,7 +524,7 @@ function onTouchEnd(event) {
 </style>
 ```
 
-- [ ] **Step 2: Render grouped gallery items in Home**
+- [x] **Step 2: Render grouped gallery items in Home**
 
 In `mobile/src/views/Home.vue`, import:
 
@@ -570,7 +570,7 @@ Change delete button target:
                 @click.stop="confirmDelete(f.kind === 'image-batch' ? f.images[0] : f.file)"
 ```
 
-- [ ] **Step 3: Adjust helpers for grouped item shape**
+- [x] **Step 3: Adjust helpers for grouped item shape**
 
 In `Home.vue`, add:
 
@@ -582,7 +582,7 @@ function rowFile(row) {
 
 Use `rowFile(f)` for delete and any generic field access that cannot be grouped.
 
-- [ ] **Step 4: Build mobile app**
+- [x] **Step 4: Build mobile app**
 
 Run:
 
@@ -593,7 +593,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit gallery rendering**
+- [x] **Step 5: Commit gallery rendering**
 
 ```bash
 cd /Users/wq/LinkBox
@@ -606,7 +606,7 @@ git commit -m "feat: render mobile image batch galleries"
 **Files:**
 - Verify all changed files.
 
-- [ ] **Step 1: Run targeted tests**
+- [x] **Step 1: Run targeted tests**
 
 ```bash
 cd /Users/wq/LinkBox/server
@@ -618,7 +618,7 @@ npm run build
 
 Expected: all commands PASS.
 
-- [ ] **Step 2: Run backend full tests**
+- [x] **Step 2: Run backend full tests**
 
 ```bash
 cd /Users/wq/LinkBox/server
@@ -627,7 +627,7 @@ npm test
 
 Expected: all tests PASS.
 
-- [ ] **Step 3: Commit any verification cleanup**
+- [x] **Step 3: Commit any verification cleanup**
 
 If verification required cleanup, commit it:
 
