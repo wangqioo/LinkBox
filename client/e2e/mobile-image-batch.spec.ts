@@ -97,3 +97,82 @@ test('mobile image batch keeps ai failure details compact in the feed', async ({
     element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
   )).toBe('1');
 });
+
+test('mobile link cards keep ai hints visually secondary', async ({ page }) => {
+  const files = [{
+    id: '9301',
+    original_filename: '不要一整段铺开 GitHub 开源项目 RuView 利用 WiFi 无线电波实现人体感知',
+    filename: '不要一整段铺开 GitHub 开源项目 RuView 利用 WiFi 无线电波实现人体感知',
+    type: 'link',
+    url: 'https://mp.weixin.qq.com/s/example',
+    favicon_url: '',
+    og_image: '',
+    file_size: null,
+    batch_id: '',
+    batch_index: 0,
+    created_at: new Date().toISOString(),
+    status: 'ready',
+    processing: null,
+    summary: 'GitHub开源项目RuView利用WiFi无线电波实现人体感知，无需摄像头，可检测人员存在、心率呼吸、跌倒预警，适用于居家养老、安防等领域。这段内容在首页不应该完整铺开。',
+  }];
+
+  await page.route('**/api/mobile/files/stats', route => route.fulfill({
+    json: {
+      total: files.length,
+      by_type: { link: files.length },
+      by_status: { ready: files.length },
+      recent_date: new Date().toISOString().slice(0, 10),
+    },
+  }));
+  await page.route(/\/api\/mobile\/files\?/, route => route.fulfill({ json: files }));
+
+  await registerMobileUser(page);
+
+  const linkCard = page.locator('.fm-link-card');
+  await expect(linkCard).toBeVisible();
+  await expect.poll(async () => page.locator('.organizer-strip').evaluate((organizer) => {
+    const organizerRect = organizer.getBoundingClientRect();
+    const card = document.querySelector('.fm-link-card');
+    if (!card) return -1;
+    const cardRect = card.getBoundingClientRect();
+    return Math.round(cardRect.top - organizerRect.bottom);
+  })).toBeGreaterThanOrEqual(10);
+
+  const summary = linkCard.locator('.fm-link-summary');
+  await expect(summary).toBeVisible();
+
+  await expect.poll(async () => summary.evaluate(
+    element => getComputedStyle(element).fontSize,
+  )).toBe('9px');
+  await expect.poll(async () => summary.evaluate(
+    element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
+  )).toBe('1');
+  await expect.poll(async () => summary.evaluate(
+    element => element.getBoundingClientRect().height,
+  )).toBeLessThan(14);
+});
+
+test('desktop phone shell keeps the header below the status island', async ({ browser }) => {
+  const context = await browser.newContext({
+    baseURL: 'http://127.0.0.1:5175/mobile/',
+    viewport: { width: 928, height: 1792 },
+    isMobile: false,
+    hasTouch: false,
+  });
+  const page = await context.newPage();
+
+  try {
+    await registerMobileUser(page);
+
+    await expect(page.locator('.di')).toBeVisible();
+    await expect(page.locator('.fm-ttl')).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => {
+      const island = document.querySelector('.di')?.getBoundingClientRect();
+      const title = document.querySelector('.fm-ttl')?.getBoundingClientRect();
+      if (!island || !title) return -1;
+      return Math.round(title.top - island.bottom);
+    })).toBeGreaterThanOrEqual(18);
+  } finally {
+    await context.close();
+  }
+});

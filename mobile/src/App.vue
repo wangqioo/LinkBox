@@ -161,7 +161,7 @@ onUnmounted(() => { clearInterval(timer); window.removeEventListener('resize', u
   --red: #FF6E7A;
   --card: #13132A;
   --radius: 16px;
-  --header-h: 90px;
+  --header-h: 132px;
   --PW: 390px; --PH: 844px;
 }
 
@@ -418,6 +418,9 @@ body {
     transform: none !important;
     border-radius: 0;
     box-shadow: none;
+  }
+  :root, [data-theme="dark"] {
+    --header-h: 90px;
   }
   .phone::before, .phone::after { display: none; }
   .di { display: none; }
