@@ -63,7 +63,34 @@ export interface QueueStats {
   } | null;
 }
 
+export type HealthCheckStatus = 'ok' | 'warn' | 'fail';
+
+export interface SystemHealthCheck {
+  status: HealthCheckStatus;
+  message?: string;
+  path?: string;
+  command?: string;
+  version?: string;
+  url?: string;
+  httpStatus?: number;
+  failed?: number;
+  [key: string]: unknown;
+}
+
+export interface SystemHealth {
+  ok: boolean;
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  checkedAt: string;
+  summary: {
+    ok: number;
+    degraded: number;
+    failed: number;
+  };
+  checks: Record<string, SystemHealthCheck>;
+}
+
 export interface SystemStatus {
+  health?: SystemHealth;
   queue: QueueStats;
   documents?: DocumentMaintenanceStats;
   env: Record<string, string>;

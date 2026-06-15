@@ -6,6 +6,7 @@ import AISettingsPanel from './AISettingsPanel';
 import BackgroundJobsPanel from './BackgroundJobsPanel';
 import DocumentMaintenancePanel from './DocumentMaintenancePanel';
 import SiteCookiesSettings from './SiteCookiesSettings';
+import SystemHealthPanel from './SystemHealthPanel';
 import { applyProviderPreset, DEFAULT_AI_CONFIG } from './settingsConfig';
 import { useToast } from '../context/ToastContext';
 
@@ -40,6 +41,7 @@ export default function SettingsPage() {
 
   const refreshSystemStatus = async () => {
     setLoadingSystem(true);
+    setError('');
     setQueueMessage('');
     setDocumentMessage('');
     try {
@@ -187,6 +189,11 @@ export default function SettingsPage() {
         onProviderChange={handleProviderChange}
         onFieldChange={updateAIField}
         onTestAI={handleTestAI}
+      />
+      <SystemHealthPanel
+        health={systemStatus?.health || null}
+        loading={loadingSystem}
+        onRefresh={refreshSystemStatus}
       />
       <DocumentMaintenancePanel
         stats={systemStatus?.documents || null}
