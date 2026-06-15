@@ -7,8 +7,12 @@
     @touchend.stop="onTouchEnd"
     @touchcancel.stop="resetTouch"
   >
-    <div class="stack-layer stack-layer-2"></div>
-    <div class="stack-layer stack-layer-1"></div>
+    <div v-if="backImages[1]" class="stack-photo stack-photo-2">
+      <img :src="downloadUrl(backImages[1].id)" alt="" loading="lazy" />
+    </div>
+    <div v-if="backImages[0]" class="stack-photo stack-photo-1">
+      <img :src="downloadUrl(backImages[0].id)" alt="" loading="lazy" />
+    </div>
 
     <div class="batch-surface">
       <div class="batch-media">
@@ -64,6 +68,9 @@ const emit = defineEmits(['open', 'active-change', 'delete-active'])
 
 const activeIndex = ref(0)
 const activeImage = computed(() => props.images[activeIndex.value] || props.images[0] || null)
+const backImages = computed(() => props.images
+  .filter((_, index) => index !== activeIndex.value)
+  .slice(0, 2))
 const orgLine = computed(() => {
   if (!activeImage.value) return '归入 临时资料 · 图片'
   const org = organizeFile(activeImage.value)
@@ -145,36 +152,52 @@ function emitDelete() {
 .image-batch-card {
   position: relative;
   z-index: 1;
-  width: min(72vw, 220px);
-  padding: 8px 0 0 8px;
+  width: min(70vw, 214px);
+  padding: 20px 0 4px 26px;
   cursor: pointer;
   touch-action: pan-y;
   transition: transform .3s cubic-bezier(.32,.72,0,1);
 }
-.stack-layer {
+.stack-photo {
   position: absolute;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  width: calc(100% - 26px);
+  height: 144px;
+  left: 8px;
+  top: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 16px;
   background: var(--s2);
+  box-shadow: 0 10px 26px rgba(0,0,0,.18);
   pointer-events: none;
 }
-.stack-layer-1 {
-  inset: 4px 4px 4px 4px;
-  transform: translate(-4px, -4px) rotate(-2.6deg);
-  opacity: .75;
+.stack-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
-.stack-layer-2 {
-  inset: 2px 8px 8px 7px;
-  transform: translate(-5px, 0) rotate(-5deg);
-  opacity: .42;
+.stack-photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(8,12,20,.22);
+}
+.stack-photo-1 {
+  transform: translate(-14px, -8px) rotate(-4.5deg);
+  opacity: .84;
+}
+.stack-photo-2 {
+  transform: translate(-25px, -15px) rotate(-8deg);
+  opacity: .58;
 }
 .batch-surface {
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 16px;
   background: var(--s2);
-  box-shadow: 0 10px 24px rgba(0,0,0,.12);
+  box-shadow: 0 18px 42px rgba(0,0,0,.22);
 }
 .batch-media {
   position: relative;
