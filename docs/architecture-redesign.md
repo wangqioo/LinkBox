@@ -5,7 +5,7 @@ Date: 2026-06-15
 ## Current Status
 
 Implementation has reached the committed checkpoint
-`HEAD Add shared app error helper`.
+`HEAD Expand server e2e smoke`.
 
 Completed:
 
@@ -43,6 +43,9 @@ Completed:
 - A small application error helper now centralizes JSON error payload shaping
   for item controller paths, preserving expected status-code errors and wrapping
   unexpected failures with action-specific fallback messages.
+- The server-side E2E smoke now includes a mock OpenAI-compatible endpoint and
+  covers admin health, AI config, failed job retry, and assistant chat through
+  real HTTP requests.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -252,8 +255,7 @@ Next slice:
 
 Still needed before a broader release:
 
-- Expand server-side E2E coverage for failed job retry and assistant chat with a
-  mock AI endpoint.
+- Add browser coverage for assistant chat and retry UI behavior.
 - Add a frontend/admin UI surface for degraded health checks and failed jobs.
 - Write migration plan for item/content/assets tables.
 - Convert boot-time schema changes into explicit migrations.

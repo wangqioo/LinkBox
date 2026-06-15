@@ -1,13 +1,17 @@
 import { strict as assert } from 'node:assert';
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 
 const root = process.cwd();
 const tmp = mkdtempSync(join(tmpdir(), 'linkbox-e2e-smoke-'));
 const port = 42000 + Math.floor(Math.random() * 1000);
+const llmPort = port + 2000;
 let app;
+let llm;
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -40,18 +44,75 @@ async function request(path, { token = '', headers = {}, ...options } = {}) {
   return { res, data };
 }
 
+function startMockLLM() {
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    if (req.url === '/v1/health') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (req.url === '/v1/models') {
+      seen.push({ method: req.method, url: req.url });
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ data: [{ id: 'mock-linkbox-model' }] }));
+      return;
+    }
+    if (req.url === '/v1/chat/completions') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        const parsed = JSON.parse(body || '{}');
+        seen.push({ method: req.method, url: req.url, body: parsed });
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          choices: [{
+            message: {
+              content: 'Smoke assistant answer cites the saved note [资料1].',
+            },
+          }],
+        }));
+      });
+      return;
+    }
+    res.statusCode = 404;
+    res.end('not found');
+  });
+  return new Promise(resolve => {
+    server.listen(llmPort, '127.0.0.1', () => resolve({ server, seen }));
+  });
+}
+
+function seedFailedJob({ dbPath, linkId }) {
+  const db = new Database(dbPath);
+  try {
+    db.prepare(`
+      INSERT INTO jobs (type, link_id, payload, status, attempts, max_attempts, locked_at, last_error)
+      VALUES ('link.summarize', ?, '{}', 'failed', 3, 3, 'stale-lock', 'mock failure')
+    `).run(linkId);
+    db.prepare('UPDATE links SET status = ? WHERE id = ?').run('error', linkId);
+  } finally {
+    db.close();
+  }
+}
+
 async function main() {
   const uploadsDir = join(tmp, 'uploads');
+  const dbPath = join(tmp, 'linkbox.db');
+  const mock = await startMockLLM();
+  llm = mock.server;
+
   app = spawn(process.execPath, ['index.js'], {
     cwd: root,
     env: {
       ...process.env,
       PORT: String(port),
       DATA_DIR: tmp,
-      DB_PATH: join(tmp, 'linkbox.db'),
+      DB_PATH: dbPath,
       UPLOADS_DIR: uploadsDir,
       JWT_SECRET: 'linkbox-e2e-secret',
-      LOCAL_LLM_URL: 'http://127.0.0.1:1/v1',
+      LOCAL_LLM_URL: `http://127.0.0.1:${llmPort}/v1`,
+      LOCAL_LLM_MODEL: 'mock-linkbox-model',
       BACKGROUND_QUEUE_CONCURRENCY: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -83,7 +144,21 @@ async function main() {
   assert.equal(system.data.health.checks.sqlite.status, 'ok');
   assert.equal(system.data.health.checks.uploads.status, 'ok');
   assert.equal(system.data.health.checks.queue.status, 'ok');
+  assert.equal(system.data.health.checks.ai.status, 'ok');
   assert.equal(typeof system.data.health.summary.ok, 'number');
+
+  const aiSaved = await request('/api/settings/ai', {
+    method: 'PUT',
+    token,
+    body: JSON.stringify({
+      provider: 'custom',
+      baseUrl: `http://127.0.0.1:${llmPort}/v1`,
+      model: 'mock-linkbox-model',
+      apiKey: '',
+    }),
+  });
+  assert.equal(aiSaved.res.status, 200);
+  assert.equal(aiSaved.data.config.model, 'mock-linkbox-model');
 
   const textItem = await request('/api/links/text', {
     method: 'POST',
@@ -96,6 +171,15 @@ async function main() {
   });
   assert.equal(textItem.res.status, 200);
   assert.equal(textItem.data.type, 'text');
+
+  seedFailedJob({ dbPath, linkId: textItem.data.id });
+  const retried = await request(`/api/links/${textItem.data.id}/retry-processing`, {
+    method: 'POST',
+    token,
+  });
+  assert.equal(retried.res.status, 200);
+  assert.equal(retried.data.retried, 1);
+  assert.ok(['queued', 'running', 'processing'].includes(retried.data.processing.state));
 
   const linkItem = await request('/api/links', {
     method: 'POST',
@@ -128,6 +212,19 @@ async function main() {
   assert.ok(listed.data.links.some(item => item.title === 'E2E note'));
   assert.ok(listed.data.links.every(item => item.processing));
   assert.ok(listed.data.links.every(item => item.display));
+
+  const chat = await request('/api/assistant/chat', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({
+      question: 'What does the E2E note say?',
+      task: 'ask',
+    }),
+  });
+  assert.equal(chat.res.status, 200);
+  assert.match(chat.data.answer, /Smoke assistant answer/);
+  assert.equal(chat.data.sources.length >= 1, true);
+  assert.ok(mock.seen.some(item => item.url === '/v1/chat/completions'));
 
   const updated = await request(`/api/links/${textItem.data.id}`, {
     method: 'PUT',
@@ -162,5 +259,6 @@ try {
   await main();
 } finally {
   if (app) app.kill('SIGTERM');
+  if (llm) llm.close();
   rmSync(tmp, { recursive: true, force: true });
 }

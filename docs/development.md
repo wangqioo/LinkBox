@@ -10,7 +10,7 @@ without rediscovering the architecture, commands, and validation steps.
 The current architecture follow-up checkpoint is:
 
 ```bash
-HEAD Add shared app error helper
+HEAD Expand server e2e smoke
 ```
 
 This includes the earlier 2026-06-15 item intake pass and the follow-up
@@ -60,6 +60,9 @@ At this checkpoint:
   `server/utils/appError.js`. `itemController` uses it for expected status-code
   errors and unexpected 500 responses while preserving existing user-facing
   fallback messages.
+- `server/scripts/e2e-smoke.mjs` now runs with a local mock OpenAI-compatible
+  endpoint and covers admin system health, AI config, failed job retry, and
+  assistant chat in addition to the item CRUD/export flow.
 
 ## Recommended Runtime
 
@@ -196,7 +199,7 @@ Expected counts at the 2026-06-15 architecture follow-up checkpoint:
 - Desktop client: 4 passing tests.
 - Mobile utility focused tests: 4 passing tests.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
-  database and uploads directory.
+  database, uploads directory, and mock OpenAI-compatible endpoint.
 
 Known warning: direct Node execution of mobile ES modules reports
 `MODULE_TYPELESS_PACKAGE_JSON` because `mobile/package.json` does not declare
@@ -257,8 +260,8 @@ Recommended next work after this checkpoint:
 
 1. Add Playwright browser E2E coverage on top of the server-side E2E smoke for
    login, add text/link/file item, processing state, retry, export, and delete.
-2. Expand E2E coverage for failed job retry and assistant chat with a mock AI
-   endpoint.
+2. Add Playwright/browser coverage for assistant chat, retry, and export UI once
+   the frontend test harness is in place.
 3. Add a UI surface for the new admin health checks, including degraded
    capability warnings and failed-job counts.
 4. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
