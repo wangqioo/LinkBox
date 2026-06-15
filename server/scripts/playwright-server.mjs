@@ -21,6 +21,18 @@ db.prepare('INSERT OR IGNORE INTO users (id, username, password_hash) VALUES (1,
   process.env.PLAYWRIGHT_ADMIN_USERNAME || 'playwright-admin',
   bcrypt.hashSync(process.env.PLAYWRIGHT_ADMIN_PASSWORD || 'pass1234', 10),
 );
+
+const aiBaseUrl = process.env.LOCAL_LLM_URL || 'http://127.0.0.1:3320/v1';
+const aiSettings = [
+  ['ai:provider', 'custom'],
+  ['ai:base_url', aiBaseUrl],
+  ['ai:model', process.env.LOCAL_LLM_MODEL || 'playwright-mock-model'],
+  ['ai:vision_model', process.env.LOCAL_VISION_MODEL || 'playwright-mock-model'],
+  ['ai:api_key', ''],
+];
+const setSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+for (const [key, value] of aiSettings) setSetting.run(key, value);
+
 db.close();
 
 const app = spawn(process.execPath, ['index.js'], {

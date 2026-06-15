@@ -317,7 +317,7 @@ git commit -m "Add core item browser e2e"
 - Modify: `client/e2e/helpers/fixtures.ts`
 - Test: `client/e2e/file-processing.spec.ts`
 
-- [ ] **Step 1: Add upload fixture helper**
+- [x] **Step 1: Add upload fixture helper**
 
 Extend `client/e2e/helpers/fixtures.ts`:
 
@@ -330,7 +330,7 @@ export function createMarkdownFixture(name = 'playwright-note.md') {
 }
 ```
 
-- [ ] **Step 2: Add file upload test**
+- [x] **Step 2: Add file upload test**
 
 Create `client/e2e/file-processing.spec.ts`:
 
@@ -354,7 +354,7 @@ test('user can upload a file and see it in the collection', async ({ page }) => 
 });
 ```
 
-- [ ] **Step 3: Run file upload test**
+- [x] **Step 3: Run file upload test**
 
 Run:
 
@@ -365,7 +365,7 @@ npm run test:e2e -- file-processing.spec.ts
 
 Expected: PASS after selectors are adjusted to current UI text.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add client/e2e/file-processing.spec.ts client/e2e/helpers/fixtures.ts
@@ -382,7 +382,7 @@ git commit -m "Add file upload browser e2e"
 - Create: `client/e2e/assistant.spec.ts`
 - Test: `client/e2e/assistant.spec.ts`
 
-- [ ] **Step 1: Create mock AI server**
+- [x] **Step 1: Create mock AI server**
 
 Create `server/scripts/playwright-mock-ai.mjs`:
 
@@ -422,7 +422,7 @@ process.on('SIGTERM', () => server.close(() => process.exit(0)));
 process.on('SIGINT', () => server.close(() => process.exit(0)));
 ```
 
-- [ ] **Step 2: Start mock AI before backend**
+- [x] **Step 2: Start mock AI before backend**
 
 Add a third web server entry to `client/playwright.config.ts`, before the backend:
 
@@ -445,7 +445,7 @@ Then set backend `LOCAL_LLM_URL` to the mock:
 LOCAL_LLM_URL: 'http://127.0.0.1:3320/v1',
 ```
 
-- [ ] **Step 3: Add assistant browser test**
+- [x] **Step 3: Add assistant browser test**
 
 Create `client/e2e/assistant.spec.ts`:
 
@@ -472,7 +472,7 @@ test('assistant answers from the user collection with visible citations', async 
 });
 ```
 
-- [ ] **Step 4: Verify assistant flow**
+- [x] **Step 4: Verify assistant flow**
 
 Run:
 
@@ -483,7 +483,7 @@ npm run test:e2e -- assistant.spec.ts
 
 Expected: PASS using the mock AI server only.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/scripts/playwright-mock-ai.mjs client/playwright.config.ts client/e2e/assistant.spec.ts
@@ -749,8 +749,8 @@ Expected: remote `main` contains the completed E2E system work.
 - [x] Isolated Playwright backend launcher exists.
 - [x] Auth/test-data helpers are extracted.
 - [x] Core item CRUD browser flow is covered for text item create, search, update, and delete.
-- [ ] File upload browser flow is not covered yet.
-- [ ] Assistant flow still needs mock AI browser coverage.
+- [x] File upload browser flow is covered for markdown upload and visible processing state.
+- [x] Assistant flow has mock AI browser coverage.
 - [ ] Export browser flow is not covered yet.
 - [ ] Mobile-width browser smoke is not covered yet.
 - [ ] Local/CI documentation needs final E2E instructions.

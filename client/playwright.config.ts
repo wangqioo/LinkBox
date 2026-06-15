@@ -10,12 +10,22 @@ export default defineConfig({
   },
   webServer: [
     {
+      command: 'node scripts/playwright-mock-ai.mjs',
+      cwd: '../server',
+      env: {
+        PORT: '3320',
+      },
+      url: 'http://127.0.0.1:3320/v1/health',
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
+    {
       command: 'node scripts/playwright-server.mjs',
       cwd: '../server',
       env: {
         PORT: '3310',
         JWT_SECRET: 'linkbox-playwright-secret',
-        LOCAL_LLM_URL: 'http://127.0.0.1:1/v1',
+        LOCAL_LLM_URL: 'http://127.0.0.1:3320/v1',
         BACKGROUND_QUEUE_CONCURRENCY: '1',
       },
       url: 'http://127.0.0.1:3310/api/settings/ai',

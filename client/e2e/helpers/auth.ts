@@ -5,7 +5,11 @@ export const PLAYWRIGHT_ADMIN = {
   password: 'pass1234',
 };
 
-export async function registerViaUi(page: Page, username = `pw-${Date.now()}`) {
+function uniqueUsername() {
+  return `pw-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export async function registerViaUi(page: Page, username = uniqueUsername()) {
   await page.goto('/');
   await page.getByRole('button', { name: '注册' }).click();
   await page.getByPlaceholder('用户名').fill(username);
