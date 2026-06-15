@@ -1,4 +1,5 @@
 import { indexLinkContent, removeLinkContentIndex } from './chunkIndex.js';
+import { jsonError } from './appError.js';
 import { getRuntimeQueue } from './runtimeQueue.js';
 import { parseTagIds } from './linkPayloads.js';
 import { getItemForUser, listItemsForUser } from './itemRepository.js';
@@ -163,7 +164,7 @@ export function createItemController({
         res.json(link);
       } catch (err) {
         console.error('Summarize failed:', err.message);
-        res.status(err.status || 500).json({ error: err.status ? err.message : `摘要失败: ${err.message}` });
+        jsonError(res, err, '摘要失败');
       }
     },
 
@@ -176,7 +177,7 @@ export function createItemController({
         res.json(result);
       } catch (err) {
         console.error('Extract failed:', err.message);
-        res.status(err.status || 500).json({ error: err.status ? err.message : `提取失败: ${err.message}` });
+        jsonError(res, err, '提取失败');
       }
     },
 
@@ -188,7 +189,7 @@ export function createItemController({
         });
         return res.json({ ...link, retried });
       } catch (err) {
-        return res.status(err.status || 500).json({ error: err.status ? err.message : `重试失败: ${err.message}` });
+        return jsonError(res, err, '重试失败');
       }
     },
 
@@ -206,7 +207,7 @@ export function createItemController({
         });
         res.json(link);
       } catch (err) {
-        res.status(err.status || 500).json({ error: err.status ? err.message : `更新失败: ${err.message}` });
+        jsonError(res, err, '更新失败');
       }
     },
 
@@ -218,7 +219,7 @@ export function createItemController({
           removeIndex,
         }));
       } catch (err) {
-        res.status(err.status || 500).json({ error: err.status ? err.message : `删除失败: ${err.message}` });
+        jsonError(res, err, '删除失败');
       }
     },
 
@@ -259,7 +260,7 @@ export function createItemController({
         res.json(result);
       } catch (e) {
         console.error('learning-note error:', e.message);
-        res.status(e.status || 500).json({ error: e.status ? e.message : `生成失败: ${e.message}` });
+        jsonError(res, e, '生成失败');
       }
     },
 
@@ -270,7 +271,7 @@ export function createItemController({
           userId: req.userId,
         }));
       } catch (err) {
-        res.status(err.status || 500).json({ error: err.status ? err.message : `读取文档失败: ${err.message}` });
+        jsonError(res, err, '读取文档失败');
       }
     },
 
@@ -281,7 +282,7 @@ export function createItemController({
           userId: req.userId,
         }));
       } catch (err) {
-        res.status(err.status || 500).json({ error: err.status ? err.message : `重建文档失败: ${err.message}` });
+        jsonError(res, err, '重建文档失败');
       }
     },
 
@@ -292,7 +293,7 @@ export function createItemController({
           userId: req.userId,
         }));
       } catch (err) {
-        res.status(err.status || 500).json({ error: err.status ? err.message : `重切文档失败: ${err.message}` });
+        jsonError(res, err, '重切文档失败');
       }
     },
 
@@ -303,7 +304,7 @@ export function createItemController({
           userId: req.userId,
         }));
       } catch (err) {
-        res.status(err.status || 500).json({ error: err.status ? err.message : `生成文档标注失败: ${err.message}` });
+        jsonError(res, err, '生成文档标注失败');
       }
     },
   };

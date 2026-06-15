@@ -10,12 +10,13 @@ without rediscovering the architecture, commands, and validation steps.
 The current architecture follow-up checkpoint is:
 
 ```bash
-HEAD Add admin system health checks
+HEAD Add shared app error helper
 ```
 
 This includes the earlier 2026-06-15 item intake pass and the follow-up
 architecture slices for assistant retrieval, item presentation, and extracted
-content persistence, plus isolated server smoke coverage.
+content persistence, isolated server smoke coverage, admin health checks, and
+shared route JSON error shaping.
 
 At this checkpoint:
 
@@ -55,6 +56,10 @@ At this checkpoint:
   SQLite, uploads, queue, AI endpoint, `pdftotext`, and LibreOffice status, with
   core dependency failures marked unhealthy and optional capability gaps marked
   degraded.
+- Route JSON error shaping has a small shared helper at
+  `server/utils/appError.js`. `itemController` uses it for expected status-code
+  errors and unexpected 500 responses while preserving existing user-facing
+  fallback messages.
 
 ## Recommended Runtime
 
@@ -102,6 +107,7 @@ server/utils/extractedContentPersistence.js Extraction post-processing path
 server/utils/imageProxyService.js   Proxied image fetching and headers
 server/utils/jobQueue.js            SQLite durable job queue
 server/utils/systemHealth.js        Admin operational health checks
+server/utils/appError.js            Shared route JSON error shaping
 ```
 
 Important desktop frontend modules:
@@ -186,7 +192,7 @@ git diff --check
 
 Expected counts at the 2026-06-15 architecture follow-up checkpoint:
 
-- Server: 146 passing tests.
+- Server: 150 passing tests.
 - Desktop client: 4 passing tests.
 - Mobile utility focused tests: 4 passing tests.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
@@ -256,8 +262,8 @@ Recommended next work after this checkpoint:
 3. Add a UI surface for the new admin health checks, including degraded
    capability warnings and failed-job counts.
 4. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
-5. Introduce a small application error helper for consistent route error
-   handling.
+5. Continue migrating remaining route modules to the shared application error
+   helper where it reduces repeated response shaping.
 6. Extract reusable processing banner components for desktop and mobile.
 7. Move shared scoring/tokenization away from the legacy chunk index before
    retiring `link_chunks`.

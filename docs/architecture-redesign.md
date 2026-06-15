@@ -5,7 +5,7 @@ Date: 2026-06-15
 ## Current Status
 
 Implementation has reached the committed checkpoint
-`HEAD Add admin system health checks`.
+`HEAD Add shared app error helper`.
 
 Completed:
 
@@ -40,6 +40,9 @@ Completed:
 - Admin operational health checks are centralized in `utils/systemHealth.js` and
   surfaced through `GET /api/settings/system`, covering SQLite, uploads, queue,
   AI endpoint, `pdftotext`, and LibreOffice.
+- A small application error helper now centralizes JSON error payload shaping
+  for item controller paths, preserving expected status-code errors and wrapping
+  unexpected failures with action-specific fallback messages.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -212,7 +215,8 @@ Remaining Phase 2 focus:
 
 - Consolidate item write/tag/response shaping so create/update/delete paths
   return the same item presentation shape as list/detail where intended.
-- Introduce a small `AppError` helper so route error handling is consistent.
+- Continue migrating route modules to the shared `AppError`/JSON error helper
+  where it removes repeated response shaping.
 
 ### Phase 3: Frontend Link Feature
 
