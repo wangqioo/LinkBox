@@ -9,6 +9,8 @@ COPY client/ ./
 RUN npm run build
 
 FROM node:20-slim AS mobile-builder
+ARG LINKBOX_BUILD_REV
+ENV LINKBOX_BUILD_REV=${LINKBOX_BUILD_REV}
 WORKDIR /app/mobile
 RUN npm config set registry https://registry.npmmirror.com
 COPY mobile/package*.json ./
