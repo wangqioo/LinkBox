@@ -104,12 +104,8 @@
               >
                 <div class="fm-img-inner" :class="imgBgClass(f.file)">
                   <img :src="downloadUrl(f.file.id)" class="img-thumb" loading="lazy" @error="e => e.target.style.display='none'" />
+                  <span class="fm-img-status-dot" :class="f.file.status"></span>
                 </div>
-                <div class="fm-img-lbl">
-                  <span class="img-lbl-name">{{ f.file.original_filename }}</span>
-                  <span class="status-dot" :class="f.file.status"></span>
-                </div>
-                <FileHints :file="f.file" />
               </div>
 
               <div
@@ -960,8 +956,12 @@ async function doDelete() {
   border-radius: 14px;
   overflow: hidden;
 }
-.fm-img-card { max-width: 185px; }
+.fm-img-card {
+  max-width: 185px;
+  border-radius: 16px;
+}
 .fm-img-inner {
+  position: relative;
   width: 185px;
   height: 120px;
   display: flex;
@@ -979,16 +979,19 @@ async function doDelete() {
 .img-bg-a { background: linear-gradient(135deg, rgba(139,114,255,.25), rgba(94,234,181,.15)); }
 .img-bg-b { background: linear-gradient(135deg, rgba(255,170,92,.2), rgba(255,110,122,.15)); }
 .img-bg-c { background: linear-gradient(135deg, rgba(100,170,255,.2), rgba(94,234,181,.12)); }
-.fm-img-lbl {
-  font-size: 11px;
-  color: var(--text3);
-  padding: 5px 10px 7px;
-  background: var(--s2);
-  display: flex;
-  align-items: center;
-  gap: 5px;
+.fm-img-status-dot {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.9);
+  box-shadow: 0 2px 8px rgba(0,0,0,.24);
 }
-.img-lbl-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fm-img-status-dot.pending { background: var(--orange); animation: pulse 1.4s infinite; }
+.fm-img-status-dot.ready { background: var(--teal); }
+.fm-img-status-dot.failed { background: var(--red); }
 .fm-link-preview {
   height: 72px;
   display: flex;

@@ -29,7 +29,8 @@ test('mobile multi-image upload renders one stacked image gallery', async ({ pag
   await expect(gallery).toHaveCount(1);
   await expect(gallery.getByText('1 / 3')).toBeVisible();
   await expect(gallery.locator('.stack-photo')).toHaveCount(2);
-  await expect(gallery.getByText('mobile-batch-1.png')).toBeVisible();
+  await expect(gallery).not.toContainText('mobile-batch-1.png');
+  await expect(gallery.locator('.batch-status-dot')).toBeVisible();
 });
 
 test('mobile image batch hides ai analysis body in the feed', async ({ page }) => {
@@ -84,17 +85,22 @@ test('mobile image batch hides ai analysis body in the feed', async ({ page }) =
 
   const gallery = page.locator('.image-batch-card');
   await expect(gallery).toBeVisible();
-  await expect(gallery.locator('.batch-status')).toHaveText('AI 分析失败');
+  await expect(gallery.locator('.batch-status-dot.failed')).toBeVisible();
+  await expect(gallery.locator('.batch-delete')).toBeVisible();
+  await expect(gallery).not.toContainText('AI 分析失败');
+  await expect(gallery).not.toContainText('ai-error-1.jpeg');
+  await expect(gallery).not.toContainText('归入');
   await expect(gallery).not.toContainText('Vision LLM returned 400');
   await expect(gallery).not.toContainText(longSummary);
   await expect(gallery.locator('.batch-summary')).toHaveCount(0);
+  await expect(gallery.locator('.batch-info')).toHaveCount(0);
 
-  await expect.poll(async () => gallery.locator('.batch-status').evaluate(
-    element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
-  )).toBe('1');
-  await expect.poll(async () => gallery.locator('.batch-status').evaluate(
-    element => getComputedStyle(element).fontSize,
-  )).toBe('9px');
+  await expect.poll(async () => gallery.evaluate((card) => {
+    const media = card.querySelector('.batch-media')?.getBoundingClientRect();
+    const dot = card.querySelector('.batch-status-dot')?.getBoundingClientRect();
+    if (!media || !dot) return false;
+    return dot.left > media.right - 24 && dot.top > media.bottom - 24;
+  })).toBe(true);
 });
 
 test('mobile image cards hide ai analysis in the feed but keep it in details', async ({ page }) => {
@@ -133,8 +139,19 @@ test('mobile image cards hide ai analysis in the feed but keep it in details', a
 
   const imageCard = page.locator('.fm-img-card');
   await expect(imageCard).toBeVisible();
+  await expect(imageCard.locator('.fm-img-status-dot.ready')).toBeVisible();
+  await expect(imageCard).not.toContainText('kitchen-counter.jpeg');
+  await expect(imageCard).not.toContainText('归入');
   await expect(imageCard).not.toContainText(summary);
   await expect(imageCard.locator('.fm-summary-text')).toHaveCount(0);
+  await expect(imageCard.locator('.fm-img-lbl')).toHaveCount(0);
+
+  await expect.poll(async () => imageCard.evaluate((card) => {
+    const image = card.querySelector('.fm-img-inner')?.getBoundingClientRect();
+    const dot = card.querySelector('.fm-img-status-dot')?.getBoundingClientRect();
+    if (!image || !dot) return false;
+    return dot.left > image.right - 24 && dot.top > image.bottom - 24;
+  })).toBe(true);
 
   await imageCard.click();
   await expect(page.getByText('AI 简介')).toBeVisible();

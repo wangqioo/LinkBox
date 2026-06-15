@@ -34,23 +34,8 @@
             </svg>
           </button>
           <div class="batch-count">{{ activeIndex + 1 }} / {{ images.length }}</div>
+          <span class="batch-status-dot" :class="activeImage?.status"></span>
         </div>
-      </div>
-
-      <div class="batch-info">
-        <div class="batch-title-row">
-          <span class="batch-title">{{ activeImage?.original_filename || '图片' }}</span>
-          <span class="status-dot" :class="activeImage?.status"></span>
-        </div>
-        <div class="batch-dots" aria-hidden="true">
-          <span
-            v-for="(_, index) in images"
-            :key="index"
-            :class="{ active: index === activeIndex }"
-          ></span>
-        </div>
-        <div v-if="statusText" class="batch-status" :class="activeImage?.status">{{ statusText }}</div>
-        <div class="batch-org">{{ orgLine }}</div>
       </div>
     </div>
   </div>
@@ -59,7 +44,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { downloadUrl } from '../api/files'
-import { organizeFile } from '../utils/mobileOrganizer'
 
 const props = defineProps({
   images: { type: Array, default: () => [] },
@@ -72,18 +56,6 @@ const activeImage = computed(() => props.images[activeIndex.value] || props.imag
 const backImages = computed(() => props.images
   .filter((_, index) => index !== activeIndex.value)
   .slice(0, 2))
-const orgLine = computed(() => {
-  if (!activeImage.value) return '归入 临时资料 · 图片'
-  const org = organizeFile(activeImage.value)
-  return `归入 ${org.topic} · ${org.kind}`
-})
-const statusText = computed(() => {
-  const file = activeImage.value
-  if (!file) return ''
-  if (file.status === 'pending') return file.processing?.label || '后台处理中'
-  if (file.status === 'failed') return 'AI 分析失败'
-  return ''
-})
 
 let startX = 0
 let startY = 0
@@ -154,7 +126,7 @@ function emitDelete() {
   position: relative;
   z-index: 1;
   width: min(70vw, 214px);
-  padding: 0 0 4px;
+  padding: 0;
   cursor: pointer;
   touch-action: pan-y;
   transition: transform .3s cubic-bezier(.32,.72,0,1);
@@ -205,7 +177,7 @@ function emitDelete() {
   height: 144px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.18);
-  border-radius: 16px 16px 10px 10px;
+  border-radius: 16px;
   background: linear-gradient(135deg, rgba(100,170,255,.18), rgba(94,234,181,.12));
   box-shadow: 0 18px 42px rgba(0,0,0,.22);
 }
@@ -235,7 +207,7 @@ function emitDelete() {
 }
 .batch-delete:active { background: rgba(255,60,60,.84); }
 .batch-count {
-  right: 8px;
+  right: 24px;
   bottom: 8px;
   height: 22px;
   border-radius: 11px;
@@ -246,80 +218,18 @@ function emitDelete() {
   font-size: 11px;
   font-weight: 800;
 }
-.batch-info {
-  margin-left: 26px;
-  padding: 7px 10px 8px;
-  border: 1px solid rgba(255,255,255,.18);
-  border-top: none;
-  border-radius: 0 0 16px 16px;
-  background: var(--s2);
-  box-shadow: 0 12px 30px rgba(0,0,0,.12);
-}
-.batch-title-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.batch-title {
-  flex: 1;
-  min-width: 0;
-  color: var(--text3);
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.batch-dots {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-}
-.batch-dots span {
-  width: 5px;
-  height: 5px;
+.batch-status-dot {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: var(--border2);
+  border: 2px solid rgba(255,255,255,.9);
+  box-shadow: 0 2px 8px rgba(0,0,0,.24);
 }
-.batch-dots span.active {
-  width: 13px;
-  border-radius: 5px;
-  background: var(--accent);
-}
-.batch-status,
-.batch-org,
-.batch-summary {
-  margin-top: 4px;
-  font-size: 9px;
-  line-height: 1.25;
-  font-weight: 400;
-  opacity: .68;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.batch-status {
-  color: var(--text3);
-  -webkit-line-clamp: 1;
-}
-.batch-status.pending { color: rgba(255,170,92,.62); }
-.batch-status.failed { color: rgba(255,93,108,.62); }
-.batch-org {
-  color: rgba(94,234,181,.42);
-  -webkit-line-clamp: 1;
-}
-.batch-summary {
-  color: rgba(150,150,165,.58);
-  -webkit-line-clamp: 1;
-}
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: inline-block;
-}
-.status-dot.pending { background: var(--orange); animation: pulse 1.4s infinite; }
-.status-dot.ready { background: var(--teal); }
-.status-dot.failed { background: var(--red); }
+.batch-status-dot.pending { background: var(--orange); animation: pulse 1.4s infinite; }
+.batch-status-dot.ready { background: var(--teal); }
+.batch-status-dot.failed { background: var(--red); }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 </style>
