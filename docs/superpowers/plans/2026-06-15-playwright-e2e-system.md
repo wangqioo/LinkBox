@@ -696,7 +696,7 @@ git commit -m "Document browser e2e workflow"
 **Files:**
 - Test-only task
 
-- [ ] **Step 1: Run full server tests**
+- [x] **Step 1: Run full server tests**
 
 Run:
 
@@ -707,7 +707,7 @@ npm test
 
 Expected: all Node tests PASS.
 
-- [ ] **Step 2: Run full client tests**
+- [x] **Step 2: Run full client tests**
 
 Run:
 
@@ -720,7 +720,7 @@ npm run test:e2e
 
 Expected: unit tests, build, and Playwright browser E2E all PASS.
 
-- [ ] **Step 3: Check git diff hygiene**
+- [x] **Step 3: Check git diff hygiene**
 
 Run:
 
@@ -731,7 +731,7 @@ git status --short
 
 Expected: no whitespace errors; only intentional files are changed before final commit.
 
-- [ ] **Step 4: Push**
+- [x] **Step 4: Push**
 
 ```bash
 git push origin main
