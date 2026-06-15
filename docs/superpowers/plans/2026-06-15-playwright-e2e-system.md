@@ -499,7 +499,7 @@ git commit -m "Add assistant browser e2e with mock AI"
 - Create: `client/e2e/export.spec.ts`
 - Test: `client/e2e/export.spec.ts`
 
-- [ ] **Step 1: Add download helper**
+- [x] **Step 1: Add download helper**
 
 Create `client/e2e/helpers/downloads.ts`:
 
@@ -514,7 +514,7 @@ export async function readDownload(download: Download) {
 }
 ```
 
-- [ ] **Step 2: Add export test**
+- [x] **Step 2: Add export test**
 
 Create `client/e2e/export.spec.ts`:
 
@@ -543,7 +543,7 @@ test('user can export collection data as JSON', async ({ page }) => {
 });
 ```
 
-- [ ] **Step 3: Verify export flow**
+- [x] **Step 3: Verify export flow**
 
 Run:
 
@@ -554,7 +554,7 @@ npm run test:e2e -- export.spec.ts
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add client/e2e/helpers/downloads.ts client/e2e/export.spec.ts
@@ -570,7 +570,7 @@ git commit -m "Add export browser e2e"
 - Create: `client/e2e/responsive.spec.ts`
 - Test: `client/e2e/responsive.spec.ts`
 
-- [ ] **Step 1: Add mobile-sized browser project**
+- [x] **Step 1: Add mobile-sized browser project**
 
 Add a second Playwright project:
 
@@ -589,7 +589,7 @@ projects: [
 ],
 ```
 
-- [ ] **Step 2: Add responsive smoke test**
+- [x] **Step 2: Add responsive smoke test**
 
 Create `client/e2e/responsive.spec.ts`:
 
@@ -608,7 +608,7 @@ test('primary navigation and add dialog work on mobile width', async ({ page }) 
 });
 ```
 
-- [ ] **Step 3: Run only responsive project**
+- [x] **Step 3: Run only responsive project**
 
 Run:
 
@@ -619,7 +619,7 @@ npm run test:e2e -- --project=mobile-chromium responsive.spec.ts
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add client/playwright.config.ts client/e2e/responsive.spec.ts
@@ -635,7 +635,7 @@ git commit -m "Add responsive browser e2e"
 - Modify: `.gitignore`
 - Test: documentation plus command verification
 
-- [ ] **Step 1: Ensure generated output is ignored**
+- [x] **Step 1: Ensure generated output is ignored**
 
 Add to `.gitignore`:
 
@@ -644,7 +644,7 @@ client/playwright-report/
 client/test-results/
 ```
 
-- [ ] **Step 2: Document local setup**
+- [x] **Step 2: Document local setup**
 
 Add this section to `docs/development.md`:
 
@@ -669,7 +669,7 @@ npm run test:e2e
 The Playwright config starts an isolated backend on port `3310` with a temporary SQLite database and uploads directory. It also starts Vite on port `5174` with `/api` proxied to that backend, so tests do not use the normal development database.
 ````
 
-- [ ] **Step 3: Verify commands from documentation**
+- [x] **Step 3: Verify commands from documentation**
 
 Run:
 
@@ -682,7 +682,7 @@ npm run build
 
 Expected: all commands PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .gitignore docs/development.md
@@ -751,6 +751,6 @@ Expected: remote `main` contains the completed E2E system work.
 - [x] Core item CRUD browser flow is covered for text item create, search, update, and delete.
 - [x] File upload browser flow is covered for markdown upload and visible processing state.
 - [x] Assistant flow has mock AI browser coverage.
-- [ ] Export browser flow is not covered yet.
-- [ ] Mobile-width browser smoke is not covered yet.
-- [ ] Local/CI documentation needs final E2E instructions.
+- [x] Export browser flow is covered for JSON download.
+- [x] Mobile-width browser smoke is covered.
+- [x] Local E2E documentation is updated.

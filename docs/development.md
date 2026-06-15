@@ -204,11 +204,41 @@ Expected counts at the 2026-06-15 architecture follow-up checkpoint:
 - Mobile utility focused tests: 4 passing tests.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
   database, uploads directory, and mock OpenAI-compatible endpoint.
+- Desktop browser E2E: `cd client && npm run test:e2e` passes with isolated
+  Playwright services.
 
 Known warning: direct Node execution of mobile ES modules reports
 `MODULE_TYPELESS_PACKAGE_JSON` because `mobile/package.json` does not declare
 `"type": "module"`. The warning is non-fatal; the mobile production build
 passes.
+
+## Browser E2E Tests
+
+Install dependencies and the Chromium browser bundle:
+
+```bash
+cd client
+npm install
+npx playwright install chromium
+```
+
+Run the browser suite:
+
+```bash
+cd client
+npm run test:e2e
+```
+
+The Playwright config starts three isolated local services:
+
+- mock OpenAI-compatible endpoint on `127.0.0.1:3320`
+- backend API on `127.0.0.1:3310` with a temporary SQLite database and uploads directory
+- Vite desktop app on `127.0.0.1:5174` with `/api` proxied to the test backend
+
+The backend wrapper seeds a fixed admin user for admin-only tests and writes AI
+settings to the mock endpoint. Browser tests should keep test-only logic in
+`client/e2e`, `client/playwright.config.ts`, or `server/scripts/playwright-*`;
+production routes should not gain test-only endpoints.
 
 ## Isolated Smoke Test
 
