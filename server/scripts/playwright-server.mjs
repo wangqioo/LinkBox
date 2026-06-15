@@ -19,20 +19,20 @@ const app = spawn(process.execPath, ['index.js'], {
 });
 
 let stopping = false;
+let cleanupDone = false;
+let forceKillTimer;
 
 function cleanup() {
+  if (cleanupDone) return;
+  cleanupDone = true;
   rmSync(dataDir, { recursive: true, force: true });
 }
 
 function stop(signal = 'SIGTERM') {
   if (stopping) return;
   stopping = true;
-  app.once('exit', () => {
-    cleanup();
-    process.exit(0);
-  });
   app.kill(signal);
-  setTimeout(() => {
+  forceKillTimer = setTimeout(() => {
     app.kill('SIGKILL');
     cleanup();
     process.exit(0);
@@ -42,7 +42,8 @@ function stop(signal = 'SIGTERM') {
 process.on('SIGTERM', () => stop('SIGTERM'));
 process.on('SIGINT', () => stop('SIGINT'));
 app.on('exit', (code, signal) => {
+  if (forceKillTimer) clearTimeout(forceKillTimer);
   cleanup();
-  if (signal) process.exit(0);
+  if (stopping || signal) process.exit(0);
   else process.exit(code || 0);
 });

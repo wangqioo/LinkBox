@@ -5,7 +5,7 @@ export default defineConfig({
   fullyParallel: false,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:5174',
     trace: 'on-first-retry',
   },
   webServer: [
@@ -13,20 +13,23 @@ export default defineConfig({
       command: 'node scripts/playwright-server.mjs',
       cwd: '../server',
       env: {
-        PORT: '3100',
+        PORT: '3310',
         JWT_SECRET: 'linkbox-playwright-secret',
         LOCAL_LLM_URL: 'http://127.0.0.1:1/v1',
         BACKGROUND_QUEUE_CONCURRENCY: '1',
       },
-      url: 'http://127.0.0.1:3100/api/settings/ai',
-      reuseExistingServer: !process.env.CI,
+      url: 'http://127.0.0.1:3310/api/settings/ai',
+      reuseExistingServer: false,
       timeout: 30000,
     },
     {
-      command: 'npm run dev -- --host 127.0.0.1 --port 5173',
+      command: 'npm run dev -- --host 127.0.0.1 --port 5174',
       cwd: '.',
-      url: 'http://127.0.0.1:5173',
-      reuseExistingServer: !process.env.CI,
+      env: {
+        VITE_API_PROXY: 'http://127.0.0.1:3310',
+      },
+      url: 'http://127.0.0.1:5174',
+      reuseExistingServer: false,
       timeout: 30000,
     },
   ],
