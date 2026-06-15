@@ -640,7 +640,7 @@ git commit -m "test: verify mobile image batch gallery"
 
 If there are no changes, skip this step.
 
-- [ ] **Step 4: Push and deploy**
+- [x] **Step 4: Push and deploy**
 
 ```bash
 cd /Users/wq/LinkBox
