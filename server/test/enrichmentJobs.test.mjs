@@ -34,6 +34,13 @@ async function withDb(fn) {
         content_md TEXT DEFAULT '',
         html_note TEXT DEFAULT ''
       );
+      CREATE TABLE link_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        link_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        text TEXT NOT NULL
+      );
     `);
     initJobSchema(db);
     initDocumentSchema(db);
@@ -95,4 +102,27 @@ semantic vector body`);
 
   const stored = db.prepare('SELECT provider, model FROM document_embeddings').get();
   assert.deepEqual(stored, { provider: 'test', model: 'test-model' });
+}));
+
+test('link.extractMarkdown persists extracted content through the injected database', async () => withDb(async (db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title)
+    VALUES (1, 5, 'link', 'https://article.example', 'Article')
+  `).run();
+  const queue = createQueue();
+
+  registerEnrichmentJobs(queue, {
+    uploadsDir: '',
+    db,
+    extractMarkdown: async (url) => {
+      assert.equal(url, 'https://article.example');
+      return { markdown: '# Extracted\n\nBody' };
+    },
+  });
+
+  await queue.handlers['link.extractMarkdown']({ link_id: 1, payload: {} });
+
+  const row = db.prepare('SELECT content_md FROM links WHERE id = 1').get();
+  assert.equal(row.content_md, '# Extracted\n\nBody');
+  assert.deepEqual(queue.jobs.map(job => job.type), ['document.embed', 'link.summarize']);
 }));

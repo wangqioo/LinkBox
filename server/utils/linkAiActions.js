@@ -7,6 +7,7 @@ import { indexDocumentForItem as defaultIndexDocumentForItem } from './documentI
 import { extractPageMarkdown as defaultExtractPageMarkdown } from './extractContent.js';
 import { generateLearningNote as defaultGenerateLearningNote } from './generateLearningNote.js';
 import { attachTags } from './linkCreateService.js';
+import { persistExtractedContent } from './extractedContentPersistence.js';
 
 export class LinkActionError extends Error {
   constructor(status, message) {
@@ -60,9 +61,13 @@ export async function extractLinkContent(db, {
   if (!link.url) throw new LinkActionError(400, '链接地址为空');
 
   const result = await extractPageMarkdown(link.url);
-  db.prepare('UPDATE links SET content_md = ? WHERE id = ?').run(result.markdown, link.id);
-  indexLink(link.id);
-  indexDocument(link.id);
+  persistExtractedContent(db, null, {
+    linkId: link.id,
+    markdown: result.markdown,
+    summarize: false,
+    indexLink,
+    indexDocument: (database, linkId) => indexDocument(linkId, database),
+  });
 
   return {
     content_md: result.markdown,
