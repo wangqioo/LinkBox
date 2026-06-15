@@ -28,10 +28,12 @@ export function isLoggedIn() {
   return Boolean(localStorage.getItem('linkbox_token'))
 }
 
-export async function uploadFile(file, analyzeNow = false) {
+export async function uploadFile(file, analyzeNow = false, metadata = {}) {
   const form = new FormData()
   form.append('file', file)
   form.append('analyze_now', analyzeNow ? 'true' : 'false')
+  if (metadata.batchId) form.append('batch_id', metadata.batchId)
+  if (metadata.batchIndex !== undefined) form.append('batch_index', String(metadata.batchIndex))
   const { data } = await api.post('/mobile/files/upload', form)
   return data
 }

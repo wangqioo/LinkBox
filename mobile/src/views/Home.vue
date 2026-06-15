@@ -386,6 +386,14 @@ const FILE_BG = {
   other: 'rgba(255,255,255,.08)',
 }
 
+function isImageUpload(file) {
+  return file?.type?.startsWith('image/')
+}
+
+function createImageBatchId() {
+  return `imgbatch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 function fileIcon(t) { return FILE_ICONS[t] || '📦' }
 function fileLabel(t) { return FILE_LABELS[t] || '其他' }
 function fileIconBg(t) { return FILE_BG[t] || FILE_BG.other }
@@ -592,7 +600,15 @@ function triggerUpload() {
 async function handleFileSelect(e) {
   const list = [...e.target.files]
   e.target.value = ''
-  for (const f of list) await doUpload(f, null)
+  const imageFiles = list.filter(isImageUpload)
+  const batchId = imageFiles.length > 1 ? createImageBatchId() : ''
+  let imageIndex = 0
+  for (const f of list) {
+    const metadata = batchId && isImageUpload(f)
+      ? { batchId, batchIndex: imageIndex++ }
+      : {}
+    await doUpload(f, null, metadata)
+  }
 }
 
 async function handlePaste(e) {
@@ -603,7 +619,7 @@ async function handlePaste(e) {
       const f = item.getAsFile()
       if (f) {
         handledFile = true
-        await doUpload(f, null)
+        await doUpload(f, null, {})
       }
     }
   }
@@ -644,11 +660,11 @@ async function sendText(text) {
   setTimeout(() => { uploadToast.value = '' }, 2200)
 }
 
-async function doUpload(file, url) {
+async function doUpload(file, url, metadata = {}) {
   uploading.value = true
   uploadToast.value = `上传中 ${file?.name || url || ''}…`
   try {
-    if (file) await uploadFile(file, analyzeNow.value)
+    if (file) await uploadFile(file, analyzeNow.value, metadata)
     else await uploadLink(url, analyzeNow.value)
     await loadFiles()
     uploadToast.value = '✓ 发送成功'
