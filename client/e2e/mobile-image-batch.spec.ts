@@ -84,12 +84,15 @@ test('mobile image batch keeps ai failure details compact in the feed', async ({
 
   const gallery = page.locator('.image-batch-card');
   await expect(gallery).toBeVisible();
-  await expect(gallery.locator('.batch-status')).toHaveText('AI 分析失败，点开查看详情');
+  await expect(gallery.locator('.batch-status')).toHaveText('AI 分析失败');
   await expect(gallery).not.toContainText('Vision LLM returned 400');
 
   await expect.poll(async () => gallery.locator('.batch-status').evaluate(
     element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
   )).toBe('1');
+  await expect.poll(async () => gallery.locator('.batch-status').evaluate(
+    element => getComputedStyle(element).fontSize,
+  )).toBe('9px');
   await expect.poll(async () => gallery.locator('.batch-summary').evaluate(
     element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
   )).toBe('1');
