@@ -7,32 +7,34 @@
     @touchend.stop="onTouchEnd"
     @touchcancel.stop="resetTouch"
   >
-    <div v-if="backImages[1]" class="stack-photo stack-photo-2">
-      <img :src="downloadUrl(backImages[1].id)" alt="" loading="lazy" />
-    </div>
-    <div v-if="backImages[0]" class="stack-photo stack-photo-1">
-      <img :src="downloadUrl(backImages[0].id)" alt="" loading="lazy" />
-    </div>
-
     <div class="batch-surface">
-      <div class="batch-media">
-        <img
-          v-if="activeImage?.id"
-          :src="downloadUrl(activeImage.id)"
-          class="batch-image"
-          loading="lazy"
-          @error="event => { event.target.style.visibility = 'hidden' }"
-        />
-        <button class="batch-delete" @click.stop="emitDelete" aria-label="删除当前图片">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"/>
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-            <path d="M10 11v6"/>
-            <path d="M14 11v6"/>
-            <path d="M9 6V4h6v2"/>
-          </svg>
-        </button>
-        <div class="batch-count">{{ activeIndex + 1 }} / {{ images.length }}</div>
+      <div class="deck-stage">
+        <div v-if="backImages[1]" class="stack-photo stack-photo-2">
+          <img :src="downloadUrl(backImages[1].id)" alt="" loading="lazy" />
+        </div>
+        <div v-if="backImages[0]" class="stack-photo stack-photo-1">
+          <img :src="downloadUrl(backImages[0].id)" alt="" loading="lazy" />
+        </div>
+
+        <div class="batch-media">
+          <img
+            v-if="activeImage?.id"
+            :src="downloadUrl(activeImage.id)"
+            class="batch-image"
+            loading="lazy"
+            @error="event => { event.target.style.visibility = 'hidden' }"
+          />
+          <button class="batch-delete" @click.stop="emitDelete" aria-label="删除当前图片">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6"/>
+              <path d="M14 11v6"/>
+              <path d="M9 6V4h6v2"/>
+            </svg>
+          </button>
+          <div class="batch-count">{{ activeIndex + 1 }} / {{ images.length }}</div>
+        </div>
       </div>
 
       <div class="batch-info">
@@ -153,17 +155,21 @@ function emitDelete() {
   position: relative;
   z-index: 1;
   width: min(70vw, 214px);
-  padding: 20px 0 4px 26px;
+  padding: 0 0 4px;
   cursor: pointer;
   touch-action: pan-y;
   transition: transform .3s cubic-bezier(.32,.72,0,1);
+}
+.deck-stage {
+  position: relative;
+  padding: 20px 0 0 26px;
 }
 .stack-photo {
   position: absolute;
   width: calc(100% - 26px);
   height: 144px;
-  left: 8px;
-  top: 6px;
+  left: 26px;
+  top: 20px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.18);
   border-radius: 16px;
@@ -193,17 +199,16 @@ function emitDelete() {
 }
 .batch-surface {
   position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,.18);
-  border-radius: 16px;
-  background: var(--s2);
-  box-shadow: 0 18px 42px rgba(0,0,0,.22);
+  background: transparent;
 }
 .batch-media {
   position: relative;
   height: 144px;
   overflow: hidden;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 16px 16px 10px 10px;
   background: linear-gradient(135deg, rgba(100,170,255,.18), rgba(94,234,181,.12));
+  box-shadow: 0 18px 42px rgba(0,0,0,.22);
 }
 .batch-image {
   width: 100%;
@@ -243,8 +248,13 @@ function emitDelete() {
   font-weight: 800;
 }
 .batch-info {
+  margin-left: 26px;
   padding: 7px 10px 8px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-top: none;
+  border-radius: 0 0 16px 16px;
   background: var(--s2);
+  box-shadow: 0 12px 30px rgba(0,0,0,.12);
 }
 .batch-title-row {
   display: flex;

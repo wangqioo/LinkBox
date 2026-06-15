@@ -81,6 +81,7 @@
             v-for="f in group.files"
             :key="f.id"
             class="fm-row"
+            :class="{ 'image-batch-row': f.kind === 'image-batch' }"
             @touchstart.passive="onCardTS($event, f.id)"
             @touchmove.passive="onCardTM($event, f.id)"
             @touchend.passive="onCardTE(f.id)"
@@ -913,6 +914,9 @@ async function doDelete() {
   align-items: stretch;
   overflow: hidden;
   border-radius: 16px;
+}
+.image-batch-row .fm-row-inner {
+  overflow: visible;
 }
 .fm-time {
   font-size: 10px;
