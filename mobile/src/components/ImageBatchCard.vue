@@ -51,7 +51,6 @@
         </div>
         <div v-if="statusText" class="batch-status" :class="activeImage?.status">{{ statusText }}</div>
         <div class="batch-org">{{ orgLine }}</div>
-        <div v-if="activeImage?.summary" class="batch-summary">{{ activeImage.summary }}</div>
       </div>
     </div>
   </div>

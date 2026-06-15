@@ -32,7 +32,7 @@ test('mobile multi-image upload renders one stacked image gallery', async ({ pag
   await expect(gallery.getByText('mobile-batch-1.png')).toBeVisible();
 });
 
-test('mobile image batch keeps ai failure details compact in the feed', async ({ page }) => {
+test('mobile image batch hides ai analysis body in the feed', async ({ page }) => {
   const rawError = 'Vision LLM returned 400: {"error":{"message":"image payload rejected by upstream vision model"}}';
   const longSummary = '这是一段很长的 AI 图片分析结果，包含拍摄场景、物体识别、可能的行动建议和大量上下文，只应该在详情页完整阅读。';
   const files = [
@@ -86,6 +86,8 @@ test('mobile image batch keeps ai failure details compact in the feed', async ({
   await expect(gallery).toBeVisible();
   await expect(gallery.locator('.batch-status')).toHaveText('AI 分析失败');
   await expect(gallery).not.toContainText('Vision LLM returned 400');
+  await expect(gallery).not.toContainText(longSummary);
+  await expect(gallery.locator('.batch-summary')).toHaveCount(0);
 
   await expect.poll(async () => gallery.locator('.batch-status').evaluate(
     element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
@@ -93,9 +95,50 @@ test('mobile image batch keeps ai failure details compact in the feed', async ({
   await expect.poll(async () => gallery.locator('.batch-status').evaluate(
     element => getComputedStyle(element).fontSize,
   )).toBe('9px');
-  await expect.poll(async () => gallery.locator('.batch-summary').evaluate(
-    element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
-  )).toBe('1');
+});
+
+test('mobile image cards hide ai analysis in the feed but keep it in details', async ({ page }) => {
+  const summary = '厨房台面上有一台咖啡机和几只杯子，这是图片详情页才应该完整展示的 AI 分析。';
+  const files = [{
+    id: '9401',
+    original_filename: 'kitchen-counter.jpeg',
+    filename: 'kitchen-counter.jpeg',
+    type: 'image',
+    file_size: 2048,
+    batch_id: '',
+    batch_index: 0,
+    created_at: new Date().toISOString(),
+    status: 'ready',
+    processing: null,
+    summary,
+    description: summary,
+  }];
+
+  await page.route('**/api/mobile/files/stats', route => route.fulfill({
+    json: {
+      total: files.length,
+      by_type: { image: files.length },
+      by_status: { ready: files.length },
+      recent_date: new Date().toISOString().slice(0, 10),
+    },
+  }));
+  await page.route(/\/api\/mobile\/files\?/, route => route.fulfill({ json: files }));
+  await page.route('**/api/mobile/files/9401', route => route.fulfill({ json: files[0] }));
+  await page.route('**/api/mobile/files/9401/download', route => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64'),
+  }));
+
+  await registerMobileUser(page);
+
+  const imageCard = page.locator('.fm-img-card');
+  await expect(imageCard).toBeVisible();
+  await expect(imageCard).not.toContainText(summary);
+  await expect(imageCard.locator('.fm-summary-text')).toHaveCount(0);
+
+  await imageCard.click();
+  await expect(page.getByText('AI 简介')).toBeVisible();
+  await expect(page.locator('.summary-text')).toContainText(summary);
 });
 
 test('mobile link cards keep ai hints visually secondary', async ({ page }) => {

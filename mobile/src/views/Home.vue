@@ -360,7 +360,7 @@ const FileHints = defineComponent({
         children.push(h('div', { class: ['fm-status-line', file.status, { 'in-card': props.inCard, bubble: props.bubble }] }, status))
       }
       children.push(h('div', { class: ['ai-organized-line', { 'in-card': props.inCard, bubble: props.bubble }] }, `归入 ${org.topic} · ${org.kind}`))
-      if (file.summary) {
+      if (file.type !== 'image' && file.summary) {
         children.push(h('div', { class: props.inCard ? 'fm-link-summary' : 'fm-summary-text' }, file.summary))
       }
       return children
