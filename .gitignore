@@ -9,3 +9,4 @@ client/playwright-report/
 client/test-results/
 .env
 .smoke/
+.superpowers/
