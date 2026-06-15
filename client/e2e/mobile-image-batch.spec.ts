@@ -31,3 +31,66 @@ test('mobile multi-image upload renders one stacked image gallery', async ({ pag
   await expect(gallery.locator('.stack-photo')).toHaveCount(2);
   await expect(gallery.getByText('mobile-batch-1.png')).toBeVisible();
 });
+
+test('mobile image batch keeps ai failure details compact in the feed', async ({ page }) => {
+  const rawError = 'Vision LLM returned 400: {"error":{"message":"image payload rejected by upstream vision model"}}';
+  const longSummary = '这是一段很长的 AI 图片分析结果，包含拍摄场景、物体识别、可能的行动建议和大量上下文，只应该在详情页完整阅读。';
+  const files = [
+    {
+      id: '9201',
+      original_filename: 'ai-error-1.jpeg',
+      filename: 'ai-error-1.jpeg',
+      type: 'image',
+      file_size: 2048,
+      batch_id: 'ai-feed-batch',
+      batch_index: 0,
+      created_at: new Date().toISOString(),
+      status: 'failed',
+      error: rawError,
+      processing: { state: 'failed', lastError: rawError },
+      summary: longSummary,
+    },
+    {
+      id: '9202',
+      original_filename: 'ai-error-2.jpeg',
+      filename: 'ai-error-2.jpeg',
+      type: 'image',
+      file_size: 2048,
+      batch_id: 'ai-feed-batch',
+      batch_index: 1,
+      created_at: new Date().toISOString(),
+      status: 'failed',
+      error: rawError,
+      processing: { state: 'failed', lastError: rawError },
+      summary: longSummary,
+    },
+  ];
+
+  await page.route('**/api/mobile/files/stats', route => route.fulfill({
+    json: {
+      total: files.length,
+      by_type: { image: files.length },
+      by_status: { failed: files.length },
+      recent_date: new Date().toISOString().slice(0, 10),
+    },
+  }));
+  await page.route(/\/api\/mobile\/files\?/, route => route.fulfill({ json: files }));
+  await page.route(/\/api\/mobile\/files\/920[12]\/download/, route => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64'),
+  }));
+
+  await registerMobileUser(page);
+
+  const gallery = page.locator('.image-batch-card');
+  await expect(gallery).toBeVisible();
+  await expect(gallery.locator('.batch-status')).toHaveText('AI 分析失败，点开查看详情');
+  await expect(gallery).not.toContainText('Vision LLM returned 400');
+
+  await expect.poll(async () => gallery.locator('.batch-status').evaluate(
+    element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
+  )).toBe('1');
+  await expect.poll(async () => gallery.locator('.batch-summary').evaluate(
+    element => getComputedStyle(element).getPropertyValue('-webkit-line-clamp'),
+  )).toBe('1');
+});

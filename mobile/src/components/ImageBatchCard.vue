@@ -82,7 +82,7 @@ const statusText = computed(() => {
   const file = activeImage.value
   if (!file) return ''
   if (file.status === 'pending') return file.processing?.label || '后台处理中'
-  if (file.status === 'failed') return file.error || file.processing?.lastError || '处理失败，点开可重试'
+  if (file.status === 'failed') return 'AI 分析失败，点开查看详情'
   return ''
 })
 
@@ -289,26 +289,27 @@ function emitDelete() {
 .batch-status,
 .batch-org,
 .batch-summary {
-  margin-top: 5px;
-  font-size: 11px;
-  line-height: 1.45;
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 400;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .batch-status {
   color: var(--text3);
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
-.batch-status.pending { color: var(--orange); }
-.batch-status.failed { color: var(--red); }
+.batch-status.pending { color: rgba(255,170,92,.78); }
+.batch-status.failed { color: rgba(255,93,108,.78); }
 .batch-org {
-  color: rgba(94,234,181,.72);
+  color: rgba(94,234,181,.55);
   -webkit-line-clamp: 1;
 }
 .batch-summary {
-  color: var(--text3);
-  -webkit-line-clamp: 2;
+  color: rgba(150,150,165,.78);
+  -webkit-line-clamp: 1;
 }
 .status-dot {
   width: 6px;

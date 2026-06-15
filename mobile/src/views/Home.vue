@@ -352,7 +352,7 @@ const FileHints = defineComponent({
       const status = file.status === 'pending'
         ? (file.processing?.label || '后台处理中')
         : file.status === 'failed'
-          ? (file.error || file.processing?.lastError || '处理失败，点开可重试')
+          ? 'AI 分析失败，点开查看详情'
           : ''
       const org = organizeFile(file)
       const children = []
@@ -1066,40 +1066,43 @@ async function doDelete() {
 .fm-link-summary,
 .fm-status-line,
 .ai-organized-line {
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 400;
   color: var(--text3);
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .fm-summary-text {
-  padding: 0 10px 8px;
-  -webkit-line-clamp: 2;
+  padding: 0 10px 6px;
+  color: rgba(150,150,165,.78);
+  -webkit-line-clamp: 1;
 }
 .fm-link-summary {
-  margin-top: 4px;
-  -webkit-line-clamp: 2;
+  margin-top: 3px;
+  color: rgba(150,150,165,.78);
+  -webkit-line-clamp: 1;
 }
 .fm-status-line {
-  padding: 0 10px 7px;
-  -webkit-line-clamp: 2;
+  padding: 0 10px 5px;
+  -webkit-line-clamp: 1;
 }
 .fm-status-line.in-card,
 .ai-organized-line.in-card {
-  padding: 4px 0 0;
+  padding: 3px 0 0;
 }
-.fm-status-line.pending { color: var(--orange); }
-.fm-status-line.failed { color: var(--red); }
+.fm-status-line.pending { color: rgba(255,170,92,.78); }
+.fm-status-line.failed { color: rgba(255,93,108,.78); }
 .ai-organized-line {
-  padding: 0 10px 7px;
-  color: rgba(94,234,181,.72);
+  padding: 0 10px 5px;
+  color: rgba(94,234,181,.55);
   -webkit-line-clamp: 1;
 }
 .ai-organized-line.bubble {
-  margin-top: 8px;
+  margin-top: 6px;
   padding: 0;
-  color: rgba(255,255,255,.72);
+  color: rgba(255,255,255,.58);
 }
 .status-dot {
   width: 6px;
