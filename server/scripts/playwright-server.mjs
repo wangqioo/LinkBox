@@ -5,14 +5,30 @@ import { join } from 'node:path';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'linkbox-playwright-'));
 const uploadsDir = join(dataDir, 'uploads');
+const dbPath = join(dataDir, 'linkbox.db');
 mkdirSync(uploadsDir, { recursive: true });
+
+process.env.DATA_DIR = dataDir;
+process.env.DB_PATH = dbPath;
+process.env.UPLOADS_DIR = uploadsDir;
+
+const [{ default: db }, { default: bcrypt }] = await Promise.all([
+  import('../db.js'),
+  import('bcryptjs'),
+]);
+
+db.prepare('INSERT OR IGNORE INTO users (id, username, password_hash) VALUES (1, ?, ?)').run(
+  process.env.PLAYWRIGHT_ADMIN_USERNAME || 'playwright-admin',
+  bcrypt.hashSync(process.env.PLAYWRIGHT_ADMIN_PASSWORD || 'pass1234', 10),
+);
+db.close();
 
 const app = spawn(process.execPath, ['index.js'], {
   cwd: process.cwd(),
   env: {
     ...process.env,
     DATA_DIR: dataDir,
-    DB_PATH: join(dataDir, 'linkbox.db'),
+    DB_PATH: dbPath,
     UPLOADS_DIR: uploadsDir,
   },
   stdio: 'inherit',

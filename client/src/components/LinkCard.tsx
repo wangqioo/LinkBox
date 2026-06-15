@@ -24,6 +24,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   const [showDocumentInspector, setShowDocumentInspector] = useState(false);
 
   const itemType = link.type || 'link';
+  const itemLabel = link.title || link.url || link.description || `收藏 ${link.id}`;
 
   const selectOverlay = selectMode ? (
     <div
@@ -71,12 +72,12 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
         <>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">标题</label>
-            <input className="input text-sm" value={editTitle}
+            <input aria-label="编辑标题" className="input text-sm" value={editTitle}
               onChange={e => setEditTitle(e.target.value)} />
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">内容</label>
-            <textarea className="input text-sm" rows={4} value={editContent}
+            <textarea aria-label="编辑内容" className="input text-sm" rows={4} value={editContent}
               onChange={e => setEditContent(e.target.value)} />
           </div>
         </>
@@ -198,10 +199,10 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
           {summarizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
         </button>
       )}
-      <button onClick={() => setEditing(true)} className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100">
+      <button onClick={() => setEditing(true)} aria-label={`编辑收藏 ${itemLabel}`} className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100">
         <Pencil className="w-3.5 h-3.5" />
       </button>
-      <button onClick={() => onDelete(link.id)} className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100 text-red-500">
+      <button onClick={() => onDelete(link.id)} aria-label={`删除收藏 ${itemLabel}`} className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100 text-red-500">
         <Trash2 className="w-3.5 h-3.5" />
       </button>
     </div>
@@ -309,7 +310,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
   if (itemType === 'image') {
     return (
-      <div className="relative card overflow-hidden group hover:shadow-md transition-shadow">
+      <div role="article" aria-label={itemLabel} className="relative card overflow-hidden group hover:shadow-md transition-shadow">
         {selectOverlay}
         {link.image_path && !editing && (
           <div className="bg-gray-100 dark:bg-gray-800">
@@ -342,7 +343,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
   if (itemType === 'text') {
     return (
-      <div className="relative card overflow-hidden group hover:shadow-md transition-shadow">
+      <div role="article" aria-label={itemLabel} className="relative card overflow-hidden group hover:shadow-md transition-shadow">
         {selectOverlay}
         <div className="p-4">
           <div className="flex items-start justify-between gap-2">
@@ -373,7 +374,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
   if (itemType === 'audio') {
     return (
-      <div className="relative card overflow-hidden group hover:shadow-md transition-shadow">
+      <div role="article" aria-label={itemLabel} className="relative card overflow-hidden group hover:shadow-md transition-shadow">
         {selectOverlay}
         <div className="p-4">
           <div className="flex items-start justify-between gap-2">
@@ -444,7 +445,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
             onUpdated={(html) => { onNoteUpdated?.(link.id, html); }}
           />
         )}
-        <div className="relative card overflow-hidden group hover:shadow-md transition-shadow">
+        <div role="article" aria-label={itemLabel} className="relative card overflow-hidden group hover:shadow-md transition-shadow">
           {selectOverlay}
           <div className="flex">
             {link.thumbnail ? (
@@ -508,7 +509,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
           onUpdated={(html) => { onNoteUpdated?.(link.id, html); }}
         />
       )}
-      <div className="relative card overflow-hidden group hover:shadow-md transition-shadow">
+      <div role="article" aria-label={itemLabel} className="relative card overflow-hidden group hover:shadow-md transition-shadow">
         {selectOverlay}
         <div className="flex">
           {link.thumbnail && (

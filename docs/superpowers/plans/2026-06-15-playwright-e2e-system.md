@@ -133,7 +133,7 @@ npm run test:e2e
 
 Expected: the settings health test passes in Chromium, and no real local database is touched.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/playwright.config.ts client/vite.config.ts server/scripts/playwright-server.mjs client/e2e/settings-health.spec.ts
@@ -150,7 +150,7 @@ git commit -m "Harden Playwright e2e harness"
 - Modify: `client/e2e/settings-health.spec.ts`
 - Test: `client/e2e/settings-health.spec.ts`
 
-- [ ] **Step 1: Create auth helper**
+- [x] **Step 1: Create auth helper**
 
 Create `client/e2e/helpers/auth.ts`:
 
@@ -168,7 +168,7 @@ export async function registerViaUi(page: Page, username = `pw-${Date.now()}`) {
 }
 ```
 
-- [ ] **Step 2: Create fixture helper**
+- [x] **Step 2: Create fixture helper**
 
 Create `client/e2e/helpers/fixtures.ts`:
 
@@ -184,7 +184,7 @@ export function createTextFixture(name: string, content: string) {
 }
 ```
 
-- [ ] **Step 3: Refactor settings health test**
+- [x] **Step 3: Refactor settings health test**
 
 Update `client/e2e/settings-health.spec.ts` to use the helper:
 
@@ -208,7 +208,7 @@ test('admin can view system health checks in settings', async ({ page }) => {
 });
 ```
 
-- [ ] **Step 4: Verify helper extraction**
+- [x] **Step 4: Verify helper extraction**
 
 Run:
 
@@ -219,7 +219,7 @@ npm run test:e2e -- settings-health.spec.ts
 
 Expected: the settings health test passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/e2e/helpers/auth.ts client/e2e/helpers/fixtures.ts client/e2e/settings-health.spec.ts
@@ -235,7 +235,7 @@ git commit -m "Add Playwright e2e helpers"
 - Modify: `client/e2e/helpers/auth.ts`
 - Test: `client/e2e/item-crud.spec.ts`
 
-- [ ] **Step 1: Add a text-note creation test**
+- [x] **Step 1: Add a text-note creation test**
 
 Create `client/e2e/item-crud.spec.ts`:
 
@@ -267,7 +267,7 @@ test('user can create, search, update, and delete a text item', async ({ page })
 });
 ```
 
-- [ ] **Step 2: Run the new test and capture selector failures**
+- [x] **Step 2: Run the new test and capture selector failures**
 
 Run:
 
@@ -278,7 +278,7 @@ npm run test:e2e -- item-crud.spec.ts
 
 Expected: the test may fail if current buttons lack accessible names.
 
-- [ ] **Step 3: Fix only accessibility names needed for stable testing**
+- [x] **Step 3: Fix only accessibility names needed for stable testing**
 
 If the test cannot find edit/delete buttons, update the relevant buttons in `client/src/components/LinkCard.tsx` with explicit labels:
 
@@ -290,7 +290,7 @@ If the test cannot find edit/delete buttons, update the relevant buttons in `cli
 <button type="button" aria-label="删除收藏" ...>
 ```
 
-- [ ] **Step 4: Verify the core item flow**
+- [x] **Step 4: Verify the core item flow**
 
 Run:
 
@@ -301,7 +301,7 @@ npm run test:e2e -- item-crud.spec.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/e2e/item-crud.spec.ts client/src/components/LinkCard.tsx
@@ -747,8 +747,8 @@ Expected: remote `main` contains the completed E2E system work.
 - [x] Browser E2E output directories are ignored.
 - [x] First browser E2E smoke covers admin registration and system health settings.
 - [x] Isolated Playwright backend launcher exists.
-- [ ] Auth/test-data helpers are not extracted yet.
-- [ ] Core item CRUD browser flow is not covered yet.
+- [x] Auth/test-data helpers are extracted.
+- [x] Core item CRUD browser flow is covered for text item create, search, update, and delete.
 - [ ] File upload browser flow is not covered yet.
 - [ ] Assistant flow still needs mock AI browser coverage.
 - [ ] Export browser flow is not covered yet.

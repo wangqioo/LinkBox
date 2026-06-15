@@ -155,10 +155,15 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="card relative w-full max-w-lg p-6 z-10 max-h-[90vh] overflow-y-auto">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-link-title"
+        className="card relative w-full max-w-lg p-6 z-10 max-h-[90vh] overflow-y-auto"
+      >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">添加收藏</h2>
-          <button onClick={onClose} className="btn-ghost p-1.5"><X className="w-4 h-4" /></button>
+          <h2 id="add-link-title" className="text-lg font-semibold">添加收藏</h2>
+          <button type="button" onClick={onClose} aria-label="关闭添加收藏弹窗" className="btn-ghost p-1.5"><X className="w-4 h-4" /></button>
         </div>
 
         <AddLinkTabs type={type} onChange={setType} />

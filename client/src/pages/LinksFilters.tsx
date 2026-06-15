@@ -52,7 +52,7 @@ export default function LinksFilters({
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input className="input pl-9" placeholder="搜索标题、链接、评论..."
+          <input aria-label="搜索收藏" className="input pl-9" placeholder="搜索标题、链接、评论..."
             value={search} onChange={e => onSearchChange(e.target.value)} />
         </div>
         <button onClick={onToggleFilters}
