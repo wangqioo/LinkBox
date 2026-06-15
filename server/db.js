@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync } from 'fs';
 import { initDocumentSchema } from './utils/documentIndex.js';
+import { runMigrations } from './utils/dbMigrations.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -64,29 +65,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id);
 `);
 
-// Migrate existing databases: add new columns if missing
-try {
-  db.exec(`ALTER TABLE links ADD COLUMN type TEXT DEFAULT 'link'`);
-} catch { /* column already exists */ }
-try {
-  db.exec(`ALTER TABLE links ADD COLUMN content TEXT DEFAULT ''`);
-} catch { /* column already exists */ }
-try {
-  db.exec(`ALTER TABLE links ADD COLUMN image_path TEXT DEFAULT ''`);
-} catch { /* column already exists */ }
-try {
-  db.exec(`ALTER TABLE links ADD COLUMN summary TEXT DEFAULT ''`);
-} catch { /* column already exists */ }
-try {
-  db.exec(`ALTER TABLE links ADD COLUMN html_note TEXT DEFAULT ''`);
-} catch { /* column already exists */ }
-
-try {
-  db.exec(`ALTER TABLE links ADD COLUMN content_md TEXT DEFAULT ''`);
-} catch { /* column already exists */ }
-try {
-  db.exec(`ALTER TABLE links ADD COLUMN status TEXT DEFAULT ''`);
-} catch { /* column already exists */ }
+runMigrations(db);
 
 // Settings table: global key-value store (admin-managed)
 db.exec(`

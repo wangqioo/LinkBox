@@ -5,7 +5,7 @@ Date: 2026-06-15
 ## Current Status
 
 Implementation has reached the committed checkpoint
-`HEAD Expand server e2e smoke`.
+`HEAD Add explicit database migrations`.
 
 Completed:
 
@@ -46,6 +46,9 @@ Completed:
 - The server-side E2E smoke now includes a mock OpenAI-compatible endpoint and
   covers admin health, AI config, failed job retry, and assistant chat through
   real HTTP requests.
+- A small SQLite migration runner now records applied migrations and owns the
+  legacy `links` item-column upgrades that were previously scattered as
+  boot-time `ALTER TABLE` blocks.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -243,7 +246,7 @@ Remaining Phase 2 focus:
 - Lock Node to an LTS line, preferably Node 22.
 - Health checks for SQLite, uploads, AI endpoint, `pdftotext`, LibreOffice, and
   job queue state now exist behind the admin system-status endpoint.
-- Convert boot-time schema changes into migration files.
+- Continue converting boot-time schema initialization into explicit migrations.
 - Keep Docker, systemd, and README values aligned.
 
 ## Forward Plan
@@ -258,7 +261,8 @@ Still needed before a broader release:
 - Add browser coverage for assistant chat and retry UI behavior.
 - Add a frontend/admin UI surface for degraded health checks and failed jobs.
 - Write migration plan for item/content/assets tables.
-- Convert boot-time schema changes into explicit migrations.
+- Move jobs, document tables, and future item/content/assets schema changes into
+  explicit migrations.
 - Retire or narrow legacy `link_chunks` after canonical document retrieval has
   enough production confidence.
 

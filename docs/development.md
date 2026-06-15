@@ -10,7 +10,7 @@ without rediscovering the architecture, commands, and validation steps.
 The current architecture follow-up checkpoint is:
 
 ```bash
-HEAD Expand server e2e smoke
+HEAD Add explicit database migrations
 ```
 
 This includes the earlier 2026-06-15 item intake pass and the follow-up
@@ -63,6 +63,9 @@ At this checkpoint:
 - `server/scripts/e2e-smoke.mjs` now runs with a local mock OpenAI-compatible
   endpoint and covers admin system health, AI config, failed job retry, and
   assistant chat in addition to the item CRUD/export flow.
+- Boot-time item-column upgrades now run through
+  `server/utils/dbMigrations.js`, which records applied migrations in
+  `schema_migrations` and is covered against legacy `links` tables.
 
 ## Recommended Runtime
 
@@ -111,6 +114,7 @@ server/utils/imageProxyService.js   Proxied image fetching and headers
 server/utils/jobQueue.js            SQLite durable job queue
 server/utils/systemHealth.js        Admin operational health checks
 server/utils/appError.js            Shared route JSON error shaping
+server/utils/dbMigrations.js        Explicit SQLite migration runner
 ```
 
 Important desktop frontend modules:
@@ -195,7 +199,7 @@ git diff --check
 
 Expected counts at the 2026-06-15 architecture follow-up checkpoint:
 
-- Server: 150 passing tests.
+- Server: 152 passing tests.
 - Desktop client: 4 passing tests.
 - Mobile utility focused tests: 4 passing tests.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
@@ -264,7 +268,8 @@ Recommended next work after this checkpoint:
    the frontend test harness is in place.
 3. Add a UI surface for the new admin health checks, including degraded
    capability warnings and failed-job counts.
-4. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
+4. Continue moving schema initialization into explicit migrations, especially
+   jobs, document tables, and future item/content/assets tables.
 5. Continue migrating remaining route modules to the shared application error
    helper where it reduces repeated response shaping.
 6. Extract reusable processing banner components for desktop and mobile.
