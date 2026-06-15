@@ -2,7 +2,7 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { callAIChat, streamAIChat } from '../utils/aiConfig.js';
-import { retrieveSources } from '../utils/assistantRetrieval.js';
+import { retrieveAssistantSources } from '../utils/assistantSourceRetrieval.js';
 import {
   buildMessages,
   normalizeCitationText,
@@ -27,8 +27,7 @@ router.post('/chat', async (req, res) => {
   if (!question) return res.status(400).json({ error: '问题不能为空' });
   const task = normalizeTask(req.body?.task);
 
-  const ranked = retrieveSources({
-    db,
+  const ranked = retrieveAssistantSources(db, {
     userId: req.userId,
     question,
     task,
@@ -66,8 +65,7 @@ router.post('/chat/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  const ranked = retrieveSources({
-    db,
+  const ranked = retrieveAssistantSources(db, {
     userId: req.userId,
     question,
     task,

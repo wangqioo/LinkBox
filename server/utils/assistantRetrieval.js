@@ -120,8 +120,8 @@ export function retrieveSources({
     return reranked.map((item, index) => ({ ...item, source_index: index + 1 }));
   }
 
-  indexAllMissingChunks();
-  const chunks = searchRelevantChunks({ userId, query: question, task, limit: maxSources, scope });
+  indexAllMissingChunks(db);
+  const chunks = searchRelevantChunks({ db, userId, query: question, task, limit: maxSources, scope });
   if (chunks.length) {
     return chunks.map((item, index) => ({ ...item, source_index: index + 1 }));
   }

@@ -81,9 +81,12 @@ test('retrieveSources can merge embedding candidates when hybrid retrieval is en
   db.prepare(`
     INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
     VALUES
-      (1, 5, 'file', '', 'Keyword Match', '', '2026-06-10T00:00:00.000Z', '# Keyword Match\\n\\n## Notes\\n\\nkeyword-only exact phrase'),
-      (2, 5, 'file', '', 'Vector Match', '', '2026-06-11T00:00:00.000Z', '# Vector Match\\n\\n## Embeddings\\n\\nsemantic embedding retrieval pipeline')
-  `).run();
+      (1, 5, 'file', '', 'Keyword Match', '', '2026-06-10T00:00:00.000Z', ?),
+      (2, 5, 'file', '', 'Vector Match', '', '2026-06-11T00:00:00.000Z', ?)
+  `).run(
+    '# Keyword Match\n\n## Notes\n\nkeyword-only exact phrase',
+    '# Vector Match\n\n## Embeddings\n\nsemantic embedding retrieval pipeline',
+  );
   indexDocumentForItem(db, 1);
   indexDocumentForItem(db, 2);
 
@@ -97,6 +100,8 @@ test('retrieveSources can merge embedding candidates when hybrid retrieval is en
   });
 
   assert.deepEqual(sources.map(source => source.id), [2, 1]);
+  assert.equal(sources[0].retrieval_modes.includes('embedding'), true);
+  assert.equal(sources[1].retrieval_modes.includes('keyword'), true);
   assert.ok(sources.every(source => source.source_index));
 }));
 

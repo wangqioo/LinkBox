@@ -65,8 +65,8 @@ export function splitIntoChunks(text) {
   return chunks.slice(0, MAX_CHUNKS_PER_LINK);
 }
 
-export function indexLinkContent(linkId) {
-  const link = db.prepare('SELECT id, user_id, title, summary, content, content_md FROM links WHERE id = ?').get(linkId);
+export function indexLinkContent(linkId, database = db) {
+  const link = database.prepare('SELECT id, user_id, title, summary, content, content_md FROM links WHERE id = ?').get(linkId);
   if (!link) return 0;
 
   const body = [
@@ -76,9 +76,9 @@ export function indexLinkContent(linkId) {
   ].filter(Boolean).join('\n\n');
 
   const chunks = splitIntoChunks(body);
-  const tx = db.transaction(() => {
-    db.prepare('DELETE FROM link_chunks WHERE link_id = ?').run(link.id);
-    const insert = db.prepare(`
+  const tx = database.transaction(() => {
+    database.prepare('DELETE FROM link_chunks WHERE link_id = ?').run(link.id);
+    const insert = database.prepare(`
       INSERT INTO link_chunks (link_id, user_id, chunk_index, text)
       VALUES (?, ?, ?, ?)
     `);
@@ -92,8 +92,8 @@ export function removeLinkContentIndex(linkId) {
   db.prepare('DELETE FROM link_chunks WHERE link_id = ?').run(linkId);
 }
 
-export function indexAllMissingChunks() {
-  const rows = db.prepare(`
+export function indexAllMissingChunks(database = db) {
+  const rows = database.prepare(`
     SELECT l.id
     FROM links l
     LEFT JOIN link_chunks c ON c.link_id = l.id
@@ -103,7 +103,7 @@ export function indexAllMissingChunks() {
     LIMIT 200
   `).all();
   let total = 0;
-  for (const row of rows) total += indexLinkContent(row.id);
+  for (const row of rows) total += indexLinkContent(row.id, database);
   return { links: rows.length, chunks: total };
 }
 
@@ -216,14 +216,14 @@ function scopeWhere(scope, params) {
   return conditions;
 }
 
-export function searchRelevantChunks({ userId, query, task = 'ask', limit = 12, scope: rawScope = {} }) {
+export function searchRelevantChunks({ db: database = db, userId, query, task = 'ask', limit = 12, scope: rawScope = {} }) {
   const scope = normalizeScope(rawScope);
 
   if (task === 'recent') {
     const params = [userId];
     const scopedConditions = scopeWhere(scope, params);
     params.push(Math.max(limit * 30, 200));
-    const rows = db.prepare(`
+    const rows = database.prepare(`
       SELECT c.id AS chunk_id, c.chunk_index, c.text AS chunk_text,
              l.id, l.type, l.url, l.title, l.summary, l.imported_at
       FROM link_chunks c
@@ -238,7 +238,7 @@ export function searchRelevantChunks({ userId, query, task = 'ask', limit = 12, 
 
   const params = [userId];
   const scopedConditions = scopeWhere(scope, params);
-  const rows = db.prepare(`
+  const rows = database.prepare(`
     SELECT c.id AS chunk_id, c.chunk_index, c.text AS chunk_text,
            l.id, l.type, l.url, l.title, l.summary, l.imported_at
     FROM link_chunks c
