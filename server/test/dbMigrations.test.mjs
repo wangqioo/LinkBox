@@ -42,8 +42,8 @@ test('runMigrations adds missing item columns to legacy links tables', () => wit
 
   const result = runMigrations(db);
 
-  assert.equal(result.applied, 1);
-  assert.deepEqual(result.names, ['001_links_item_columns']);
+  assert.equal(result.applied, 2);
+  assert.deepEqual(result.names, ['001_links_item_columns', '002_links_batch_columns']);
   assert.deepEqual(columnNames(db, 'links'), [
     'id',
     'user_id',
@@ -61,6 +61,8 @@ test('runMigrations adds missing item columns to legacy links tables', () => wit
     'html_note',
     'content_md',
     'status',
+    'batch_id',
+    'batch_index',
   ]);
   const row = db.prepare(`
     SELECT name FROM schema_migrations WHERE name = '001_links_item_columns'
@@ -74,8 +76,8 @@ test('runMigrations is idempotent once migrations are recorded', () => withDb((d
   const first = runMigrations(db);
   const second = runMigrations(db);
 
-  assert.equal(first.applied, 1);
+  assert.equal(first.applied, 2);
   assert.equal(second.applied, 0);
   assert.deepEqual(second.names, []);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 2);
 }));

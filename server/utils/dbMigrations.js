@@ -11,6 +11,14 @@ const MIGRATIONS = [
       addColumnIfMissing(db, 'links', 'status', "TEXT DEFAULT ''");
     },
   },
+  {
+    name: '002_links_batch_columns',
+    up(db) {
+      addColumnIfMissing(db, 'links', 'batch_id', "TEXT DEFAULT ''");
+      addColumnIfMissing(db, 'links', 'batch_index', 'INTEGER DEFAULT 0');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_links_batch ON links(user_id, batch_id, batch_index)');
+    },
+  },
 ];
 
 function initMigrationSchema(db) {

@@ -110,11 +110,13 @@ export function createImageItem(db, {
   comment = '',
   tagIds = [],
   importedAt = new Date().toISOString(),
+  batchId = '',
+  batchIndex = 0,
 }) {
   const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at, status)
-    VALUES (?, 'image', '', ?, ?, ?, ?, ?, 'processing')
-  `).run(userId, title || originalName, imagePath, imagePath, comment || '', importedAt);
+    INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at, status, batch_id, batch_index)
+    VALUES (?, 'image', '', ?, ?, ?, ?, ?, 'processing', ?, ?)
+  `).run(userId, title || originalName, imagePath, imagePath, comment || '', importedAt, batchId || '', Number(batchIndex) || 0);
 
   setTags(db, result.lastInsertRowid, tagIds);
   const link = getLinkWithTags(db, result.lastInsertRowid);

@@ -84,12 +84,16 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const type = asset.uploadType;
 
     if (type === 'image') {
+      const batchId = String(req.body?.batch_id || '').trim().slice(0, 80);
+      const batchIndex = Number(req.body?.batch_index || 0);
       const { link } = acceptImageItem(db, queue, {
         userId: req.userId,
         imagePath: asset.publicPath,
         diskPath: asset.diskPath,
         originalName: asset.originalName,
         importedAt,
+        batchId,
+        batchIndex: Number.isFinite(batchIndex) ? batchIndex : 0,
         drain: analyzeNow,
       });
       return res.json(getMobileFileForUser(link.id, req.userId));

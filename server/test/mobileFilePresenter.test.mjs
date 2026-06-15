@@ -57,6 +57,20 @@ test('toMobileFile sources type and retry state from shared presentation', () =>
   assert.equal(result.url, '/uploads/plan.pdf');
 });
 
+test('toMobileFile exposes image batch metadata', () => {
+  const result = toMobileFile({
+    id: 10,
+    type: 'image',
+    title: 'A.jpg',
+    image_path: '/uploads/a.jpg',
+    batch_id: 'batch-1',
+    batch_index: 2,
+  });
+
+  assert.equal(result.batch_id, 'batch-1');
+  assert.equal(result.batch_index, 2);
+});
+
 test('parseMobileFileSize extracts byte sizes from upload descriptions', () => {
   assert.equal(parseMobileFileSize({ description: 'report.pdf (2 KB)' }), 2048);
   assert.equal(parseMobileFileSize({ description: 'deck.pptx (1.5 MB)' }), 1572864);

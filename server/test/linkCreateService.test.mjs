@@ -30,7 +30,9 @@ function withDb(fn) {
         content TEXT DEFAULT '',
         image_path TEXT DEFAULT '',
         imported_at TEXT DEFAULT '',
-        status TEXT DEFAULT ''
+        status TEXT DEFAULT '',
+        batch_id TEXT DEFAULT '',
+        batch_index INTEGER DEFAULT 0
       );
       CREATE TABLE tags (
         id INTEGER PRIMARY KEY,
@@ -129,12 +131,16 @@ test('createImageItem saves image metadata and returns image processing payload'
     comment: 'look',
     tagIds: [2],
     importedAt: '2026-06-09T00:00:00.000Z',
+    batchId: 'batch-abc',
+    batchIndex: 1,
   });
 
   assert.equal(result.link.type, 'image');
   assert.equal(result.link.title, 'photo.png');
   assert.equal(result.link.image_path, '/uploads/a.png');
   assert.equal(result.link.thumbnail, '/uploads/a.png');
+  assert.equal(result.link.batch_id, 'batch-abc');
+  assert.equal(result.link.batch_index, 1);
   assert.equal(result.link.status, 'processing');
   assert.equal(result.link.display.type, 'image');
   assert.equal(result.link.display.primaryAssetUrl, '/uploads/a.png');

@@ -59,6 +59,8 @@ export function toMobileFile(link = {}) {
     file_path: item.image_path || '',
     file_size: parseMobileFileSize(item),
     mime_type: '',
+    batch_id: item.batch_id || '',
+    batch_index: Number(item.batch_index || 0),
     content,
     content_md: item.content_md || '',
     has_content: Boolean(item.content_md),
