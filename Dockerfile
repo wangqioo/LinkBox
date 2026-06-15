@@ -46,7 +46,7 @@ RUN set -eux; \
       sed -i 's/deb.debian.org/mirrors.aliyun.com/g; s/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources; \
     fi; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates unzip poppler-utils; \
+    apt-get install -y --no-install-recommends ca-certificates unzip poppler-utils libreoffice; \
     rm -rf /var/lib/apt/lists/*
 
 COPY server/ ./server/

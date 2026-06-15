@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { getSystemHealth } from '../utils/systemHealth.js';
+import { checkAiEndpointHealth, getSystemHealth } from '../utils/systemHealth.js';
 
 async function withTempDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-system-health-test-'));
@@ -150,4 +150,37 @@ test('getSystemHealth is unhealthy when core SQLite or upload storage checks fai
   assert.equal(health.checks.ai.status, 'warn');
   assert.match(health.checks.ai.message, /not configured/);
   assert.equal(health.summary.failed, 2);
+});
+
+test('checkAiEndpointHealth accepts OpenAI-compatible models endpoint when health endpoint is absent', async () => {
+  const requestedUrls = [];
+  const health = await checkAiEndpointHealth('http://127.0.0.1:8000/v1', {
+    fetch: async (url, options) => {
+      requestedUrls.push(url);
+      assert.ok(options.signal);
+      if (url.endsWith('/health')) {
+        return {
+          ok: false,
+          status: 404,
+          async text() {
+            return '{"detail":"Not Found"}';
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return '{"object":"list","data":[{"id":"Qwen3.5-4B"}]}';
+        },
+      };
+    },
+  });
+
+  assert.equal(health.status, 'ok');
+  assert.equal(health.url, 'http://127.0.0.1:8000/v1/models');
+  assert.deepEqual(requestedUrls, [
+    'http://127.0.0.1:8000/v1/health',
+    'http://127.0.0.1:8000/v1/models',
+  ]);
 });

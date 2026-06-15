@@ -119,13 +119,24 @@ export async function checkAiEndpointHealth(localLlmUrl, {
     return { status: 'warn', message: 'AI endpoint is not configured' };
   }
 
-  const url = `${baseUrl}/health`;
+  const healthUrl = `${baseUrl}/health`;
+  const modelsUrl = `${baseUrl}/models`;
   try {
-    const { response, text } = await fetchTextWithTimeout(url, { fetchImpl: fetch, timeoutMs });
+    const { response, text } = await fetchTextWithTimeout(healthUrl, { fetchImpl: fetch, timeoutMs });
     if (!response.ok) {
+      if (response.status === 404) {
+        const models = await fetchTextWithTimeout(modelsUrl, { fetchImpl: fetch, timeoutMs });
+        if (models.response.ok) {
+          return {
+            status: 'ok',
+            url: modelsUrl,
+            httpStatus: models.response.status,
+          };
+        }
+      }
       return {
         status: 'warn',
-        url,
+        url: healthUrl,
         httpStatus: response.status,
         message: `AI endpoint returned HTTP ${response.status}`,
         body: text.slice(0, 500),
@@ -133,13 +144,13 @@ export async function checkAiEndpointHealth(localLlmUrl, {
     }
     return {
       status: 'ok',
-      url,
+      url: healthUrl,
       httpStatus: response.status,
     };
   } catch (error) {
     return {
       status: 'warn',
-      url,
+      url: healthUrl,
       message: error?.name === 'AbortError' ? `timeout after ${timeoutMs}ms` : messageFromError(error),
     };
   }
