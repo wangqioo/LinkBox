@@ -5,9 +5,7 @@ Date: 2026-06-15
 ## Current Status
 
 Implementation has reached the committed checkpoint
-`7fa0a03 Deepen assistant and asset architecture`, and the current working tree
-contains a 2026-06-15 item intake deepening pass that is ready for
-review/commit.
+`f77bf01 Unify extracted content persistence`.
 
 Completed:
 
@@ -24,12 +22,18 @@ Completed:
   delete, import, and export flows.
 - Backend unit tests, desktop build, mobile build, `git diff --check`, and an
   isolated HTTP smoke test passed before pausing feature work.
-
-Added in the 2026-06-15 working tree:
-
 - Item intake and durable job scheduling have a dedicated module at
   `utils/itemIntake.js`. Desktop item routes and mobile upload/analyze flows now
   delegate accept, import, retry, and reschedule behavior there.
+- Assistant retrieval has a caller-facing interface at
+  `utils/assistantSourceRetrieval.js`, with canonical document source
+  normalization and legacy fallback kept behind one module.
+- Desktop item list/detail and mobile file responses share
+  `utils/itemPresentation.js` for display type, status, retry affordance, action
+  capability, and primary asset URL.
+- Background extraction and manual link extraction share
+  `utils/extractedContentPersistence.js` for extracted Markdown, raw HTML,
+  thumbnails, legacy chunks, canonical documents, embeddings, and summary jobs.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -191,12 +195,18 @@ Medium term:
 - Move assistant turn assembly out of `routes/assistant.js`.
 - Deepen item intake and durable jobs into one module that owns accept/retry,
   import, reschedule, initial status, and queue adapter usage.
-- Introduce a small `AppError` helper so route error handling is consistent.
+- Deepen assistant source retrieval into one module that hides canonical
+  document lookup, legacy fallback, source IDs, and source shape from routes.
+- Deepen item presentation into one module that desktop and mobile adapters can
+  share.
+- Deepen extraction post-processing into one module used by both background and
+  manual extraction flows.
 
 Remaining Phase 2 focus:
 
 - Consolidate item write/tag/response shaping so create/update/delete paths
   return the same item presentation shape as list/detail where intended.
+- Introduce a small `AppError` helper so route error handling is consistent.
 
 ### Phase 3: Frontend Link Feature
 
@@ -227,23 +237,16 @@ Remaining Phase 2 focus:
 
 Next slice:
 
-- Collapse retrieval around canonical documents. Make keyword, embedding,
-  rerank, source limiting, and fallback behavior one retrieval interface, with
-  legacy `link_chunks` as an adapter or migration fallback.
-
-Then:
-
-- Unify item presentation across desktop and mobile. Prepare a shared display
-  model for type, status, action capability, retry state, and labels.
-- Unify extraction and post-extraction side effects. Make background and manual
-  extraction share indexing/document/summarization behavior where possible.
+- Add Playwright E2E coverage for login, add item, processing state, retry,
+  export, and delete against isolated database/uploads paths.
 
 Still needed before a broader release:
 
 - Add operational health checks.
 - Write migration plan for item/content/assets tables.
-- Add Playwright E2E coverage for login, add item, processing state, retry,
-  export, and delete.
+- Convert boot-time schema changes into explicit migrations.
+- Retire or narrow legacy `link_chunks` after canonical document retrieval has
+  enough production confidence.
 
 ## Success Criteria
 

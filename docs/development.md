@@ -7,17 +7,17 @@ without rediscovering the architecture, commands, and validation steps.
 
 ## Current Checkpoint
 
-The previous committed checkpoint was:
+The current architecture follow-up checkpoint is:
 
 ```bash
-7fa0a03 Deepen assistant and asset architecture
+f77bf01 Unify extracted content persistence
 ```
 
-The current working tree has advanced through a 2026-06-15 item intake
-deepening pass. It is ready for review/commit after the user decides how to
-integrate it.
+This includes the earlier 2026-06-15 item intake pass and the follow-up
+architecture slices for assistant retrieval, item presentation, and extracted
+content persistence.
 
-At the previous committed checkpoint:
+At this checkpoint:
 
 - `server/routes/assistant.js` is a thin HTTP/SSE adapter. Source grouping,
   public source shaping, prompt construction, context trimming, task
@@ -33,13 +33,19 @@ At the previous committed checkpoint:
   citation normalization, image proxying, and table sanitization.
 - Backend unit tests, desktop build, mobile build, and `git diff --check` all
   passed before the item intake pass started.
-
-The current 2026-06-15 item intake pass adds:
-
-- Item acceptance and durable job scheduling now live in
+- Item acceptance and durable job scheduling live in
   `server/utils/itemIntake.js`. Desktop item routes and mobile upload/analyze
-  flows delegate accept, import, retry, and reschedule behavior there instead
-  of handling raw queue details inline.
+  flows delegate accept, import, retry, and reschedule behavior there.
+- Assistant source retrieval has a caller-facing interface at
+  `server/utils/assistantSourceRetrieval.js`. It normalizes canonical document
+  sources and legacy fallback sources before assistant routes build prompts.
+- Desktop item list/detail responses and mobile file responses reuse
+  `server/utils/itemPresentation.js` for display type, status, retry
+  affordance, action capability, and primary asset URL.
+- Manual link extraction and background link/file extraction share
+  `server/utils/extractedContentPersistence.js` for storing extracted content,
+  preserving raw HTML/thumbnails, refreshing indexes, queueing embeddings, and
+  scheduling summaries.
 
 ## Recommended Runtime
 
@@ -77,10 +83,13 @@ server/routes/assistant.js          Assistant HTTP/SSE adapter
 server/utils/itemController.js      Item HTTP handlers
 server/utils/itemRepository.js      Item lookup/list ownership helpers
 server/utils/itemProcessingStatus.js Derived processing contract
+server/utils/itemPresentation.js Shared item display contract
 server/utils/uploadMiddleware.js    Multer upload setup and file filters
 server/utils/uploadedAsset.js       Upload-derived asset normalization
+server/utils/assistantSourceRetrieval.js Assistant retrieval interface
 server/utils/assistantTurn.js       Assistant prompt/source/citation assembly
 server/utils/itemIntake.js          Item acceptance, import, retry, and reschedule
+server/utils/extractedContentPersistence.js Extraction post-processing path
 server/utils/imageProxyService.js   Proxied image fetching and headers
 server/utils/jobQueue.js            SQLite durable job queue
 ```
@@ -164,9 +173,9 @@ cd ..
 git diff --check
 ```
 
-Expected counts at the 2026-06-15 checkpoint:
+Expected counts at the 2026-06-15 architecture follow-up checkpoint:
 
-- Server: 130 passing tests.
+- Server: 143 passing tests.
 - Desktop client: 4 passing tests.
 - Mobile utility focused tests: 4 passing tests.
 
@@ -225,26 +234,18 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 ## Follow-Up Backlog
 
-Recommended next work after the pause:
+Recommended next work after this checkpoint:
 
-1. Collapse retrieval around canonical documents. Keep legacy `link_chunks`
-   only as an adapter or retire it after canonical document coverage is
-   reliable; move shared scoring/tokenization away from legacy chunk indexing.
-2. Unify item presentation across desktop and mobile. Prepare one item display
-   model for type labels, processing states, retry affordances, and action
-   capability.
-3. Unify extraction and post-extraction side effects. Make manual extract and
-   background extract share one `extract -> persist -> index -> summarize`
-   path where possible.
-4. Add Playwright E2E coverage for login, add item, processing state, retry,
-   export, and delete.
-5. Apply the same toast and processing-status contract to settings, assistant,
-   background jobs, and tag management.
-6. Extract reusable processing banner components for desktop and mobile.
-7. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
-8. Introduce a small application error helper for consistent route error
-   handling.
-9. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
+1. Add Playwright E2E coverage for login, add text/link/file item, processing
+   state, retry, export, and delete using isolated database/uploads paths.
+2. Add operational health checks for SQLite, uploads, AI endpoint, queue state,
    `pdftotext`, and LibreOffice.
-10. Configure Git author identity so future commits do not use the fallback
-   `unknown <100448405@huaqin.com>` committer name.
+3. Add explicit database migrations instead of boot-time `ALTER TABLE` blocks.
+4. Introduce a small application error helper for consistent route error
+   handling.
+5. Consolidate item write/tag/response shaping so create/update/delete paths
+   return the same presentation shape as list/detail where intended.
+6. Extract reusable processing banner components for desktop and mobile.
+7. Move shared scoring/tokenization away from the legacy chunk index before
+   retiring `link_chunks`.
+8. Write the migration plan for future item/content/assets tables.
