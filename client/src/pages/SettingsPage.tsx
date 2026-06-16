@@ -1,13 +1,21 @@
 import { useState, useEffect } from 'react';
-import { api, type AIConfig, type AIProvider, type SystemStatus } from '../api/client';
+import { api, type AIConfig, type AIProvider, type EmbeddingConfig, type SystemStatus } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Save } from 'lucide-react';
 import AISettingsPanel from './AISettingsPanel';
 import BackgroundJobsPanel from './BackgroundJobsPanel';
 import DocumentMaintenancePanel from './DocumentMaintenancePanel';
+import EmbeddingSettingsPanel from './EmbeddingSettingsPanel';
+import RetrievalDiagnosticsPanel from './RetrievalDiagnosticsPanel';
 import SiteCookiesSettings from './SiteCookiesSettings';
 import SystemHealthPanel from './SystemHealthPanel';
-import { applyProviderPreset, DEFAULT_AI_CONFIG } from './settingsConfig';
+import {
+  applyEmbeddingProviderPreset,
+  applyProviderPreset,
+  DEFAULT_AI_CONFIG,
+  DEFAULT_EMBEDDING_CONFIG,
+  EMBEDDING_PROVIDERS,
+} from './settingsConfig';
 import { useToast } from '../context/ToastContext';
 
 export default function SettingsPage() {
@@ -15,13 +23,19 @@ export default function SettingsPage() {
   const toast = useToast();
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [aiConfig, setAIConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig>(DEFAULT_EMBEDDING_CONFIG);
   const [saving, setSaving] = useState(false);
+  const [savingEmbeddings, setSavingEmbeddings] = useState(false);
   const [testingAI, setTestingAI] = useState(false);
+  const [testingEmbeddings, setTestingEmbeddings] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [embeddingsSaved, setEmbeddingsSaved] = useState(false);
   const [aiTestResult, setAITestResult] = useState('');
+  const [embeddingTestResult, setEmbeddingTestResult] = useState('');
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [loadingSystem, setLoadingSystem] = useState(false);
   const [retryingJobs, setRetryingJobs] = useState(false);
+  const [retryingJobId, setRetryingJobId] = useState<number | null>(null);
   const [reindexingDocuments, setReindexingDocuments] = useState(false);
   const [backfillingEmbeddings, setBackfillingEmbeddings] = useState(false);
   const [queueMessage, setQueueMessage] = useState('');
@@ -35,6 +49,14 @@ export default function SettingsPage() {
     api.getSettings().then(setSettings).catch(() => {});
     api.getAIConfig()
       .then((config) => setAIConfig({ ...DEFAULT_AI_CONFIG, ...config, apiKey: '' }))
+      .catch(() => {});
+    api.getEmbeddingConfig()
+      .then((config) => setEmbeddingConfig({
+        ...DEFAULT_EMBEDDING_CONFIG,
+        ...config,
+        providers: config.providers?.length ? config.providers : EMBEDDING_PROVIDERS,
+        apiKey: '',
+      }))
       .catch(() => {});
     refreshSystemStatus();
   }, [isAdmin]);
@@ -112,6 +134,25 @@ export default function SettingsPage() {
     }
   };
 
+  const handleRetryFailedJob = async (id: number) => {
+    setRetryingJobId(id);
+    setError('');
+    setQueueMessage('');
+    try {
+      const result = await api.retryFailedJobs([id]);
+      setSystemStatus((prev) => prev ? { ...prev, queue: result.queue } : prev);
+      const message = result.retried ? `已重新入队任务 #${id}` : `任务 #${id} 无需重试`;
+      setQueueMessage(message);
+      toast.success('后台任务已更新', message);
+    } catch (e: any) {
+      const message = e.message || `重试任务 #${id} 失败`;
+      setError(message);
+      toast.error(`重试任务 #${id} 失败`, message);
+    } finally {
+      setRetryingJobId(null);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError('');
@@ -131,6 +172,33 @@ export default function SettingsPage() {
       toast.error('保存失败', message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveEmbeddings = async () => {
+    setSavingEmbeddings(true);
+    setError('');
+    setEmbeddingTestResult('');
+    try {
+      const payload: Partial<EmbeddingConfig> = { ...embeddingConfig };
+      if (!payload.apiKey) delete payload.apiKey;
+      const result = await api.updateEmbeddingConfig(payload);
+      setEmbeddingConfig({
+        ...DEFAULT_EMBEDDING_CONFIG,
+        ...result.config,
+        providers: result.config.providers?.length ? result.config.providers : EMBEDDING_PROVIDERS,
+        apiKey: '',
+      });
+      setEmbeddingsSaved(true);
+      toast.success('Embedding 配置已保存');
+      setTimeout(() => setEmbeddingsSaved(false), 2000);
+      refreshSystemStatus();
+    } catch (e: any) {
+      const message = e.message || 'Embedding 配置保存失败';
+      setError(message);
+      toast.error('Embedding 配置保存失败', message);
+    } finally {
+      setSavingEmbeddings(false);
     }
   };
 
@@ -154,8 +222,32 @@ export default function SettingsPage() {
     }
   };
 
+  const handleTestEmbeddings = async () => {
+    setTestingEmbeddings(true);
+    setError('');
+    setEmbeddingTestResult('');
+    try {
+      const payload: Partial<EmbeddingConfig> = { ...embeddingConfig };
+      if (!payload.apiKey) delete payload.apiKey;
+      const result = await api.testEmbeddingConfig(payload);
+      const dimension = result.dimension ? `，维度 ${result.dimension}` : '';
+      setEmbeddingTestResult(`连接成功：${result.provider} / ${result.model}${dimension}`);
+      toast.success('Embedding 测试成功', `${result.provider} / ${result.model}${dimension}`);
+    } catch (e: any) {
+      const message = e.message || 'Embedding 测试失败';
+      setError(message);
+      toast.error('Embedding 测试失败', message);
+    } finally {
+      setTestingEmbeddings(false);
+    }
+  };
+
   const updateAIField = <K extends keyof AIConfig>(key: K, value: AIConfig[K]) => {
     setAIConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateEmbeddingField = <K extends keyof EmbeddingConfig>(key: K, value: EmbeddingConfig[K]) => {
+    setEmbeddingConfig((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleProviderChange = (providerId: string) => {
@@ -163,7 +255,13 @@ export default function SettingsPage() {
     setAITestResult('');
   };
 
+  const handleEmbeddingProviderChange = (providerId: string) => {
+    setEmbeddingConfig((prev) => applyEmbeddingProviderPreset(prev, providerId));
+    setEmbeddingTestResult('');
+  };
+
   const selectedProvider = aiConfig.providers?.find((item: AIProvider) => item.id === aiConfig.provider);
+  const selectedEmbeddingProvider = embeddingConfig.providers?.find((item) => item.id === embeddingConfig.provider);
 
   if (!isAdmin) {
     return (
@@ -190,6 +288,18 @@ export default function SettingsPage() {
         onFieldChange={updateAIField}
         onTestAI={handleTestAI}
       />
+      <EmbeddingSettingsPanel
+        config={embeddingConfig}
+        selectedProvider={selectedEmbeddingProvider}
+        saving={savingEmbeddings}
+        testing={testingEmbeddings}
+        saved={embeddingsSaved}
+        testResult={embeddingTestResult}
+        onProviderChange={handleEmbeddingProviderChange}
+        onFieldChange={updateEmbeddingField}
+        onSave={handleSaveEmbeddings}
+        onTest={handleTestEmbeddings}
+      />
       <SystemHealthPanel
         health={systemStatus?.health || null}
         loading={loadingSystem}
@@ -205,13 +315,16 @@ export default function SettingsPage() {
         onReindex={handleReindexDocuments}
         onBackfillEmbeddings={handleBackfillEmbeddings}
       />
+      <RetrievalDiagnosticsPanel />
       <BackgroundJobsPanel
         systemStatus={systemStatus}
         loadingSystem={loadingSystem}
         retryingJobs={retryingJobs}
+        retryingJobId={retryingJobId}
         queueMessage={queueMessage}
         onRefresh={refreshSystemStatus}
         onRetryFailedJobs={handleRetryFailedJobs}
+        onRetryFailedJob={handleRetryFailedJob}
       />
 
       {error && (

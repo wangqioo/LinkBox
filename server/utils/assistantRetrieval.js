@@ -1,7 +1,7 @@
 import defaultDb from '../db.js';
 import { indexAllMissingChunks, scoreTextFields, searchRelevantChunks, tokenizeQuery } from './chunkIndex.js';
 import { indexAllMissingDocuments, searchDocumentChunks } from './documentIndex.js';
-import { searchEmbeddedDocumentChunks } from './documentEmbeddings.js';
+import { searchEmbeddedDocumentChunks, searchEmbeddedDocumentChunksAsync } from './documentEmbeddings.js';
 import { rerankDocumentCandidates } from './documentRerank.js';
 import { addTimeScopeConditions, normalizeTimeScope, resolveTimeScope } from './timeScope.js';
 
@@ -158,4 +158,57 @@ export function retrieveSources({
   if (ranked.length) return ranked;
   if (!shouldUseFallbackSources(task, question)) return [];
   return rows.slice(0, maxFallbackSources).map((item, index) => ({ ...item, source_index: index + 1 }));
+}
+
+export async function retrieveSourcesAsync({
+  db = defaultDb,
+  userId,
+  question,
+  task = 'ask',
+  scope: rawScope = {},
+  maxSources = DEFAULT_MAX_SOURCES,
+  maxFallbackSources = DEFAULT_MAX_FALLBACK_SOURCES,
+  enableEmbeddings = process.env.ASSISTANT_ENABLE_EMBEDDINGS === '1',
+  enableRerank = process.env.ASSISTANT_ENABLE_RERANK !== '0',
+  now = new Date(),
+  embeddingOptions = {},
+} = {}) {
+  indexAllMissingDocuments(db);
+  const scope = normalizeScope({
+    ...rawScope,
+    ...resolveTimeScope({ question, scope: rawScope, now }),
+  });
+  const documentChunks = searchDocumentChunks({ db, userId, query: question, task, limit: maxSources, scope });
+  const embeddingChunks = enableEmbeddings
+    ? await searchEmbeddedDocumentChunksAsync({
+      db,
+      userId,
+      query: question,
+      limit: maxSources,
+      scope,
+      ...embeddingOptions,
+    })
+    : [];
+  if (documentChunks.length || embeddingChunks.length) {
+    const merged = enableEmbeddings
+      ? mergeRetrievalCandidates(documentChunks, embeddingChunks, maxSources)
+      : documentChunks;
+    const reranked = enableRerank
+      ? rerankDocumentCandidates(merged, { query: question, limit: maxSources })
+      : merged;
+    return reranked.map((item, index) => ({ ...item, source_index: index + 1 }));
+  }
+
+  return retrieveSources({
+    db,
+    userId,
+    question,
+    task,
+    scope,
+    maxSources,
+    maxFallbackSources,
+    enableEmbeddings: false,
+    enableRerank,
+    now,
+  });
 }

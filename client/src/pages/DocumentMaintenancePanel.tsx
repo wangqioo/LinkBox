@@ -16,6 +16,19 @@ function number(value: number | undefined) {
   return new Intl.NumberFormat().format(value || 0);
 }
 
+function embeddingConfigLabel(stats: DocumentMaintenanceStats | null) {
+  const provider = stats?.embedding_target?.provider
+    || stats?.embedding_provider
+    || stats?.embeddingProvider
+    || stats?.embedding_config?.provider;
+  const model = stats?.embedding_target?.model
+    || stats?.embedding_model
+    || stats?.embeddingModel
+    || stats?.embedding_config?.model;
+  if (!provider && !model) return '';
+  return [provider, model].filter(Boolean).join(' / ');
+}
+
 export default function DocumentMaintenancePanel({
   stats,
   loading,
@@ -26,6 +39,8 @@ export default function DocumentMaintenancePanel({
   onReindex,
   onBackfillEmbeddings,
 }: Props) {
+  const configuredEmbedding = embeddingConfigLabel(stats);
+
   return (
     <div className="rounded-xl border p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -75,8 +90,13 @@ export default function DocumentMaintenancePanel({
       </div>
 
       {stats && (
-        <div className="text-xs text-gray-500">
-          Embedding jobs：等待 {number(stats.embedding_jobs.queued)} · 运行 {number(stats.embedding_jobs.running)} · 完成 {number(stats.embedding_jobs.done)} · 失败 {number(stats.embedding_jobs.failed)}
+        <div className="space-y-1 text-xs text-gray-500">
+          {configuredEmbedding && (
+            <div>当前 Embedding：{configuredEmbedding}</div>
+          )}
+          <div>
+            Embedding jobs：等待 {number(stats.embedding_jobs.queued)} · 运行 {number(stats.embedding_jobs.running)} · 完成 {number(stats.embedding_jobs.done)} · 失败 {number(stats.embedding_jobs.failed)}
+          </div>
         </div>
       )}
 

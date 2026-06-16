@@ -22,6 +22,35 @@ db.prepare('INSERT OR IGNORE INTO users (id, username, password_hash) VALUES (1,
   bcrypt.hashSync(process.env.PLAYWRIGHT_ADMIN_PASSWORD || 'pass1234', 10),
 );
 
+db.prepare(`
+  INSERT OR IGNORE INTO links (id, user_id, type, url, title, description, status)
+  VALUES (9001, 1, 'link', 'https://playwright.example/failed-job', 'Playwright retry target', 'Seeded for E2E failed job retry coverage', 'error')
+`).run();
+db.prepare(`
+  INSERT OR IGNORE INTO jobs (
+    id,
+    type,
+    link_id,
+    payload,
+    status,
+    attempts,
+    max_attempts,
+    last_error,
+    updated_at
+  )
+  VALUES (
+    9001,
+    'link.summarize',
+    9001,
+    '{}',
+    'failed',
+    3,
+    3,
+    'Playwright seeded failed job',
+    '2026-06-17T00:00:00.000Z'
+  )
+`).run();
+
 const aiBaseUrl = process.env.LOCAL_LLM_URL || 'http://127.0.0.1:3320/v1';
 const aiSettings = [
   ['ai:provider', 'custom'],

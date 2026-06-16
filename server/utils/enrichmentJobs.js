@@ -8,6 +8,7 @@ import { describeImage } from './imageVisionService.js';
 import { indexLinkContent } from './chunkIndex.js';
 import { indexDocumentForItem } from './documentIndex.js';
 import { indexMissingDocumentEmbeddingsAsync } from './documentEmbeddings.js';
+import { getEmbeddingConfig } from './embeddingConfig.js';
 import { persistExtractedContent } from './extractedContentPersistence.js';
 
 export function registerEnrichmentJobs(queue, options = {}) {
@@ -37,6 +38,7 @@ export function registerEnrichmentJobsWithDeps(queue, {
   summarizeText = summarizeContent,
   summarizeMarkdownText = summarizeMarkdown,
   embedDocuments = indexMissingDocumentEmbeddingsAsync,
+  getDocumentEmbeddingConfig = getEmbeddingConfig,
 } = {}) {
   function updateStatus(linkId, status) {
     database.prepare('UPDATE links SET status = ? WHERE id = ?').run(status, linkId);
@@ -54,7 +56,13 @@ export function registerEnrichmentJobsWithDeps(queue, {
 
   queue.register('document.embed', async ({ link_id: linkId }) => {
     if (linkId) indexDocumentForItem(database, linkId);
-    await embedDocuments(database);
+    const embeddingConfig = getDocumentEmbeddingConfig({ includeSecret: true });
+    if (!embeddingConfig.enabled) return;
+    await embedDocuments(database, {
+      provider: embeddingConfig.provider,
+      model: embeddingConfig.model,
+      embeddingConfig,
+    });
   });
 
   queue.register('link.fetchMetadata', async ({ link_id: linkId, payload }) => {

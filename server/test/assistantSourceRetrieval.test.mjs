@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { initDocumentSchema, indexDocumentForItem } from '../utils/documentIndex.js';
-import { retrieveAssistantSources } from '../utils/assistantSourceRetrieval.js';
+import { buildRetrievalDiagnostics, retrieveAssistantSources } from '../utils/assistantSourceRetrieval.js';
 
 function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-assistant-source-retrieval-test-'));
@@ -154,3 +154,61 @@ test('retrieveAssistantSources can suppress legacy fallback', () => withDb((db) 
 
   assert.deepEqual(sources, []);
 }));
+
+test('buildRetrievalDiagnostics preserves retrieval metadata and snippets', () => {
+  const diagnostics = buildRetrievalDiagnostics({
+    question: 'durable queue facts',
+    task: 'report',
+    scope: { type: 'document', since: '2026-06-01' },
+    settings: { enabled: true, provider: 'openai', model: 'text-embedding-3-small' },
+    sources: [
+      {
+        id: 10,
+        link_id: 10,
+        sourceKind: 'document',
+        source_index: 3,
+        title: 'Queue Notes',
+        url: 'https://example.test/queue',
+        score: 7,
+        combined_score: 12.5,
+        embedding_score: 0.91,
+        retrieval_modes: ['keyword', 'embedding'],
+        rerank_mode: 'local',
+        rerank_score: 0.82,
+        document_id: 22,
+        chunk_id: 44,
+        heading_path: 'Queue Notes > Durable Jobs',
+        chunk_type: 'section',
+        chunk_text: ' Durable queue facts with\nextra whitespace. ',
+      },
+    ],
+  });
+
+  assert.deepEqual(diagnostics, {
+    query: 'durable queue facts',
+    task: 'report',
+    scope: { type: 'document', since: '2026-06-01' },
+    settings: { enabled: true, provider: 'openai', model: 'text-embedding-3-small' },
+    sources: [
+      {
+        id: 10,
+        link_id: 10,
+        sourceKind: 'document',
+        source_index: 3,
+        title: 'Queue Notes',
+        url: 'https://example.test/queue',
+        score: 7,
+        combined_score: 12.5,
+        embedding_score: 0.91,
+        retrieval_modes: ['keyword', 'embedding'],
+        rerank_mode: 'local',
+        rerank_score: 0.82,
+        document_id: 22,
+        chunk_id: 44,
+        heading_path: 'Queue Notes > Durable Jobs',
+        chunk_type: 'section',
+        snippet: 'Durable queue facts with extra whitespace.',
+      },
+    ],
+  });
+});

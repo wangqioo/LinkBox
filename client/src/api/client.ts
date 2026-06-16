@@ -46,6 +46,29 @@ export interface AIConfig {
   apiKey?: string;
 }
 
+export interface EmbeddingProvider {
+  id: 'local' | 'openai-compatible' | string;
+  name: string;
+  description?: string;
+}
+
+export interface EmbeddingConfig {
+  enabled: boolean;
+  provider: string;
+  providers?: EmbeddingProvider[];
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  apiKey?: string;
+}
+
+export interface EmbeddingTestResult {
+  ok: boolean;
+  provider: string;
+  model: string;
+  dimension?: number;
+}
+
 export interface QueueStats {
   concurrency: number;
   running: number;
@@ -53,6 +76,7 @@ export interface QueueStats {
   leased: number;
   done: number;
   failed: number;
+  failedJobs?: FailedJobSummary[];
   lastFailed?: {
     id: number;
     type: string;
@@ -61,6 +85,16 @@ export interface QueueStats {
     last_error: string;
     updated_at: string;
   } | null;
+}
+
+export interface FailedJobSummary {
+  id: number;
+  type: string;
+  link_id: number | null;
+  attempts: number;
+  max_attempts: number;
+  last_error: string;
+  updated_at: string;
 }
 
 export type HealthCheckStatus = 'ok' | 'warn' | 'fail';
@@ -104,6 +138,18 @@ export interface DocumentMaintenanceStats {
   chunks: number;
   embeddings: number;
   missing_embeddings: number;
+  embedding_provider?: string;
+  embedding_model?: string;
+  embeddingProvider?: string;
+  embeddingModel?: string;
+  embedding_config?: {
+    provider?: string;
+    model?: string;
+  };
+  embedding_target?: {
+    provider?: string;
+    model?: string;
+  };
   embedding_jobs: {
     queued: number;
     running: number;
@@ -133,6 +179,49 @@ export interface AssistantSourceChunk {
 export interface AssistantAnswer {
   answer: string;
   sources: AssistantSource[];
+}
+
+export interface RetrievalDiagnosticsRequest {
+  question: string;
+  task?: string;
+  scope?: unknown;
+}
+
+export interface RetrievalDiagnosticsSettings {
+  [key: string]: unknown;
+}
+
+export interface RetrievalDiagnosticsSource {
+  id?: number | string;
+  sourceKind?: string;
+  source_kind?: string;
+  source_index?: number;
+  type?: string;
+  title?: string;
+  url?: string;
+  score?: number;
+  combined_score?: number;
+  embedding_score?: number;
+  retrieval_modes?: string[];
+  retrievalModes?: string[];
+  rerank_mode?: string;
+  rerank_score?: number;
+  document_id?: number;
+  chunk_id?: number;
+  heading_path?: string | string[];
+  headingPath?: string | string[];
+  chunk_type?: string;
+  snippet?: string;
+  text?: string;
+  summary?: string;
+}
+
+export interface RetrievalDiagnosticsResponse {
+  query: string;
+  task: string;
+  scope?: unknown;
+  settings?: RetrievalDiagnosticsSettings;
+  sources: RetrievalDiagnosticsSource[];
 }
 
 export interface DocumentInspectionChunk {
@@ -350,6 +439,8 @@ export const api = {
   // Assistant
   askAssistant: (question: string, task = 'ask'): Promise<AssistantAnswer> =>
     request('/assistant/chat', { method: 'POST', body: JSON.stringify({ question, task }) }),
+  getRetrievalDiagnostics: (data: RetrievalDiagnosticsRequest): Promise<RetrievalDiagnosticsResponse> =>
+    request('/assistant/retrieval-diagnostics', { method: 'POST', body: JSON.stringify(data) }),
   streamAssistant: async (question: string, task = 'ask', handlers: AssistantStreamHandlers = {}) => {
     const token = localStorage.getItem('linkbox_token');
     const res = await fetch(`${BASE}/assistant/chat/stream`, {
@@ -403,9 +494,17 @@ export const api = {
     request('/settings/ai', { method: 'PUT', body: JSON.stringify(data) }),
   testAIConfig: (data: Partial<AIConfig>) =>
     request('/settings/ai/test', { method: 'POST', body: JSON.stringify(data) }),
+  getEmbeddingConfig: (): Promise<EmbeddingConfig> => request('/settings/embeddings'),
+  updateEmbeddingConfig: (data: Partial<EmbeddingConfig>): Promise<{ ok: boolean; config: EmbeddingConfig }> =>
+    request('/settings/embeddings', { method: 'PUT', body: JSON.stringify(data) }),
+  testEmbeddingConfig: (data: Partial<EmbeddingConfig>): Promise<EmbeddingTestResult> =>
+    request('/settings/embeddings/test', { method: 'POST', body: JSON.stringify(data) }),
   getSystemStatus: (): Promise<SystemStatus> => request('/settings/system'),
-  retryFailedJobs: (): Promise<{ ok: boolean; retried: number; queue: QueueStats }> =>
-    request('/settings/system/retry-failed-jobs', { method: 'POST' }),
+  retryFailedJobs: (ids?: number[]): Promise<{ ok: boolean; retried: number; queue: QueueStats }> =>
+    request('/settings/system/retry-failed-jobs', {
+      method: 'POST',
+      body: ids ? JSON.stringify({ ids }) : undefined,
+    }),
   reindexDocuments: (): Promise<{ ok: boolean; indexed: number; chunks: number; stats: DocumentMaintenanceStats }> =>
     request('/settings/system/reindex-documents', { method: 'POST' }),
   backfillDocumentEmbeddings: (): Promise<{ ok: boolean; enqueued: number; queue: QueueStats; stats: DocumentMaintenanceStats }> =>

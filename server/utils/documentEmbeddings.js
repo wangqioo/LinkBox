@@ -100,12 +100,16 @@ function localEmbeddingResult(rows) {
   };
 }
 
+function embeddingText(row) {
+  return `${row.heading_path}\n${row.content}`;
+}
+
 function embedRowsSync(rows, options) {
   const remote = resolveRemoteEmbeddingConfig(options);
   if (!remote) return localEmbeddingResult(rows);
   if (!options.embedder) throw new Error('Async embedding providers require indexMissingDocumentEmbeddingsAsync');
 
-  const texts = rows.map(row => `${row.heading_path}\n${row.content}`);
+  const texts = rows.map(embeddingText);
   const vectors = options.embedder(texts, remote);
   if (typeof vectors?.then === 'function') {
     throw new Error('Async embedding providers require indexMissingDocumentEmbeddingsAsync');
@@ -122,7 +126,7 @@ async function embedRowsAsync(rows, options) {
   const remote = resolveRemoteEmbeddingConfig(options);
   if (!remote) return localEmbeddingResult(rows);
 
-  const texts = rows.map(row => `${row.heading_path}\n${row.content}`);
+  const texts = rows.map(embeddingText);
   const embedder = options.embedder || embedTextsWithOpenAICompatible;
   const vectors = await embedder(texts, remote);
   return {
@@ -284,9 +288,39 @@ export function searchEmbeddedDocumentChunks({
   indexMissingDocumentEmbeddings(db, { provider, model });
 
   const queryVector = embedTextLocally(query);
+  const rows = embeddedRowsForSearch({ db, userId, scope, provider, model });
+  return rankEmbeddedRows(rows, queryVector, query, limit);
+}
+
+async function embedQueryAsync(query, options) {
+  const remote = resolveRemoteEmbeddingConfig(options);
+  if (!remote) return embedTextLocally(query);
+  const embedder = options.embedder || embedTextsWithOpenAICompatible;
+  const vectors = await embedder([query], remote);
+  return vectors[0] || [];
+}
+
+function rankEmbeddedRows(rows, queryVector, query, limit) {
+  const tokens = tokenizeQuery(query);
+  return rows
+    .map(row => {
+      const embeddingScore = dotProduct(queryVector, parseVector(row.vector));
+      return {
+        ...row,
+        retrieval_mode: 'embedding',
+        embedding_score: embeddingScore,
+        score: embeddingScore * 100 + keywordTieBreakScore(row, tokens),
+      };
+    })
+    .filter(row => row.embedding_score > 0)
+    .sort((a, b) => b.score - a.score || String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
+    .slice(0, limit);
+}
+
+function embeddedRowsForSearch({ db, userId, scope, provider, model }) {
   const params = [userId, provider, model];
   const conditions = scopeConditions(scope, params);
-  const rows = db.prepare(`
+  return db.prepare(`
     SELECT
       c.id AS chunk_id,
       c.chunk_index,
@@ -314,19 +348,24 @@ export function searchEmbeddedDocumentChunks({
     ORDER BY l.imported_at DESC, c.chunk_index ASC
     LIMIT 2000
   `).all(...params);
+}
 
-  const tokens = tokenizeQuery(query);
-  return rows
-    .map(row => {
-      const embeddingScore = dotProduct(queryVector, parseVector(row.vector));
-      return {
-        ...row,
-        retrieval_mode: 'embedding',
-        embedding_score: embeddingScore,
-        score: embeddingScore * 100 + keywordTieBreakScore(row, tokens),
-      };
-    })
-    .filter(row => row.embedding_score > 0)
-    .sort((a, b) => b.score - a.score || String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
-    .slice(0, limit);
+export async function searchEmbeddedDocumentChunksAsync({
+  db,
+  userId,
+  query,
+  limit = 12,
+  scope = {},
+  provider = process.env.EMBEDDING_PROVIDER || LOCAL_EMBEDDING_PROVIDER,
+  model = process.env.EMBEDDING_MODEL || LOCAL_EMBEDDING_MODEL,
+  dimension = LOCAL_EMBEDDING_DIMENSION,
+  embedder,
+  embeddingConfig,
+} = {}) {
+  if (!db) throw new Error('searchEmbeddedDocumentChunksAsync requires a database');
+  initDocumentSchema(db);
+  await indexMissingDocumentEmbeddingsAsync(db, { provider, model, dimension, embedder, embeddingConfig });
+  const queryVector = await embedQueryAsync(query, { provider, model, dimension, embedder, embeddingConfig });
+  const rows = embeddedRowsForSearch({ db, userId, scope, provider, model });
+  return rankEmbeddedRows(rows, queryVector, query, limit);
 }

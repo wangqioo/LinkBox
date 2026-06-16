@@ -15,6 +15,7 @@ import {
   embedTextsWithOpenAICompatible,
   indexMissingDocumentEmbeddingsAsync,
   indexMissingDocumentEmbeddings,
+  searchEmbeddedDocumentChunksAsync,
   searchEmbeddedDocumentChunks,
 } from '../utils/documentEmbeddings.js';
 
@@ -290,4 +291,41 @@ semantic remote vector text`);
   assert.equal(stored.model, 'remote-embedding');
   assert.equal(stored.dimension, 2);
   assert.deepEqual(JSON.parse(stored.vector), [0.25, 0.75]);
+}));
+
+test('searchEmbeddedDocumentChunksAsync uses remote query embeddings for remote vectors', async () => withDb(async (db) => {
+  const insert = db.prepare(`
+    INSERT INTO links (id, user_id, type, title, imported_at, content_md)
+    VALUES (?, 5, 'file', ?, ?, ?)
+  `);
+  insert.run(1, 'Remote A', '2026-06-10T00:00:00.000Z', '# Remote A\n\nalpha remote content');
+  insert.run(2, 'Remote B', '2026-06-11T00:00:00.000Z', '# Remote B\n\nbeta remote content');
+  indexDocumentForItem(db, 1);
+  indexDocumentForItem(db, 2);
+
+  const vectorsByText = new Map([
+    ['Remote A\nalpha remote content', [1, 0]],
+    ['Remote B\nbeta remote content', [0, 1]],
+    ['find beta', [0, 1]],
+  ]);
+  const embedder = async (texts) => texts.map(text => vectorsByText.get(text) || [0, 0]);
+  await indexMissingDocumentEmbeddingsAsync(db, {
+    provider: 'openai-compatible',
+    model: 'remote-embedding',
+    embedder,
+  });
+
+  const results = await searchEmbeddedDocumentChunksAsync({
+    db,
+    userId: 5,
+    query: 'find beta',
+    provider: 'openai-compatible',
+    model: 'remote-embedding',
+    embedder,
+    limit: 2,
+  });
+
+  assert.equal(results[0].id, 2);
+  assert.equal(results[0].retrieval_mode, 'embedding');
+  assert.equal(results[0].embedding_score, 1);
 }));

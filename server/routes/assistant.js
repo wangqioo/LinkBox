@@ -2,7 +2,11 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { callAIChat, streamAIChat } from '../utils/aiConfig.js';
-import { retrieveAssistantSources } from '../utils/assistantSourceRetrieval.js';
+import { getEmbeddingConfig } from '../utils/embeddingConfig.js';
+import {
+  buildRetrievalDiagnostics,
+  retrieveAssistantSourcesAsync,
+} from '../utils/assistantSourceRetrieval.js';
 import {
   buildMessages,
   normalizeCitationText,
@@ -22,19 +26,34 @@ function writeSse(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-router.post('/chat', async (req, res) => {
-  const question = String(req.body?.question || '').trim();
-  if (!question) return res.status(400).json({ error: '问题不能为空' });
-  const task = normalizeTask(req.body?.task);
-
-  const ranked = retrieveAssistantSources(db, {
+async function retrieveForRequest(req, { question, task }) {
+  const embeddingConfig = getEmbeddingConfig({ includeSecret: true });
+  const ranked = await retrieveAssistantSourcesAsync(db, {
     userId: req.userId,
     question,
     task,
     scope: req.body?.scope,
     maxSources: MAX_SOURCES,
     maxFallbackSources: MAX_FALLBACK_SOURCES,
+    enableEmbeddings: embeddingConfig.enabled,
+    embeddingOptions: {
+      provider: embeddingConfig.provider,
+      model: embeddingConfig.model,
+      embeddingConfig,
+    },
   });
+  return {
+    ranked,
+    embeddingConfig,
+  };
+}
+
+router.post('/chat', async (req, res) => {
+  const question = String(req.body?.question || '').trim();
+  if (!question) return res.status(400).json({ error: '问题不能为空' });
+  const task = normalizeTask(req.body?.task);
+
+  const { ranked } = await retrieveForRequest(req, { question, task });
   if (!ranked.length) {
     return res.json({
       answer: '没有在你的资料库里找到足够相关的内容。可以换个关键词，或先收藏/上传相关资料。',
@@ -65,14 +84,7 @@ router.post('/chat/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  const ranked = retrieveAssistantSources(db, {
-    userId: req.userId,
-    question,
-    task,
-    scope: req.body?.scope,
-    maxSources: MAX_SOURCES,
-    maxFallbackSources: MAX_FALLBACK_SOURCES,
-  });
+  const { ranked } = await retrieveForRequest(req, { question, task });
   const sources = publicSources(ranked);
   writeSse(res, 'sources', { sources });
 
@@ -97,6 +109,29 @@ router.post('/chat/stream', async (req, res) => {
     writeSse(res, 'error', { error: e.message || '资料助理生成失败' });
     res.end();
   }
+});
+
+router.post('/retrieval-diagnostics', async (req, res) => {
+  const question = String(req.body?.question || '').trim();
+  if (!question) return res.status(400).json({ error: '问题不能为空' });
+  const task = normalizeTask(req.body?.task);
+  const { ranked, embeddingConfig } = await retrieveForRequest(req, { question, task });
+
+  res.json(buildRetrievalDiagnostics({
+    question,
+    task,
+    scope: req.body?.scope || {},
+    sources: ranked,
+    settings: {
+      enabled: embeddingConfig.enabled,
+      maxSources: MAX_SOURCES,
+      maxFallbackSources: MAX_FALLBACK_SOURCES,
+      provider: embeddingConfig.provider,
+      baseUrl: embeddingConfig.baseUrl,
+      model: embeddingConfig.model,
+      apiKeyConfigured: Boolean(embeddingConfig.apiKey || embeddingConfig.apiKeyConfigured),
+    },
+  }));
 });
 
 export default router;

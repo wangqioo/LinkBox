@@ -79,6 +79,32 @@ test('getDocumentMaintenanceStats reports document, chunk, embedding, and job co
   assert.equal(stats.embedding_jobs.failed, 1);
 }));
 
+test('getDocumentMaintenanceStats counts missing embeddings for the configured provider and model', () => withDb((db) => {
+  seedLinks(db);
+  indexDocumentForItem(db, 1);
+  const chunk = db.prepare('SELECT id, content_hash FROM document_chunks LIMIT 1').get();
+  db.prepare(`
+    INSERT INTO document_embeddings (chunk_id, provider, model, dimension, vector, content_hash)
+    VALUES (?, 'local', 'linkbox-local-hash-v1', 64, '[1,0]', ?)
+  `).run(chunk.id, chunk.content_hash);
+
+  const localStats = getDocumentMaintenanceStats(db, {
+    provider: 'local',
+    model: 'linkbox-local-hash-v1',
+  });
+  const remoteStats = getDocumentMaintenanceStats(db, {
+    provider: 'openai-compatible',
+    model: 'remote-embedding',
+  });
+
+  assert.equal(localStats.missing_embeddings, 0);
+  assert.equal(remoteStats.missing_embeddings, 1);
+  assert.deepEqual(remoteStats.embedding_target, {
+    provider: 'openai-compatible',
+    model: 'remote-embedding',
+  });
+}));
+
 test('reindexAllDocuments builds documents for content-bearing links', () => withDb((db) => {
   seedLinks(db);
   indexDocumentForItem(db, 1);
@@ -110,4 +136,29 @@ test('backfillMissingDocumentEmbeddings enqueues one document.embed job per link
 
   assert.equal(result.enqueued, 1);
   assert.deepEqual(enqueued, [{ type: 'document.embed', options: { linkId: 2, maxAttempts: 2 } }]);
+}));
+
+test('backfillMissingDocumentEmbeddings is provider and model aware', () => withDb((db) => {
+  seedLinks(db);
+  indexDocumentForItem(db, 1);
+  const chunk = db.prepare('SELECT id, content_hash FROM document_chunks LIMIT 1').get();
+  db.prepare(`
+    INSERT INTO document_embeddings (chunk_id, provider, model, dimension, vector, content_hash)
+    VALUES (?, 'local', 'linkbox-local-hash-v1', 64, '[1,0]', ?)
+  `).run(chunk.id, chunk.content_hash);
+  const enqueued = [];
+  const queue = {
+    enqueue(type, options) {
+      enqueued.push({ type, options });
+      return { id: enqueued.length, type, ...options };
+    },
+  };
+
+  const result = backfillMissingDocumentEmbeddings(db, queue, {
+    provider: 'openai-compatible',
+    model: 'remote-embedding',
+  });
+
+  assert.equal(result.enqueued, 1);
+  assert.deepEqual(enqueued, [{ type: 'document.embed', options: { linkId: 1, maxAttempts: 2 } }]);
 }));

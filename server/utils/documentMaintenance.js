@@ -39,7 +39,10 @@ function embeddingJobCounts(db) {
   };
 }
 
-export function getDocumentMaintenanceStats(db) {
+export function getDocumentMaintenanceStats(db, {
+  provider = 'local',
+  model = 'linkbox-local-hash-v1',
+} = {}) {
   initDocumentSchema(db);
   const itemsWithContent = countRow(db, `SELECT COUNT(*) AS count FROM links WHERE ${contentWhere()}`);
   const documents = countRow(db, 'SELECT COUNT(*) AS count FROM documents');
@@ -56,9 +59,11 @@ export function getDocumentMaintenanceStats(db) {
     FROM document_chunks c
     LEFT JOIN document_embeddings e
       ON e.chunk_id = c.id
+      AND e.provider = ?
+      AND e.model = ?
       AND e.content_hash = c.content_hash
     WHERE e.id IS NULL
-  `);
+  `, provider, model);
 
   return {
     items_with_content: itemsWithContent,
@@ -67,6 +72,10 @@ export function getDocumentMaintenanceStats(db) {
     chunks,
     embeddings,
     missing_embeddings: missingEmbeddings,
+    embedding_target: {
+      provider,
+      model,
+    },
     embedding_jobs: embeddingJobCounts(db),
   };
 }
@@ -88,7 +97,11 @@ export function reindexAllDocuments(db, { limit = 1000 } = {}) {
   return { documents: rows.length, chunks };
 }
 
-export function backfillMissingDocumentEmbeddings(db, queue, { limit = 500 } = {}) {
+export function backfillMissingDocumentEmbeddings(db, queue, {
+  limit = 500,
+  provider = 'local',
+  model = 'linkbox-local-hash-v1',
+} = {}) {
   initDocumentSchema(db);
   const rows = db.prepare(`
     SELECT DISTINCT d.item_id AS link_id
@@ -96,11 +109,13 @@ export function backfillMissingDocumentEmbeddings(db, queue, { limit = 500 } = {
     JOIN documents d ON d.id = c.document_id
     LEFT JOIN document_embeddings e
       ON e.chunk_id = c.id
+      AND e.provider = ?
+      AND e.model = ?
       AND e.content_hash = c.content_hash
     WHERE e.id IS NULL
     ORDER BY d.item_id ASC
     LIMIT ?
-  `).all(limit);
+  `).all(provider, model, limit);
 
   let enqueued = 0;
   for (const row of rows) {

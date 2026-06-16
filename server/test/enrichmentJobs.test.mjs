@@ -89,6 +89,11 @@ semantic vector body`);
   registerEnrichmentJobs(queue, {
     uploadsDir: '',
     db,
+    getDocumentEmbeddingConfig: () => ({
+      enabled: true,
+      provider: 'local',
+      model: 'linkbox-local-hash-v1',
+    }),
     embedDocuments: async (database) => {
       database.prepare(`
         INSERT INTO document_embeddings (chunk_id, provider, model, dimension, vector, content_hash)

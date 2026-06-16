@@ -1,11 +1,11 @@
 # LinkBox Architecture Redesign
 
-Date: 2026-06-15
+Date: 2026-06-17
 
 ## Current Status
 
 Implementation has reached the committed checkpoint
-`HEAD Add explicit database migrations`.
+`HEAD Add admin embedding diagnostics and E2E coverage`.
 
 Completed:
 
@@ -49,6 +49,20 @@ Completed:
 - A small SQLite migration runner now records applied migrations and owns the
   legacy `links` item-column upgrades that were previously scattered as
   boot-time `ALTER TABLE` blocks.
+- Admin system status now exposes a bounded failed-job list. The desktop
+  settings page shows failed jobs and can retry either one failed job or all
+  failed jobs.
+- Embedding configuration is now a first-class admin setting separate from chat
+  AI configuration. Document indexing, assistant retrieval, maintenance stats,
+  backfill, and background embedding jobs use the same provider/model target.
+- Assistant retrieval uses the configured embedding provider/model for both
+  indexing and query vectors. This avoids local-query/remote-index mismatches.
+- Admin retrieval diagnostics now return the retrieval settings and selected
+  source/chunk metadata, including scores, modes, snippets, and rerank fields,
+  without calling the LLM.
+- Browser E2E coverage now includes assistant retrieval diagnostics and
+  background failed-job retry UI, with test-only data seeded by the Playwright
+  backend wrapper.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -238,8 +252,12 @@ Remaining Phase 2 focus:
 - Split assistant retrieval into retriever, assistant turn builder, and response
   streamer. The assistant turn builder now exists; retrieval and streaming can
   be deepened further.
-- Return source chunks with stable item IDs and scores for debugging.
-- Add admin-visible indexing and retrieval diagnostics.
+- Return source chunks with stable item IDs and scores for debugging. Retrieval
+  diagnostics now expose this data for admins; the normal chat UI still needs a
+  compact debug/inspection affordance.
+- Add admin-visible indexing and retrieval diagnostics. The first pass is
+  complete for embedding settings, document maintenance stats, backfill, and
+  retrieval diagnostics.
 
 ### Phase 5: Operations
 
@@ -253,13 +271,22 @@ Remaining Phase 2 focus:
 
 Next slice:
 
-- Add Playwright browser E2E coverage on top of the server-side E2E smoke for
-  login, add item, processing state, retry, export, and delete.
+- Run and harden the full Playwright browser suite on a clean machine:
+  `cd client && npm run test:e2e`. The focused assistant/retrieval diagnostics
+  and failed-job retry suite passes, but the full suite should be treated as the
+  next release gate.
 
 Still needed before a broader release:
 
-- Add browser coverage for assistant chat and retry UI behavior.
-- Add a frontend/admin UI surface for degraded health checks and failed jobs.
+- Add a compact chat-source inspection affordance so normal assistant answers
+  can be debugged with the same retrieval metadata returned by diagnostics.
+- Extract reusable processing banner/card components and align desktop/mobile
+  item cards around the same `processing` labels, retry state, and last-error
+  text.
+- Consolidate item write/tag/response shaping so create/update/delete paths
+  return the same item presentation shape as list/detail where intended.
+- Continue migrating route modules to the shared application error helper where
+  it reduces repeated response shaping.
 - Write migration plan for item/content/assets tables.
 - Move jobs, document tables, and future item/content/assets schema changes into
   explicit migrations.

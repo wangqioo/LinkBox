@@ -5,9 +5,10 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { initDocumentSchema, indexDocumentForItem } from '../utils/documentIndex.js';
-import { retrieveSources } from '../utils/assistantRetrieval.js';
+import { indexMissingDocumentEmbeddingsAsync } from '../utils/documentEmbeddings.js';
+import { retrieveSources, retrieveSourcesAsync } from '../utils/assistantRetrieval.js';
 
-function withDb(fn) {
+async function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-assistant-retrieval-test-'));
   const db = new Database(join(dir, 'test.db'));
   try {
@@ -39,7 +40,7 @@ function withDb(fn) {
       );
     `);
     initDocumentSchema(db);
-    return fn(db);
+    return await fn(db);
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -185,4 +186,48 @@ test('retrieveSources infers natural-language time ranges from the question', ()
   });
 
   assert.deepEqual(sources.map(source => source.id), [2]);
+}));
+
+test('retrieveSourcesAsync uses remote embedding query candidates', async () => withDb(async (db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
+    VALUES
+      (1, 5, 'file', '', 'Remote Alpha', '', '2026-06-10T00:00:00.000Z', ?),
+      (2, 5, 'file', '', 'Remote Beta', '', '2026-06-11T00:00:00.000Z', ?)
+  `).run(
+    '# Remote Alpha\n\nalpha remote body',
+    '# Remote Beta\n\nbeta remote body',
+  );
+  indexDocumentForItem(db, 1);
+  indexDocumentForItem(db, 2);
+  const vectorsByText = new Map([
+    ['Remote Alpha\nalpha remote body', [1, 0]],
+    ['Remote Beta\nbeta remote body', [0, 1]],
+    ['find beta', [0, 1]],
+  ]);
+  const embedder = async (texts) => texts.map(text => vectorsByText.get(text) || [0, 0]);
+  await indexMissingDocumentEmbeddingsAsync(db, {
+    provider: 'openai-compatible',
+    model: 'remote-embedding',
+    embedder,
+  });
+
+  const sources = await retrieveSourcesAsync({
+    db,
+    userId: 5,
+    question: 'find beta',
+    task: 'ask',
+    maxSources: 4,
+    enableEmbeddings: true,
+    enableRerank: false,
+    embeddingOptions: {
+      provider: 'openai-compatible',
+      model: 'remote-embedding',
+      embedder,
+    },
+  });
+
+  assert.equal(sources[0].id, 2);
+  assert.equal(sources[0].retrieval_modes.includes('embedding'), true);
+  assert.equal(sources[0].embedding_score, 1);
 }));

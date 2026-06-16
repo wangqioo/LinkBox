@@ -1,6 +1,6 @@
 # LinkBox Development Guide
 
-Last updated: 2026-06-15
+Last updated: 2026-06-17
 
 This document records the current development state so future work can resume
 without rediscovering the architecture, commands, and validation steps.
@@ -10,13 +10,14 @@ without rediscovering the architecture, commands, and validation steps.
 The current architecture follow-up checkpoint is:
 
 ```bash
-HEAD Add explicit database migrations
+HEAD Add admin embedding diagnostics and E2E coverage
 ```
 
-This includes the earlier 2026-06-15 item intake pass and the follow-up
-architecture slices for assistant retrieval, item presentation, and extracted
-content persistence, isolated server smoke coverage, admin health checks, and
-shared route JSON error shaping.
+This includes the earlier 2026-06-15 item intake pass, the follow-up
+architecture slices for assistant retrieval, item presentation, extracted
+content persistence, isolated server smoke coverage, admin health checks,
+shared route JSON error shaping, explicit database migrations, and the
+2026-06-16/17 admin observability pass.
 
 At this checkpoint:
 
@@ -66,6 +67,20 @@ At this checkpoint:
 - Boot-time item-column upgrades now run through
   `server/utils/dbMigrations.js`, which records applied migrations in
   `schema_migrations` and is covered against legacy `links` tables.
+- Admin system status now includes a bounded failed-job list. The settings page
+  shows individual failed jobs and supports retrying one failed job or all
+  failed jobs through `POST /api/settings/system/retry-failed-jobs`.
+- Embedding settings are stored separately from chat AI settings in
+  `server/utils/embeddingConfig.js`. Document indexing, assistant retrieval,
+  document maintenance, and background `document.embed` jobs use the same
+  provider/model configuration.
+- Assistant retrieval diagnostics are exposed at
+  `POST /api/assistant/retrieval-diagnostics` and surfaced in the settings UI.
+  The endpoint returns retrieval settings plus source/chunk metadata, scores,
+  retrieval modes, snippets, and rerank information without calling the LLM.
+- Browser E2E coverage now includes assistant retrieval diagnostics and
+  background failed-job retry UI. The Playwright backend wrapper seeds a
+  test-only failed job in its temporary database.
 
 ## Recommended Runtime
 
@@ -115,6 +130,7 @@ server/utils/jobQueue.js            SQLite durable job queue
 server/utils/systemHealth.js        Admin operational health checks
 server/utils/appError.js            Shared route JSON error shaping
 server/utils/dbMigrations.js        Explicit SQLite migration runner
+server/utils/embeddingConfig.js     Document embedding provider/model settings
 ```
 
 Important desktop frontend modules:
@@ -129,6 +145,9 @@ client/src/context/ToastContext.tsx     Global toast provider
 client/src/components/LinkCard.tsx      Item card and processing UI
 client/src/components/markdownParser.ts Markdown block/inline parser and sanitizer
 client/src/components/MarkdownRenderer.tsx React adapter for parsed Markdown
+client/src/pages/EmbeddingSettingsPanel.tsx Admin embedding configuration
+client/src/pages/RetrievalDiagnosticsPanel.tsx Admin retrieval diagnostics
+client/src/pages/BackgroundJobsPanel.tsx Admin queue and failed-job controls
 ```
 
 Important mobile frontend modules:
@@ -197,15 +216,18 @@ cd ..
 git diff --check
 ```
 
-Expected counts at the 2026-06-15 architecture follow-up checkpoint:
+Expected counts at the 2026-06-17 admin observability checkpoint:
 
-- Server: 152 passing tests.
-- Desktop client: 4 passing tests.
+- Server: 171 passing tests.
+- Desktop client: 10 passing tests.
 - Mobile utility focused tests: 4 passing tests.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
   database, uploads directory, and mock OpenAI-compatible endpoint.
 - Desktop browser E2E: `cd client && npm run test:e2e` passes with isolated
   Playwright services.
+- Focused desktop browser E2E for the latest slice:
+  `cd client && npx playwright test e2e/assistant.spec.ts e2e/background-jobs.spec.ts --project=chromium`
+  passes with 3 tests.
 
 Known warning: direct Node execution of mobile ES modules reports
 `MODULE_TYPELESS_PACKAGE_JSON` because `mobile/package.json` does not declare
@@ -235,10 +257,11 @@ The Playwright config starts three isolated local services:
 - backend API on `127.0.0.1:3310` with a temporary SQLite database and uploads directory
 - Vite desktop app on `127.0.0.1:5174` with `/api` proxied to the test backend
 
-The backend wrapper seeds a fixed admin user for admin-only tests and writes AI
-settings to the mock endpoint. Browser tests should keep test-only logic in
-`client/e2e`, `client/playwright.config.ts`, or `server/scripts/playwright-*`;
-production routes should not gain test-only endpoints.
+The backend wrapper seeds a fixed admin user for admin-only tests, writes AI
+settings to the mock endpoint, and seeds a failed background job for retry UI
+coverage. Browser tests should keep test-only logic in `client/e2e`,
+`client/playwright.config.ts`, or `server/scripts/playwright-*`; production
+routes should not gain test-only endpoints.
 
 ## Isolated Smoke Test
 
@@ -292,17 +315,21 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 Recommended next work after this checkpoint:
 
-1. Add Playwright browser E2E coverage on top of the server-side E2E smoke for
-   login, add text/link/file item, processing state, retry, export, and delete.
-2. Add Playwright/browser coverage for assistant chat, retry, and export UI once
-   the frontend test harness is in place.
-3. Add a UI surface for the new admin health checks, including degraded
-   capability warnings and failed-job counts.
-4. Continue moving schema initialization into explicit migrations, especially
+1. Run the full browser suite once on a clean machine:
+   `cd client && npm run test:e2e`. The focused assistant/background-job suite
+   passed, but the full suite should be the next release gate.
+2. Make assistant answers explain their retrieval path in the normal chat UI:
+   expose the same source score/mode/chunk metadata used by retrieval
+   diagnostics behind a compact admin/debug affordance.
+3. Extract a reusable processing banner/component for desktop item cards and
+   align the mobile item card around the same `processing` labels, retry state,
+   and last-error text.
+4. Consolidate item write/tag/response shaping so create/update/delete paths
+   return the same item presentation contract as list/detail where intended.
+5. Continue migrating route modules to the shared application error helper
+   where it removes repeated JSON response shaping.
+6. Continue moving schema initialization into explicit migrations, especially
    jobs, document tables, and future item/content/assets tables.
-5. Continue migrating remaining route modules to the shared application error
-   helper where it reduces repeated response shaping.
-6. Extract reusable processing banner components for desktop and mobile.
-7. Move shared scoring/tokenization away from the legacy chunk index before
-   retiring `link_chunks`.
-8. Write the migration plan for future item/content/assets tables.
+7. Write the migration plan for future item/content/assets tables.
+8. Retire or narrow legacy `link_chunks` after canonical document retrieval has
+   enough production confidence.

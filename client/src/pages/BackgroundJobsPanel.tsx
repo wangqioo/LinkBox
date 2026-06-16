@@ -5,19 +5,27 @@ interface Props {
   systemStatus: SystemStatus | null;
   loadingSystem: boolean;
   retryingJobs: boolean;
+  retryingJobId: number | null;
   queueMessage: string;
   onRefresh: () => void;
   onRetryFailedJobs: () => void;
+  onRetryFailedJob: (id: number) => void;
 }
 
 export default function BackgroundJobsPanel({
   systemStatus,
   loadingSystem,
   retryingJobs,
+  retryingJobId,
   queueMessage,
   onRefresh,
   onRetryFailedJobs,
+  onRetryFailedJob,
 }: Props) {
+  const failedJobs = systemStatus?.queue.failedJobs || [];
+  const hasFailedJobs = failedJobs.length > 0;
+  const retryDisabled = retryingJobs || retryingJobId !== null;
+
   return (
     <div className="rounded-xl border p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -61,7 +69,40 @@ export default function BackgroundJobsPanel({
         </div>
       )}
 
-      {systemStatus?.queue.lastFailed && (
+      {hasFailedJobs && (
+        <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 divide-y divide-red-100 dark:divide-red-900/40 overflow-hidden">
+          <div className="px-3 py-2 text-sm font-medium text-red-700 dark:text-red-300">
+            失败任务
+          </div>
+          {failedJobs.map((job) => (
+            <div key={job.id} className="px-3 py-2 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-red-700 dark:text-red-300 truncate">
+                  #{job.id} {job.type}
+                  {job.link_id ? ` · 链接 #${job.link_id}` : ''}
+                </div>
+                <div className="text-xs text-red-600 dark:text-red-200 mt-0.5">
+                  尝试 {job.attempts}/{job.max_attempts} · {job.updated_at}
+                </div>
+                <div className="text-xs text-red-600 dark:text-red-200 mt-1 break-words line-clamp-2">
+                  {job.last_error || '未记录错误'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRetryFailedJob(job.id)}
+                disabled={retryDisabled}
+                className="btn-secondary flex items-center gap-1.5 shrink-0 px-2 py-1 text-xs"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                {retryingJobId === job.id ? '重试中…' : '重试'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!hasFailedJobs && systemStatus?.queue.lastFailed && (
         <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm">
           <div className="font-medium text-red-700 dark:text-red-300">
             最近失败：#{systemStatus.queue.lastFailed.id} {systemStatus.queue.lastFailed.type}
@@ -76,7 +117,7 @@ export default function BackgroundJobsPanel({
         <button
           type="button"
           onClick={onRetryFailedJobs}
-          disabled={retryingJobs || !systemStatus?.queue.failed}
+          disabled={retryDisabled || !systemStatus?.queue.failed}
           className="btn-secondary flex items-center gap-2"
         >
           <RotateCcw className="w-4 h-4" />
