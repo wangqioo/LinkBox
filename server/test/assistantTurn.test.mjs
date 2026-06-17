@@ -64,6 +64,53 @@ test('groupSources dedupes URL and title variants while preserving chunks', () =
   assert.deepEqual(shaped[0].chunks.map(chunk => chunk.id), ['chunk-a', 'chunk-b', 'chunk-c']);
 });
 
+test('publicSources exposes compact retrieval metadata for source inspection', () => {
+  const shaped = publicSources([
+    {
+      id: 101,
+      type: 'file',
+      title: 'Retrieval Debug Notes',
+      imported_at: '2026-06-17T00:00:00.000Z',
+      sourceKind: 'document',
+      score: 9.5,
+      combined_score: 12.25,
+      embedding_score: 0.91,
+      retrieval_modes: ['keyword', 'embedding'],
+      rerank_mode: 'local',
+      rerank_score: 0.83,
+      document_id: 55,
+      chunk_id: 77,
+      chunk_index: 2,
+      heading_path: 'Retrieval Debug Notes > Hybrid Search',
+      chunk_type: 'section',
+      chunk_text: 'hybrid search debug snippet',
+    },
+  ]);
+
+  assert.deepEqual(shaped[0].retrieval, {
+    sourceKind: 'document',
+    score: 9.5,
+    combined_score: 12.25,
+    embedding_score: 0.91,
+    retrieval_modes: ['keyword', 'embedding'],
+    rerank_mode: 'local',
+    rerank_score: 0.83,
+  });
+  assert.deepEqual(shaped[0].chunks[0].retrieval, {
+    sourceKind: 'document',
+    document_id: 55,
+    chunk_id: 77,
+    heading_path: 'Retrieval Debug Notes > Hybrid Search',
+    chunk_type: 'section',
+    score: 9.5,
+    combined_score: 12.25,
+    embedding_score: 0.91,
+    retrieval_modes: ['keyword', 'embedding'],
+    rerank_mode: 'local',
+    rerank_score: 0.83,
+  });
+});
+
 test('buildMessages trims context and lists only valid citation source ids', () => {
   const messages = buildMessages('怎么做检索？', [
     {

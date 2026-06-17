@@ -136,8 +136,31 @@ export function publicSources(items) {
     url: item.url || '',
     summary: item.summary || '',
     imported_at: item.imported_at,
+    retrieval: publicRetrievalMetadata(item),
     chunks: publicChunks(item.chunks || []),
   }));
+}
+
+function publicRetrievalMetadata(item, extraKeys = []) {
+  const metadata = {};
+  const keys = [
+    'sourceKind',
+    'score',
+    'combined_score',
+    'embedding_score',
+    'retrieval_modes',
+    'rerank_mode',
+    'rerank_score',
+    ...extraKeys,
+  ];
+
+  for (const key of keys) {
+    if (item[key] !== undefined && item[key] !== null && item[key] !== '') {
+      metadata[key] = item[key];
+    }
+  }
+
+  return Object.keys(metadata).length ? metadata : undefined;
 }
 
 function publicChunks(chunks) {
@@ -150,6 +173,12 @@ function publicChunks(chunks) {
         index: index + 1,
         chunk_index: chunk.chunk_index,
         text: text.slice(0, 420),
+        retrieval: publicRetrievalMetadata(chunk, [
+          'document_id',
+          'chunk_id',
+          'heading_path',
+          'chunk_type',
+        ]),
       };
     })
     .filter(chunk => {

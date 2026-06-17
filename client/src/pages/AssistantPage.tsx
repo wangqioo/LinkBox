@@ -46,6 +46,7 @@ function SourceList({ sources = [] }: { sources?: AssistantSource[] }) {
                 </span>
                 <div className="min-w-0">
                   <div className="text-sm font-medium truncate">{source.title}</div>
+                  <RetrievalInfo retrieval={source.retrieval} />
                   {source.summary && (
                     <div className="text-xs text-gray-500 mt-1 line-clamp-2">{source.summary}</div>
                   )}
@@ -62,6 +63,7 @@ function SourceList({ sources = [] }: { sources?: AssistantSource[] }) {
                           <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 mb-0.5">
                             片段 {chunk.index}
                           </div>
+                          <RetrievalInfo retrieval={chunk.retrieval} />
                           <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-3">
                             {chunk.text}
                           </div>
@@ -75,6 +77,41 @@ function SourceList({ sources = [] }: { sources?: AssistantSource[] }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function formatScore(value: unknown) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '';
+  return value.toFixed(3);
+}
+
+function formatModes(value: unknown) {
+  return Array.isArray(value) && value.length ? value.join('+') : '';
+}
+
+function formatHeadingPath(value: unknown) {
+  if (Array.isArray(value)) return value.filter(Boolean).join(' > ');
+  return typeof value === 'string' ? value : '';
+}
+
+function RetrievalInfo({ retrieval }: { retrieval?: AssistantSource['retrieval'] }) {
+  if (!retrieval) return null;
+  const parts = [
+    retrieval.sourceKind,
+    formatModes(retrieval.retrieval_modes),
+    formatScore(retrieval.score) && `score ${formatScore(retrieval.score)}`,
+    formatScore(retrieval.combined_score) && `combined ${formatScore(retrieval.combined_score)}`,
+    formatScore(retrieval.embedding_score) && `embed ${formatScore(retrieval.embedding_score)}`,
+    retrieval.rerank_mode && `rerank ${retrieval.rerank_mode}${formatScore(retrieval.rerank_score) ? ` ${formatScore(retrieval.rerank_score)}` : ''}`,
+    formatHeadingPath(retrieval.heading_path) && `heading ${formatHeadingPath(retrieval.heading_path)}`,
+    retrieval.chunk_type && `type ${retrieval.chunk_type}`,
+  ].filter(Boolean);
+
+  if (!parts.length) return null;
+  return (
+    <div className="mt-1 text-[11px] leading-5 text-gray-500 dark:text-gray-400">
+      检索：{parts.join(' · ')}
     </div>
   );
 }

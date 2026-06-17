@@ -17,7 +17,9 @@ test('assistant answers from the user collection with visible citations', async 
   await page.getByRole('button', { name: /发送/ }).click();
 
   await expect(page.getByText(/Playwright mock AI 回答/)).toBeVisible();
-  await expect(page.getByRole('button', { name: /引用资料/ })).toBeVisible();
+  await page.getByRole('button', { name: /引用资料/ }).click();
+  await expect(page.getByText(/检索：/).first()).toBeVisible();
+  await expect(page.getByText(/score/).first()).toBeVisible();
 });
 
 test('admin can run retrieval diagnostics and inspect matching sources', async ({ page }) => {

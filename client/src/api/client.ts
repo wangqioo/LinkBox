@@ -166,6 +166,7 @@ export interface AssistantSource {
   url: string;
   summary: string;
   imported_at: string;
+  retrieval?: AssistantRetrievalMetadata;
   chunks?: AssistantSourceChunk[];
 }
 
@@ -174,6 +175,21 @@ export interface AssistantSourceChunk {
   index: number;
   chunk_index?: number;
   text: string;
+  retrieval?: AssistantRetrievalMetadata;
+}
+
+export interface AssistantRetrievalMetadata {
+  sourceKind?: string;
+  score?: number;
+  combined_score?: number;
+  embedding_score?: number;
+  retrieval_modes?: string[];
+  rerank_mode?: string;
+  rerank_score?: number;
+  document_id?: number;
+  chunk_id?: number | string;
+  heading_path?: string | string[];
+  chunk_type?: string;
 }
 
 export interface AssistantAnswer {
