@@ -334,6 +334,7 @@ import { deleteFile, downloadUrl, getFiles, getStats, imgUrl, uploadFile, upload
 import ImageBatchCard from '../components/ImageBatchCard.vue'
 import { useTheme } from '../composables/useTheme'
 import { groupImageBatches } from '../utils/imageBatchGallery'
+import { mobileProcessingText } from '../utils/mobileProcessingStatus'
 import { buildTodayDigest, organizeFile } from '../utils/mobileOrganizer'
 
 const FileHints = defineComponent({
@@ -345,11 +346,7 @@ const FileHints = defineComponent({
   setup(props) {
     return () => {
       const file = props.file
-      const status = file.status === 'pending'
-        ? (file.processing?.label || '后台处理中')
-        : file.status === 'failed'
-          ? 'AI 分析失败'
-          : ''
+      const status = mobileProcessingText(file)
       const org = organizeFile(file)
       const children = []
       if (status) {

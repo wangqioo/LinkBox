@@ -78,6 +78,98 @@ Hybrid keyword retrieval from canonical Markdown documents.`);
   assert.match(sources[0].chunk_text, /canonical Markdown/);
 }));
 
+test('retrieveSources can disable legacy fallback with environment config', () => withDb((db) => {
+  const previous = process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK;
+  process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = '0';
+  try {
+    db.prepare(`
+      INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
+      VALUES (1, 5, 'link', 'https://legacy.example', 'Legacy Only', '', '2026-06-10T00:00:00.000Z', '')
+    `).run();
+    db.prepare(`
+      INSERT INTO link_chunks (link_id, user_id, chunk_index, text)
+      VALUES (1, 5, 0, 'zephyr-lattice alpha-beta gamma-delta legacy content')
+    `).run();
+    const legacySources = retrieveSources({
+      db,
+      userId: 5,
+      question: 'zephyr-lattice alpha-beta gamma-delta',
+      task: 'ask',
+      maxSources: 4,
+    });
+
+    assert.deepEqual(legacySources, []);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK;
+    } else {
+      process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = previous;
+    }
+  }
+}));
+
+test('retrieveSources disables row-level legacy fallback with environment config', () => withDb((db) => {
+  const previous = process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK;
+  process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = '0';
+  try {
+    db.prepare(`
+      INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
+      VALUES (1, 5, 'link', 'https://legacy.example', 'zephyr-lattice Legacy Row', '', '2026-06-10T00:00:00.000Z', '')
+    `).run();
+
+    const sources = retrieveSources({
+      db,
+      userId: 5,
+      question: 'zephyr-lattice',
+      task: 'ask',
+      maxSources: 4,
+    });
+
+    assert.deepEqual(sources, []);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK;
+    } else {
+      process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = previous;
+    }
+  }
+}));
+
+test('retrieveSources still returns canonical document chunks when environment config disables legacy fallback', () => withDb((db) => {
+  const previous = process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK;
+  process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = '0';
+  try {
+    db.prepare(`
+      INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
+      VALUES (2, 5, 'file', '', 'Canonical Only', '', '2026-06-11T00:00:00.000Z', ?)
+    `).run(`# Canonical Only
+
+## Canonical
+
+orchid-matrix canonical content`);
+    indexDocumentForItem(db, 2);
+
+    const canonicalSources = retrieveSources({
+      db,
+      userId: 5,
+      question: 'orchid-matrix',
+      task: 'ask',
+      maxSources: 4,
+    });
+
+    assert.equal(canonicalSources.length, 1);
+    assert.equal(canonicalSources[0].id, 2);
+    assert.ok(canonicalSources[0].document_id);
+    assert.match(canonicalSources[0].chunk_text, /orchid-matrix/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK;
+    } else {
+      process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = previous;
+    }
+  }
+}));
+
 test('retrieveSources can merge embedding candidates when hybrid retrieval is enabled', () => withDb((db) => {
   db.prepare(`
     INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)

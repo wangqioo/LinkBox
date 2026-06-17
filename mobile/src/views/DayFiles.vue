@@ -91,6 +91,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getFiles, imgUrl, downloadUrl } from '../api/files'
+import { mobileProcessingText } from '../utils/mobileProcessingStatus'
 
 const route = useRoute()
 const router = useRouter()
@@ -144,10 +145,7 @@ function timeStr(ts) {
   return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
 }
 function statusText(f) {
-  if (!f) return ''
-  if (f.status === 'pending') return f.processing?.label || '后台处理中'
-  if (f.status === 'failed') return f.error || f.processing?.lastError || '处理失败，点开可重试'
-  return ''
+  return mobileProcessingText(f)
 }
 
 function submitSearch() {

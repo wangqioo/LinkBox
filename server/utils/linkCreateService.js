@@ -4,6 +4,7 @@ import {
   isHtmlFile,
   shouldExtractFile,
 } from './linkPayloads.js';
+import { attachProcessingStatus } from './itemProcessingStatus.js';
 import { presentItem } from './itemPresentation.js';
 
 export function attachTags(db, linkId) {
@@ -20,7 +21,7 @@ export function setTags(db, linkId, tagIds) {
 
 export function getLinkWithTags(db, linkId) {
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
-  return link ? presentItem({ ...link, tags: attachTags(db, link.id) }) : null;
+  return link ? presentItem(attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) })) : null;
 }
 
 export function createLinkItem(db, {

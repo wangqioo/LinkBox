@@ -1,4 +1,5 @@
 import { attachTags, setTags } from './linkCreateService.js';
+import { attachProcessingStatus } from './itemProcessingStatus.js';
 import { presentItem } from './itemPresentation.js';
 
 export class LinkMutationError extends Error {
@@ -29,7 +30,7 @@ export function updateLinkItem(db, {
   if (tagIds !== undefined) setTags(db, linkId, tagIds);
 
   const updated = db.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
-  return { link: presentItem({ ...updated, tags: attachTags(db, updated.id) }) };
+  return { link: presentItem(attachProcessingStatus(db, { ...updated, tags: attachTags(db, updated.id) })) };
 }
 
 export function deleteLinkItem(db, { linkId, userId, removeIndex = () => {} }) {

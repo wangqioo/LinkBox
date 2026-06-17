@@ -155,6 +155,53 @@ test('retrieveAssistantSources can suppress legacy fallback', () => withDb((db) 
   assert.deepEqual(sources, []);
 }));
 
+test('retrieveAssistantSources respects environment config that disables legacy fallback', () => withDb((db) => {
+  const previous = process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK;
+  process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = '0';
+  try {
+    insertItem(db, {
+      id: 1,
+      type: 'link',
+      url: 'https://legacy.example',
+      title: 'Legacy Only',
+    });
+    insertLegacyChunk(db, {
+      linkId: 1,
+      text: 'zephyr-lattice alpha-beta gamma-delta legacy content',
+    });
+    insertItem(db, {
+      id: 2,
+      title: 'Canonical Only',
+      contentMd: '# Canonical Only\n\n## Canonical\n\norchid-matrix canonical content.',
+    });
+    indexDocumentForItem(db, 2);
+
+    const legacySources = retrieveAssistantSources(db, {
+      userId: 5,
+      question: 'zephyr-lattice alpha-beta gamma-delta',
+      scope: { type: 'link' },
+      limit: 4,
+    });
+    const canonicalSources = retrieveAssistantSources(db, {
+      userId: 5,
+      question: 'orchid-matrix',
+      limit: 4,
+    });
+
+    assert.deepEqual(legacySources, []);
+    assert.equal(canonicalSources.length, 1);
+    assert.equal(canonicalSources[0].sourceKind, 'document');
+    assert.equal(canonicalSources[0].id, 2);
+    assert.match(canonicalSources[0].chunk_text, /orchid-matrix/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK;
+    } else {
+      process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = previous;
+    }
+  }
+}));
+
 test('buildRetrievalDiagnostics preserves retrieval metadata and snippets', () => {
   const diagnostics = buildRetrievalDiagnostics({
     question: 'durable queue facts',

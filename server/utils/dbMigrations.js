@@ -1,3 +1,6 @@
+import { initJobSchema } from './jobQueue.js';
+import { initDocumentSchema } from './documentIndex.js';
+
 const MIGRATIONS = [
   {
     name: '001_links_item_columns',
@@ -17,6 +20,18 @@ const MIGRATIONS = [
       addColumnIfMissing(db, 'links', 'batch_id', "TEXT DEFAULT ''");
       addColumnIfMissing(db, 'links', 'batch_index', 'INTEGER DEFAULT 0');
       db.exec('CREATE INDEX IF NOT EXISTS idx_links_batch ON links(user_id, batch_id, batch_index)');
+    },
+  },
+  {
+    name: '003_jobs_schema',
+    up(db) {
+      initJobSchema(db);
+    },
+  },
+  {
+    name: '004_document_schema',
+    up(db) {
+      initDocumentSchema(db);
     },
   },
 ];

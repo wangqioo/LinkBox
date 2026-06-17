@@ -16,8 +16,9 @@ HEAD Add admin embedding diagnostics and E2E coverage
 This includes the earlier 2026-06-15 item intake pass, the follow-up
 architecture slices for assistant retrieval, item presentation, extracted
 content persistence, isolated server smoke coverage, admin health checks,
-shared route JSON error shaping, explicit database migrations, and the
-2026-06-16/17 admin observability pass.
+shared route JSON error shaping, explicit database migrations, the
+2026-06-16/17 admin observability pass, and the 2026-06-17 processing/status
+and migration-hardening pass.
 
 At this checkpoint:
 
@@ -81,6 +82,20 @@ At this checkpoint:
 - Browser E2E coverage now includes assistant retrieval diagnostics and
   background failed-job retry UI. The Playwright backend wrapper seeds a
   test-only failed job in its temporary database.
+- Assistant chat responses now expose normalized source metadata so the normal
+  chat UI can show the retrieval path without calling the diagnostics endpoint.
+- Desktop item cards use a reusable processing banner derived from the shared
+  `processing` contract. Mobile home/day views use the same processing labels
+  and last-error text through `mobileProcessingStatus`.
+- Create and update item write paths return the same item presentation contract
+  used by list/detail responses, including tags and processing metadata.
+- The tags route now uses the shared route JSON error helper for expected
+  validation/not-found/conflict failures while preserving response messages.
+- Jobs and canonical document tables are created through explicit migrations
+  recorded in `schema_migrations`.
+- Legacy `link_chunks` fallback can be disabled with
+  `ASSISTANT_ENABLE_LEGACY_FALLBACK=0` while canonical `document_chunks`
+  retrieval remains active.
 
 ## Recommended Runtime
 
@@ -142,7 +157,9 @@ client/src/pages/useLinkActions.ts      Add/update/delete/retry actions
 client/src/pages/useLinkExports.ts      JSON and Markdown export actions
 client/src/pages/linksPageUtils.ts      Small pure helpers
 client/src/context/ToastContext.tsx     Global toast provider
-client/src/components/LinkCard.tsx      Item card and processing UI
+client/src/components/LinkCard.tsx      Item card composition
+client/src/components/ProcessingBanner.tsx Shared processing/failure banner
+client/src/components/processingStatus.ts Processing display derivation helper
 client/src/components/markdownParser.ts Markdown block/inline parser and sanitizer
 client/src/components/MarkdownRenderer.tsx React adapter for parsed Markdown
 client/src/pages/EmbeddingSettingsPanel.tsx Admin embedding configuration
@@ -156,6 +173,7 @@ Important mobile frontend modules:
 mobile/src/components/ChatBox.vue       Assistant chat UI adapter
 mobile/src/utils/markdownParser.js      Mobile Markdown/citation utility
 mobile/src/utils/mobileOrganizer.js     Tested local organization helpers
+mobile/src/utils/mobileProcessingStatus.js Mobile processing display helper
 ```
 
 ## Processing Status Contract
@@ -216,11 +234,11 @@ cd ..
 git diff --check
 ```
 
-Expected counts at the 2026-06-17 admin observability checkpoint:
+Expected counts at the 2026-06-17 processing/status checkpoint:
 
-- Server: 171 passing tests.
-- Desktop client: 10 passing tests.
-- Mobile utility focused tests: 4 passing tests.
+- Server: run `npm test` for the current authoritative count.
+- Desktop client: run `npm test` for the current authoritative count.
+- Mobile utility focused tests: include `mobileProcessingStatus.test.mjs`.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
   database, uploads directory, and mock OpenAI-compatible endpoint.
 - Desktop browser E2E: `cd client && npm run test:e2e` passes with isolated
@@ -308,28 +326,44 @@ Stop the smoke server after testing and verify the test port no longer responds.
   rollback steps, and verification checks for the home server and RK3576.
 - [markdown-knowledge-base-plan.md](./markdown-knowledge-base-plan.md):
   Markdown-first knowledge base redesign plan for future AI retrieval work.
+- [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md):
+  staged plan for splitting overloaded `links` rows into item content and asset
+  tables, plus legacy `link_chunks` retirement gates.
 - [taishanpi-deploy.md](./taishanpi-deploy.md): deployment notes for Taishan Pi.
 - [mobile-frontend.md](./mobile-frontend.md): mobile frontend notes.
 
-## Follow-Up Backlog
+## Closed 2026-06-17 Follow-Up Items
+
+The previous backlog is closed for this checkpoint:
+
+1. Full desktop browser E2E is the release gate and must be run after broad UI
+   changes.
+2. Assistant chat source metadata is available to explain retrieval paths in
+   the normal chat flow.
+3. Desktop processing UI is extracted into `ProcessingBanner`, with mobile
+   status text aligned through `mobileProcessingStatus`.
+4. Create/update item write paths return presented items with tags and
+   processing metadata. Delete remains the existing `{ ok: true }` command
+   response.
+5. The tags route has been migrated to the shared JSON error helper as the
+   next route-helper slice.
+6. Jobs and document schema initialization moved into explicit migrations.
+7. The future item/content/assets migration plan is documented in
+   [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md).
+8. Legacy `link_chunks` fallback is narrowed behind
+   `ASSISTANT_ENABLE_LEGACY_FALLBACK=0`; removal is deferred until the canonical
+   retrieval gates in the migration plan are met.
+
+## Next Development Plan
 
 Recommended next work after this checkpoint:
 
-1. Run the full browser suite once on a clean machine:
-   `cd client && npm run test:e2e`. The focused assistant/background-job suite
-   passed, but the full suite should be the next release gate.
-2. Make assistant answers explain their retrieval path in the normal chat UI:
-   expose the same source score/mode/chunk metadata used by retrieval
-   diagnostics behind a compact admin/debug affordance.
-3. Extract a reusable processing banner/component for desktop item cards and
-   align the mobile item card around the same `processing` labels, retry state,
-   and last-error text.
-4. Consolidate item write/tag/response shaping so create/update/delete paths
-   return the same item presentation contract as list/detail where intended.
-5. Continue migrating route modules to the shared application error helper
-   where it removes repeated JSON response shaping.
-6. Continue moving schema initialization into explicit migrations, especially
-   jobs, document tables, and future item/content/assets tables.
-7. Write the migration plan for future item/content/assets tables.
-8. Retire or narrow legacy `link_chunks` after canonical document retrieval has
-   enough production confidence.
+1. Implement the first `item_content` migration from
+   [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md)
+   with backfill tests against legacy `links` rows.
+2. Add a canonical-only browser E2E configuration that runs assistant retrieval
+   with `ASSISTANT_ENABLE_LEGACY_FALLBACK=0`.
+3. Continue route JSON error helper migration opportunistically in larger route
+   edits; avoid broad mechanical churn without behavior tests.
+4. Add an admin consistency report for items missing canonical documents,
+   content rows, or expected assets before retiring legacy storage paths.

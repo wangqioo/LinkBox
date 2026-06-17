@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Download, Sparkles, Loader2, BookOpen, GraduationCap, FileSpreadsheet, Presentation, FileCode, File, Globe, RotateCcw, FileSearch } from 'lucide-react';
+import { ExternalLink, Pencil, Trash2, X, Check, MessageSquare, FileText, Image, Mic, Download, Sparkles, Loader2, BookOpen, GraduationCap, FileSpreadsheet, Presentation, FileCode, File, Globe, FileSearch } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import LearningNoteModal from './LearningNoteModal';
 import DocumentInspectorModal from './DocumentInspectorModal';
 import { LazyHtmlModal, MarkdownModal } from './LinkContentModals';
+import ProcessingBanner from './ProcessingBanner';
 import type { LinkCardProps } from './linkCardTypes';
 import { formatLinkDate, getItemTypeLabel, getLinkDomain, proxyImage } from './linkCardUtils';
+import { deriveProcessingDisplay } from './processingStatus';
 
 export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummarize, onExtract, onRetryProcessing, onNoteUpdated, isProcessing = false, selectMode = false, selected = false, onToggleSelect }: LinkCardProps) {
   const [editing, setEditing] = useState(false);
@@ -240,57 +242,20 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
     </div>
   );
 
-  const getAutoStatus = () => {
-    if (link.processing?.state === 'failed') {
-      return {
-        text: link.processing.lastError || '内容处理失败，可重试后台任务',
-        step: 0,
-        error: true,
-        canRetry: link.processing.canRetry,
-      };
-    }
-    if (link.status === 'error') return { text: '处理失败', step: 0, error: true, canRetry: false };
-    if (link.processing && ['queued', 'running', 'processing'].includes(link.processing.state)) {
-      return {
-        text: link.processing.label || '正在后台处理...',
-        step: link.processing.stage.includes('summarize') ? 2 : 1,
-        error: false,
-        canRetry: false,
-      };
-    }
-    if (link.status !== 'processing' && !isProcessing) return null;
-    if (!hasMarkdown && !link.summary) return { text: '正在提取正文...', step: 1, error: false, canRetry: false };
-    if (hasMarkdown && !link.summary) return { text: '正在生成摘要...', step: 2, error: false, canRetry: false };
-    return null;
-  };
-  const autoStatus = getAutoStatus();
+  const autoStatus = deriveProcessingDisplay({
+    status: link.status,
+    isProcessing,
+    hasMarkdown,
+    hasSummary: Boolean(link.summary),
+    processing: link.processing,
+  });
   const autoProcessingBanner = autoStatus && (
-    autoStatus.error ? (
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-2.5 py-2">
-        <span className="flex-1 min-w-40">{retryError || autoStatus.text}</span>
-        {onRetryProcessing && autoStatus.canRetry && (
-          <button
-            type="button"
-            onClick={handleRetryProcessing}
-            disabled={retryingProcessing}
-            className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white/70 px-2 py-1 font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200 dark:hover:bg-red-900/40"
-          >
-            {retryingProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-            {retryingProcessing ? '重试中' : '重试'}
-          </button>
-        )}
-      </div>
-    ) : (
-      <div className="mt-2 flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-2.5 py-2">
-        <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-        <span className="flex-1">{autoStatus.text}</span>
-        <div className="flex gap-1 shrink-0">
-          {[1,2].map(s => (
-            <div key={s} className={`w-1.5 h-1.5 rounded-full ${s < autoStatus.step ? 'bg-blue-400' : s === autoStatus.step ? 'bg-blue-600 animate-pulse' : 'bg-blue-200'}`} />
-          ))}
-        </div>
-      </div>
-    )
+    <ProcessingBanner
+      display={autoStatus}
+      retryError={retryError}
+      retrying={retryingProcessing}
+      onRetry={onRetryProcessing ? handleRetryProcessing : undefined}
+    />
   );
 
   const extractingIndicator = extracting && (

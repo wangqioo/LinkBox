@@ -29,6 +29,11 @@ function normalizeRetrievalModes(source) {
   return source.retrieval_mode ? [source.retrieval_mode] : [];
 }
 
+function resolveIncludeLegacyFallback(includeLegacyFallback) {
+  if (includeLegacyFallback !== undefined) return includeLegacyFallback !== false;
+  return process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK !== '0';
+}
+
 export function buildRetrievalDiagnostics({
   question,
   task = 'ask',
@@ -74,11 +79,12 @@ export function retrieveAssistantSources(db, {
   limit,
   maxSources = limit,
   maxFallbackSources,
-  includeLegacyFallback = true,
+  includeLegacyFallback,
   enableEmbeddings,
   enableRerank,
   now,
 } = {}) {
+  const shouldIncludeLegacyFallback = resolveIncludeLegacyFallback(includeLegacyFallback);
   const sources = retrieveSources({
     db,
     userId,
@@ -87,13 +93,14 @@ export function retrieveAssistantSources(db, {
     scope,
     maxSources,
     maxFallbackSources,
+    includeLegacyFallback: shouldIncludeLegacyFallback,
     enableEmbeddings,
     enableRerank,
     now,
   });
 
   return sources
-    .filter(source => includeLegacyFallback || source.document_id)
+    .filter(source => shouldIncludeLegacyFallback || source.document_id)
     .map(normalizeSource);
 }
 
@@ -105,12 +112,13 @@ export async function retrieveAssistantSourcesAsync(db, {
   limit,
   maxSources = limit,
   maxFallbackSources,
-  includeLegacyFallback = true,
+  includeLegacyFallback,
   enableEmbeddings,
   enableRerank,
   now,
   embeddingOptions,
 } = {}) {
+  const shouldIncludeLegacyFallback = resolveIncludeLegacyFallback(includeLegacyFallback);
   const sources = await retrieveSourcesAsync({
     db,
     userId,
@@ -119,6 +127,7 @@ export async function retrieveAssistantSourcesAsync(db, {
     scope,
     maxSources,
     maxFallbackSources,
+    includeLegacyFallback: shouldIncludeLegacyFallback,
     enableEmbeddings,
     enableRerank,
     now,
@@ -126,6 +135,6 @@ export async function retrieveAssistantSourcesAsync(db, {
   });
 
   return sources
-    .filter(source => includeLegacyFallback || source.document_id)
+    .filter(source => shouldIncludeLegacyFallback || source.document_id)
     .map(normalizeSource);
 }

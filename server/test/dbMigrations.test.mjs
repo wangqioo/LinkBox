@@ -21,6 +21,10 @@ function columnNames(db, table) {
   return db.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name);
 }
 
+function indexNames(db, table) {
+  return db.prepare(`PRAGMA index_list(${table})`).all().map(index => index.name).sort();
+}
+
 function createLegacyLinksTable(db) {
   db.exec(`
     CREATE TABLE links (
@@ -42,8 +46,13 @@ test('runMigrations adds missing item columns to legacy links tables', () => wit
 
   const result = runMigrations(db);
 
-  assert.equal(result.applied, 2);
-  assert.deepEqual(result.names, ['001_links_item_columns', '002_links_batch_columns']);
+  assert.equal(result.applied, 4);
+  assert.deepEqual(result.names, [
+    '001_links_item_columns',
+    '002_links_batch_columns',
+    '003_jobs_schema',
+    '004_document_schema',
+  ]);
   assert.deepEqual(columnNames(db, 'links'), [
     'id',
     'user_id',
@@ -76,8 +85,122 @@ test('runMigrations is idempotent once migrations are recorded', () => withDb((d
   const first = runMigrations(db);
   const second = runMigrations(db);
 
-  assert.equal(first.applied, 2);
+  assert.equal(first.applied, 4);
   assert.equal(second.applied, 0);
   assert.deepEqual(second.names, []);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 4);
+}));
+
+test('runMigrations creates jobs table and indexes for legacy databases', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.deepEqual(result.names, [
+    '001_links_item_columns',
+    '002_links_batch_columns',
+    '003_jobs_schema',
+    '004_document_schema',
+  ]);
+  assert.deepEqual(columnNames(db, 'jobs'), [
+    'id',
+    'type',
+    'link_id',
+    'payload',
+    'status',
+    'attempts',
+    'max_attempts',
+    'next_run_at',
+    'locked_at',
+    'last_error',
+    'created_at',
+    'updated_at',
+    'completed_at',
+  ]);
+  assert.deepEqual(indexNames(db, 'jobs'), [
+    'idx_jobs_link',
+    'idx_jobs_status_next_run',
+  ]);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '003_jobs_schema'").get().count,
+    1,
+  );
+}));
+
+test('runMigrations creates document tables and indexes for legacy databases', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.deepEqual(result.names, [
+    '001_links_item_columns',
+    '002_links_batch_columns',
+    '003_jobs_schema',
+    '004_document_schema',
+  ]);
+  assert.deepEqual(columnNames(db, 'documents'), [
+    'id',
+    'item_id',
+    'user_id',
+    'title',
+    'markdown',
+    'markdown_hash',
+    'parser_version',
+    'language',
+    'status',
+    'created_at',
+    'updated_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'document_chunks'), [
+    'id',
+    'document_id',
+    'chunk_index',
+    'heading_path',
+    'chunk_type',
+    'content',
+    'content_hash',
+    'token_count',
+    'char_start',
+    'char_end',
+    'metadata_json',
+  ]);
+  assert.deepEqual(columnNames(db, 'document_embeddings'), [
+    'id',
+    'chunk_id',
+    'provider',
+    'model',
+    'dimension',
+    'vector',
+    'content_hash',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'document_annotations'), [
+    'id',
+    'document_id',
+    'type',
+    'content_json',
+    'model',
+    'created_at',
+  ]);
+  assert.deepEqual(indexNames(db, 'documents'), [
+    'idx_documents_item',
+    'idx_documents_user',
+    'sqlite_autoindex_documents_1',
+  ]);
+  assert.deepEqual(indexNames(db, 'document_chunks'), [
+    'idx_document_chunks_document',
+    'sqlite_autoindex_document_chunks_1',
+  ]);
+  assert.deepEqual(indexNames(db, 'document_embeddings'), [
+    'idx_document_embeddings_chunk',
+    'idx_document_embeddings_model',
+    'sqlite_autoindex_document_embeddings_1',
+  ]);
+  assert.deepEqual(indexNames(db, 'document_annotations'), [
+    'idx_document_annotations_document',
+  ]);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '004_document_schema'").get().count,
+    1,
+  );
 }));

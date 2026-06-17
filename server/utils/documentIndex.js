@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { scoreTextFields, tokenizeQuery } from './chunkIndex.js';
+import { scoreTextFields, tokenizeQuery } from './textScoring.js';
 import { addTimeScopeConditions } from './timeScope.js';
 
 export const DOCUMENT_PARSER_VERSION = 'linkbox-canonical-v1';

@@ -8,6 +8,11 @@ import { addTimeScopeConditions, normalizeTimeScope, resolveTimeScope } from './
 const DEFAULT_MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
 const DEFAULT_MAX_FALLBACK_SOURCES = Number(process.env.ASSISTANT_MAX_FALLBACK_SOURCES || 2);
 
+function legacyChunkFallbackEnabled(includeLegacyFallback) {
+  if (includeLegacyFallback !== undefined) return includeLegacyFallback !== false;
+  return process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK !== '0';
+}
+
 function tokenize(text) {
   return tokenizeQuery(text);
 }
@@ -99,6 +104,7 @@ export function retrieveSources({
   maxFallbackSources = DEFAULT_MAX_FALLBACK_SOURCES,
   enableEmbeddings = process.env.ASSISTANT_ENABLE_EMBEDDINGS === '1',
   enableRerank = process.env.ASSISTANT_ENABLE_RERANK !== '0',
+  includeLegacyFallback,
   now = new Date(),
 } = {}) {
   indexAllMissingDocuments(db);
@@ -120,10 +126,14 @@ export function retrieveSources({
     return reranked.map((item, index) => ({ ...item, source_index: index + 1 }));
   }
 
-  indexAllMissingChunks(db);
-  const chunks = searchRelevantChunks({ db, userId, query: question, task, limit: maxSources, scope });
-  if (chunks.length) {
-    return chunks.map((item, index) => ({ ...item, source_index: index + 1 }));
+  if (legacyChunkFallbackEnabled(includeLegacyFallback)) {
+    indexAllMissingChunks(db);
+    const chunks = searchRelevantChunks({ db, userId, query: question, task, limit: maxSources, scope });
+    if (chunks.length) {
+      return chunks.map((item, index) => ({ ...item, source_index: index + 1 }));
+    }
+  } else {
+    return [];
   }
 
   const params = [userId];
@@ -170,6 +180,7 @@ export async function retrieveSourcesAsync({
   maxFallbackSources = DEFAULT_MAX_FALLBACK_SOURCES,
   enableEmbeddings = process.env.ASSISTANT_ENABLE_EMBEDDINGS === '1',
   enableRerank = process.env.ASSISTANT_ENABLE_RERANK !== '0',
+  includeLegacyFallback,
   now = new Date(),
   embeddingOptions = {},
 } = {}) {
@@ -209,6 +220,7 @@ export async function retrieveSourcesAsync({
     maxFallbackSources,
     enableEmbeddings: false,
     enableRerank,
+    includeLegacyFallback,
     now,
   });
 }
