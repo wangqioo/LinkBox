@@ -12,8 +12,6 @@ import {
   reindexAllDocuments,
 } from '../utils/documentMaintenance.js';
 
-const router = Router();
-
 // Only admin (user id=1) can manage settings
 function requireAdmin(req, res, next) {
   if (req.userId !== 1) return res.status(403).json({ error: '仅管理员可操作' });
@@ -25,9 +23,9 @@ function isReservedSettingKey(key) {
   return settingKey.startsWith('ai:') || settingKey.startsWith('embedding:');
 }
 
-function listFailedJobs(limit = 20) {
+function listFailedJobs(database, limit = 20) {
   const boundedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
-  return db.prepare(`
+  return database.prepare(`
     SELECT id, type, link_id, attempts, max_attempts, last_error, updated_at
     FROM jobs
     WHERE status = 'failed'
@@ -36,7 +34,7 @@ function listFailedJobs(limit = 20) {
   `).all(boundedLimit);
 }
 
-function selectedFailedLinkIds(ids) {
+function selectedFailedLinkIds(database, ids) {
   if (ids && !ids.length) return [];
 
   const params = [];
@@ -46,12 +44,19 @@ function selectedFailedLinkIds(ids) {
     params.push(...ids);
   }
 
-  return db.prepare(`
+  return database.prepare(`
     SELECT DISTINCT link_id
     FROM jobs
     WHERE status = 'failed' AND link_id IS NOT NULL${idClause}
   `).all(...params).map(row => row.link_id);
 }
+
+export function createSettingsRouter({
+  database = db,
+  getQueue = getRuntimeQueue,
+  uploadsDir = UPLOADS_DIR,
+} = {}) {
+  const router = Router();
 
 // GET /api/settings/ai - return AI config without secrets
 router.get('/ai', authMiddleware, requireAdmin, (req, res) => {
@@ -105,19 +110,19 @@ router.post('/embeddings/test', authMiddleware, requireAdmin, async (req, res) =
 
 // GET /api/settings - return all settings (admin only)
 router.get('/', authMiddleware, requireAdmin, (req, res) => {
-  const rows = db.prepare('SELECT key, value FROM settings WHERE key NOT LIKE ? AND key NOT LIKE ?').all('ai:%', 'embedding:%');
+  const rows = database.prepare('SELECT key, value FROM settings WHERE key NOT LIKE ? AND key NOT LIKE ?').all('ai:%', 'embedding:%');
   const settings = Object.fromEntries(rows.map(r => [r.key, r.value]));
   res.json(settings);
 });
 
 // GET /api/settings/system - operational status
 router.get('/system', authMiddleware, requireAdmin, async (req, res) => {
-  const queue = getRuntimeQueue();
+  const queue = getQueue();
   const embeddingConfig = getEmbeddingConfig({ includeSecret: true });
   const health = await getSystemHealth({
-    db,
+    db: database,
     queue,
-    uploadsDir: UPLOADS_DIR,
+    uploadsDir,
   });
   const queueStats = queue.stats();
 
@@ -125,16 +130,16 @@ router.get('/system', authMiddleware, requireAdmin, async (req, res) => {
     health,
     queue: {
       ...queueStats,
-      failedJobs: listFailedJobs(),
+      failedJobs: listFailedJobs(database),
     },
-    documents: getDocumentMaintenanceStats(db, {
+    documents: getDocumentMaintenanceStats(database, {
       provider: embeddingConfig.provider,
       model: embeddingConfig.model,
     }),
     env: {
       backgroundQueueConcurrency: process.env.BACKGROUND_QUEUE_CONCURRENCY || '1',
       localLlmUrl: process.env.LOCAL_LLM_URL || '',
-      uploadsDir: UPLOADS_DIR,
+      uploadsDir,
       pdftotextBin: process.env.PDFTOTEXT_BIN || 'pdftotext',
       libreofficeBin: process.env.LIBREOFFICE_BIN || 'libreoffice',
       assistantMaxSources: process.env.ASSISTANT_MAX_SOURCES || '',
@@ -147,28 +152,29 @@ router.get('/system', authMiddleware, requireAdmin, async (req, res) => {
 
 // POST /api/settings/system/reindex-documents - rebuild canonical documents/chunks
 router.post('/system/reindex-documents', authMiddleware, requireAdmin, (req, res) => {
-  const result = reindexAllDocuments(db);
+  const result = reindexAllDocuments(database);
   res.json({
     ok: true,
     indexed: result.documents,
     chunks: result.chunks,
-    stats: getDocumentMaintenanceStats(db),
+    stats: getDocumentMaintenanceStats(database),
   });
 });
 
 // POST /api/settings/system/backfill-embeddings - enqueue missing document embeddings
 router.post('/system/backfill-embeddings', authMiddleware, requireAdmin, (req, res) => {
   const embeddingConfig = getEmbeddingConfig({ includeSecret: true });
-  const result = backfillMissingDocumentEmbeddings(db, getRuntimeQueue(), {
+  const queue = getQueue();
+  const result = backfillMissingDocumentEmbeddings(database, queue, {
     provider: embeddingConfig.provider,
     model: embeddingConfig.model,
   });
-  getRuntimeQueue().drain();
+  queue.drain();
   res.json({
     ok: true,
     ...result,
-    queue: getRuntimeQueue().stats(),
-    stats: getDocumentMaintenanceStats(db, {
+    queue: queue.stats(),
+    stats: getDocumentMaintenanceStats(database, {
       provider: embeddingConfig.provider,
       model: embeddingConfig.model,
     }),
@@ -181,19 +187,20 @@ router.post('/system/retry-failed-jobs', authMiddleware, requireAdmin, (req, res
   const ids = Array.isArray(req.body?.ids)
     ? req.body.ids.map(id => Number(id)).filter(Number.isInteger)
     : null;
-  const failedLinkIds = selectedFailedLinkIds(hasIds ? ids : null);
+  const queue = getQueue();
+  const failedLinkIds = selectedFailedLinkIds(database, hasIds ? ids : null);
   const retried = hasIds && !ids.length
     ? 0
-    : getRuntimeQueue().retryFailedJobs(hasIds ? { ids } : undefined);
+    : queue.retryFailedJobs(hasIds ? { ids } : undefined);
   if (retried && failedLinkIds.length) {
     const placeholders = failedLinkIds.map(() => '?').join(',');
-    db.prepare(`UPDATE links SET status = 'processing' WHERE id IN (${placeholders})`).run(...failedLinkIds);
+    database.prepare(`UPDATE links SET status = 'processing' WHERE id IN (${placeholders})`).run(...failedLinkIds);
   }
-  getRuntimeQueue().drain();
+  queue.drain();
   res.json({
     ok: true,
     retried,
-    queue: getRuntimeQueue().stats(),
+    queue: queue.stats(),
   });
 });
 
@@ -206,8 +213,8 @@ router.put('/', authMiddleware, requireAdmin, (req, res) => {
   if (Object.keys(updates).some(isReservedSettingKey)) {
     return res.status(400).json({ error: 'AI 和 Embedding 配置请使用专用接口' });
   }
-  const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
-  const tx = db.transaction((entries) => {
+  const upsert = database.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+  const tx = database.transaction((entries) => {
     for (const [key, value] of entries) {
       upsert.run(key, String(value ?? ''));
     }
@@ -216,4 +223,7 @@ router.put('/', authMiddleware, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-export default router;
+  return router;
+}
+
+export default createSettingsRouter();

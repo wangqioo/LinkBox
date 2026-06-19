@@ -156,6 +156,26 @@ export interface DocumentMaintenanceStats {
     done: number;
     failed: number;
   };
+  consistency?: StorageConsistencyReport;
+}
+
+export interface StorageConsistencyIssue {
+  id: number;
+  type: string;
+  title: string;
+  kind?: string;
+  public_path?: string;
+}
+
+export interface StorageConsistencyBucket {
+  count: number;
+  samples: StorageConsistencyIssue[];
+}
+
+export interface StorageConsistencyReport {
+  missing_documents: StorageConsistencyBucket;
+  missing_content_rows: StorageConsistencyBucket;
+  missing_asset_rows: StorageConsistencyBucket;
 }
 
 export interface AssistantSource {

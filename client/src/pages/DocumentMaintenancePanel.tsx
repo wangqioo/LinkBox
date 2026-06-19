@@ -1,5 +1,6 @@
 import { Database, FileStack, RefreshCw, Rows3 } from 'lucide-react';
 import type { DocumentMaintenanceStats } from '../api/client';
+import { consistencyIssueTotal, issueSampleLabel } from './documentMaintenanceUtils';
 
 interface Props {
   stats: DocumentMaintenanceStats | null;
@@ -40,6 +41,12 @@ export default function DocumentMaintenancePanel({
   onBackfillEmbeddings,
 }: Props) {
   const configuredEmbedding = embeddingConfigLabel(stats);
+  const consistencyTotal = consistencyIssueTotal(stats);
+  const consistencyRows = [
+    ['缺失 Documents', stats?.consistency?.missing_documents],
+    ['缺失 Content rows', stats?.consistency?.missing_content_rows],
+    ['缺失 Asset rows', stats?.consistency?.missing_asset_rows],
+  ] as const;
 
   return (
     <div className="rounded-xl border p-5 space-y-4">
@@ -97,6 +104,48 @@ export default function DocumentMaintenancePanel({
           <div>
             Embedding jobs：等待 {number(stats.embedding_jobs.queued)} · 运行 {number(stats.embedding_jobs.running)} · 完成 {number(stats.embedding_jobs.done)} · 失败 {number(stats.embedding_jobs.failed)}
           </div>
+        </div>
+      )}
+
+      {stats?.consistency && (
+        <div className="rounded-lg border px-3 py-3 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">存储一致性</div>
+              <div className="text-xs text-gray-500">
+                检查 legacy 字段与 canonical documents、item_content、item_assets 的缺口。
+              </div>
+            </div>
+            <div className={consistencyTotal ? 'text-sm font-semibold text-amber-600' : 'text-sm font-semibold text-green-600'}>
+              {consistencyTotal ? `${number(consistencyTotal)} 个缺口` : '正常'}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {consistencyRows.map(([label, bucket]) => (
+              <div key={label} className="rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2">
+                <div className="text-xs text-gray-500">{label}</div>
+                <div className="text-base font-semibold">{number(bucket?.count)}</div>
+              </div>
+            ))}
+          </div>
+
+          {consistencyRows.some(([, bucket]) => bucket?.samples?.length) && (
+            <div className="space-y-2 text-xs text-gray-500">
+              {consistencyRows.map(([label, bucket]) => bucket?.samples?.length ? (
+                <div key={label}>
+                  <div className="font-medium text-gray-600 dark:text-gray-300">{label} 样本</div>
+                  <ul className="mt-1 space-y-1">
+                    {bucket.samples.map((sample) => (
+                      <li key={`${label}-${sample.id}-${sample.kind || ''}-${sample.public_path || ''}`} className="truncate">
+                        {issueSampleLabel(sample)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null)}
+            </div>
+          )}
         </div>
       )}
 

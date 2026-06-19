@@ -23,6 +23,10 @@ function countRow(db, sql, ...params) {
   return Number(db.prepare(sql).get(...params)?.count || 0);
 }
 
+function tableExists(db, table) {
+  return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
+}
+
 function embeddingJobCounts(db) {
   const rows = db.prepare(`
     SELECT status, COUNT(*) AS count
@@ -36,6 +40,141 @@ function embeddingJobCounts(db) {
     done: 0,
     failed: 0,
     ...Object.fromEntries(rows.map(row => [row.status, Number(row.count || 0)])),
+  };
+}
+
+function sampleItem(row) {
+  return {
+    id: row.id,
+    type: row.type || '',
+    title: row.title || row.url || `Item ${row.id}`,
+  };
+}
+
+function contentRowWhere(alias) {
+  return `(
+    COALESCE(${alias}.content_md, '') != ''
+    OR COALESCE(${alias}.content, '') != ''
+    OR COALESCE(${alias}.summary, '') != ''
+    OR COALESCE(${alias}.html_note, '') != ''
+  )`;
+}
+
+function missingDocumentsReport(db, limit) {
+  const count = countRow(db, `
+    SELECT COUNT(*) AS count
+    FROM links l
+    LEFT JOIN documents d ON d.item_id = l.id
+    WHERE d.id IS NULL AND ${aliasedContentWhere('l')}
+  `);
+  const samples = db.prepare(`
+    SELECT l.id, l.type, l.title, l.url
+    FROM links l
+    LEFT JOIN documents d ON d.item_id = l.id
+    WHERE d.id IS NULL AND ${aliasedContentWhere('l')}
+    ORDER BY datetime(l.imported_at) DESC, l.id DESC
+    LIMIT ?
+  `).all(limit).map(sampleItem);
+  return { count, samples };
+}
+
+function missingContentRowsReport(db, limit) {
+  if (!tableExists(db, 'item_content')) {
+    const count = countRow(db, `SELECT COUNT(*) AS count FROM links l WHERE ${contentRowWhere('l')}`);
+    const samples = db.prepare(`
+      SELECT l.id, l.type, l.title, l.url
+      FROM links l
+      WHERE ${contentRowWhere('l')}
+      ORDER BY datetime(l.imported_at) DESC, l.id DESC
+      LIMIT ?
+    `).all(limit).map(sampleItem);
+    return { count, samples };
+  }
+  const count = countRow(db, `
+    SELECT COUNT(*) AS count
+    FROM links l
+    LEFT JOIN item_content c ON c.item_id = l.id
+    WHERE c.item_id IS NULL AND ${contentRowWhere('l')}
+  `);
+  const samples = db.prepare(`
+    SELECT l.id, l.type, l.title, l.url
+    FROM links l
+    LEFT JOIN item_content c ON c.item_id = l.id
+    WHERE c.item_id IS NULL AND ${contentRowWhere('l')}
+    ORDER BY datetime(l.imported_at) DESC, l.id DESC
+    LIMIT ?
+  `).all(limit).map(sampleItem);
+  return { count, samples };
+}
+
+function expectedAssetRowsCte() {
+  return `
+    WITH expected_assets AS (
+      SELECT id, user_id, type, title, url, image_path AS public_path,
+        CASE
+          WHEN type = 'image' THEN 'image'
+          WHEN type = 'audio' THEN 'audio'
+          ELSE 'file'
+        END AS kind,
+        imported_at
+      FROM links
+      WHERE COALESCE(image_path, '') LIKE '/uploads/%'
+      UNION ALL
+      SELECT id, user_id, type, title, url, thumbnail AS public_path, 'thumbnail' AS kind, imported_at
+      FROM links
+      WHERE COALESCE(thumbnail, '') LIKE '/uploads/%'
+        AND thumbnail != COALESCE(image_path, '')
+    )
+  `;
+}
+
+function missingAssetRowsReport(db, limit) {
+  if (!tableExists(db, 'item_assets')) {
+    const count = countRow(db, `
+      ${expectedAssetRowsCte()}
+      SELECT COUNT(*) AS count FROM expected_assets
+    `);
+    const samples = db.prepare(`
+      ${expectedAssetRowsCte()}
+      SELECT id, type, title, url, kind, public_path
+      FROM expected_assets
+      ORDER BY datetime(imported_at) DESC, id DESC, kind ASC
+      LIMIT ?
+    `).all(limit).map(row => ({ ...sampleItem(row), kind: row.kind, public_path: row.public_path }));
+    return { count, samples };
+  }
+  const count = countRow(db, `
+    ${expectedAssetRowsCte()}
+    SELECT COUNT(*) AS count
+    FROM expected_assets e
+    LEFT JOIN item_assets a
+      ON a.item_id = e.id
+      AND a.kind = e.kind
+      AND a.public_path = e.public_path
+    WHERE a.id IS NULL
+  `);
+  const samples = db.prepare(`
+    ${expectedAssetRowsCte()}
+    SELECT e.id, e.type, e.title, e.url, e.kind, e.public_path
+    FROM expected_assets e
+    LEFT JOIN item_assets a
+      ON a.item_id = e.id
+      AND a.kind = e.kind
+      AND a.public_path = e.public_path
+    WHERE a.id IS NULL
+    ORDER BY datetime(e.imported_at) DESC, e.id DESC, e.kind ASC
+    LIMIT ?
+  `).all(limit).map(row => ({ ...sampleItem(row), kind: row.kind, public_path: row.public_path }));
+  return { count, samples };
+}
+
+export function getStorageConsistencyReport(db, { sampleLimit = 5 } = {}) {
+  initDocumentSchema(db);
+  const limit = Math.max(1, Math.min(20, Number(sampleLimit) || 5));
+  return {
+    missing_documents: missingDocumentsReport(db, limit),
+    missing_content_rows: missingContentRowsReport(db, limit),
+    missing_asset_rows: missingAssetRowsReport(db, limit),
   };
 }
 
@@ -77,6 +216,7 @@ export function getDocumentMaintenanceStats(db, {
       model,
     },
     embedding_jobs: embeddingJobCounts(db),
+    consistency: getStorageConsistencyReport(db),
   };
 }
 

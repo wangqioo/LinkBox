@@ -115,6 +115,10 @@ At this checkpoint:
   compatibility columns.
 - Create and extraction write paths now dual-write owned `/uploads/...` assets
   into `item_assets`; remote thumbnails remain link metadata only.
+- Admin system status now includes a storage consistency report for missing
+  canonical documents, missing `item_content` rows, and missing `item_assets`
+  rows. The settings page surfaces counts and bounded samples before legacy
+  storage paths are retired.
 
 ## Recommended Runtime
 
@@ -379,5 +383,3 @@ Recommended next work after this checkpoint:
 
 1. Continue route JSON error helper migration opportunistically in larger route
    edits; avoid broad mechanical churn without behavior tests.
-2. Add an admin consistency report for items missing canonical documents,
-   content rows, or expected assets before retiring legacy storage paths.

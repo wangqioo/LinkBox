@@ -79,6 +79,63 @@ test('getDocumentMaintenanceStats reports document, chunk, embedding, and job co
   assert.equal(stats.embedding_jobs.failed, 1);
 }));
 
+test('getDocumentMaintenanceStats reports missing canonical content and assets', () => withDb((db) => {
+  seedLinks(db);
+  indexDocumentForItem(db, 1);
+  db.exec(`
+    CREATE TABLE item_content (
+      item_id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      text_content TEXT DEFAULT '',
+      extracted_markdown TEXT DEFAULT '',
+      summary TEXT DEFAULT '',
+      html_note TEXT DEFAULT '',
+      content_hash TEXT DEFAULT ''
+    );
+    CREATE TABLE item_assets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      public_path TEXT NOT NULL,
+      UNIQUE(item_id, kind, public_path)
+    );
+  `);
+  db.prepare(`
+    INSERT INTO item_content (item_id, user_id, extracted_markdown, content_hash)
+    VALUES (1, 5, 'indexed markdown', 'hash')
+  `).run();
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, image_path, thumbnail, imported_at)
+    VALUES (4, 5, 'image', 'Missing Asset', '/uploads/photo.png', '/uploads/thumb.png', '2026-06-11T00:00:00.000Z')
+  `).run();
+  db.prepare(`
+    INSERT INTO item_assets (item_id, user_id, kind, public_path)
+    VALUES (4, 5, 'image', '/uploads/photo.png')
+  `).run();
+
+  const stats = getDocumentMaintenanceStats(db);
+
+  assert.equal(stats.consistency.missing_documents.count, 1);
+  assert.deepEqual(stats.consistency.missing_documents.samples, [
+    { id: 2, type: 'file', title: 'Missing' },
+  ]);
+  assert.equal(stats.consistency.missing_content_rows.count, 1);
+  assert.deepEqual(stats.consistency.missing_content_rows.samples, [
+    { id: 2, type: 'file', title: 'Missing' },
+  ]);
+  assert.equal(stats.consistency.missing_asset_rows.count, 1);
+  assert.deepEqual(stats.consistency.missing_asset_rows.samples, [
+    {
+      id: 4,
+      type: 'image',
+      title: 'Missing Asset',
+      kind: 'thumbnail',
+      public_path: '/uploads/thumb.png',
+    },
+  ]);
+}));
+
 test('getDocumentMaintenanceStats counts missing embeddings for the configured provider and model', () => withDb((db) => {
   seedLinks(db);
   indexDocumentForItem(db, 1);

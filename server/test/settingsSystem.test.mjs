@@ -37,7 +37,11 @@ async function withSettingsApp(fn) {
 
     const app = express();
     app.use(express.json());
-    app.use('/api/settings', settingsModule.default);
+    app.use('/api/settings', settingsModule.createSettingsRouter({
+      database: db,
+      getQueue: () => queue,
+      uploadsDir: process.env.UPLOADS_DIR,
+    }));
 
     server = await new Promise((resolve, reject) => {
       const listening = app.listen(0, () => resolve(listening));
@@ -124,6 +128,31 @@ test('GET /api/settings/system returns bounded recent failed jobs', async () => 
     updated_at: '2026-06-16T10:20:00.000Z',
   });
   assert.equal(body.queue.failedJobs.some(job => job.id === 1), false);
+}));
+
+test('GET /api/settings/system includes storage consistency report', async () => withSettingsApp(async ({ db, baseUrl, adminHeaders }) => {
+  db.prepare(`
+    INSERT INTO users (id, username, password_hash)
+    VALUES (1, 'admin', 'hash')
+    ON CONFLICT(id) DO NOTHING
+  `).run();
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, content_md, image_path, imported_at)
+    VALUES (201, 1, 'file', 'Needs Canonical Rows', '# Missing canonical rows', '/uploads/missing.pdf', '2026-06-18T00:00:00.000Z')
+  `).run();
+
+  const response = await fetch(`${baseUrl}/api/settings/system`, { headers: adminHeaders });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.documents.consistency.missing_documents.count, 1);
+  assert.equal(body.documents.consistency.missing_content_rows.count, 1);
+  assert.equal(body.documents.consistency.missing_asset_rows.count, 1);
+  assert.deepEqual(body.documents.consistency.missing_documents.samples[0], {
+    id: 201,
+    type: 'file',
+    title: 'Needs Canonical Rows',
+  });
 }));
 
 test('POST /api/settings/system/retry-failed-jobs retries only selected failed jobs when ids are provided', async () => withSettingsApp(async ({ db, baseUrl, adminHeaders }) => {
