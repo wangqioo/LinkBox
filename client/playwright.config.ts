@@ -56,7 +56,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testIgnore: [/responsive\.spec\.ts/, /mobile-image-batch\.spec\.ts/],
+      testIgnore: [/canonical-assistant\.spec\.ts/, /responsive\.spec\.ts/, /mobile-image-batch\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
     },
     {

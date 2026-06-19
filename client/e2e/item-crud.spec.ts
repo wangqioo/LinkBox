@@ -32,9 +32,11 @@ test('user can create, search, update, and delete a text item', async ({ page })
   await expect(page.getByRole('article', { name: updatedTitle })).toBeVisible();
   await expect(page.getByText(updatedBody)).toBeVisible();
 
+  await page.getByLabel('搜索收藏').fill('');
   const updatedNote = page.getByRole('article', { name: updatedTitle });
+  await expect(updatedNote).toBeVisible();
   page.once('dialog', dialog => dialog.accept());
-  await updatedNote.getByRole('button', { name: /删除收藏/ }).click();
+  await page.getByRole('button', { name: new RegExp(`删除收藏 ${updatedTitle}`) }).click();
 
   await expect(page.getByRole('article', { name: updatedTitle })).toHaveCount(0);
 });

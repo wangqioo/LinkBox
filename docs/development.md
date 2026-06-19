@@ -82,6 +82,11 @@ At this checkpoint:
 - Browser E2E coverage now includes assistant retrieval diagnostics and
   background failed-job retry UI. The Playwright backend wrapper seeds a
   test-only failed job in its temporary database.
+- A dedicated canonical-only browser E2E gate is available through
+  `cd client && npm run test:e2e:canonical`. It runs assistant retrieval with
+  `ASSISTANT_ENABLE_LEGACY_FALLBACK=0` on isolated ports and verifies the
+  diagnostics UI can retrieve uploaded Markdown through canonical document
+  chunks.
 - Assistant chat responses now expose normalized source metadata so the normal
   chat UI can show the retrieval path without calling the diagnostics endpoint.
 - Desktop item cards use a reusable processing banner derived from the shared
@@ -372,9 +377,7 @@ The previous backlog is closed for this checkpoint:
 
 Recommended next work after this checkpoint:
 
-1. Add a canonical-only browser E2E configuration that runs assistant retrieval
-   with `ASSISTANT_ENABLE_LEGACY_FALLBACK=0`.
-2. Continue route JSON error helper migration opportunistically in larger route
+1. Continue route JSON error helper migration opportunistically in larger route
    edits; avoid broad mechanical churn without behavior tests.
-3. Add an admin consistency report for items missing canonical documents,
+2. Add an admin consistency report for items missing canonical documents,
    content rows, or expected assets before retiring legacy storage paths.
