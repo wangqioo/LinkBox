@@ -9,6 +9,26 @@ export function itemContentHash(content = {}) {
   })).digest('hex');
 }
 
+function normalizeContentRow(row, source) {
+  if (!row) return null;
+  const content = {
+    item_id: row.item_id ?? row.id,
+    user_id: row.user_id,
+    text_content: row.text_content ?? row.content ?? '',
+    extracted_markdown: row.extracted_markdown ?? row.content_md ?? '',
+    summary: row.summary || '',
+    html_note: row.html_note || '',
+    content_hash: row.content_hash || '',
+    source,
+  };
+  if (!content.content_hash) content.content_hash = itemContentHash(content);
+  return content;
+}
+
+function tableExists(db, table) {
+  return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
+}
+
 export function initItemContentSchema(db) {
   if (!db) throw new Error('initItemContentSchema requires a database');
   db.exec(`
@@ -69,4 +89,37 @@ export function backfillItemContent(db) {
   });
   tx();
   return { rows: rows.length };
+}
+
+export function getItemContent(db, itemId) {
+  if (!db) throw new Error('getItemContent requires a database');
+  if (tableExists(db, 'item_content')) {
+    const stored = db.prepare(`
+      SELECT item_id, user_id, text_content, extracted_markdown, summary, html_note, content_hash
+      FROM item_content
+      WHERE item_id = ?
+    `).get(itemId);
+    if (stored) return normalizeContentRow(stored, 'item_content');
+  }
+
+  const legacy = db.prepare(`
+    SELECT id, user_id, content, content_md, summary, html_note
+    FROM links
+    WHERE id = ?
+  `).get(itemId);
+  return normalizeContentRow(legacy, 'links');
+}
+
+export function attachItemContent(db, item) {
+  if (!item) return item;
+  const content = getItemContent(db, item.id);
+  if (!content) return item;
+  return {
+    ...item,
+    content: content.text_content,
+    content_md: content.extracted_markdown,
+    summary: content.summary,
+    html_note: content.html_note,
+    item_content: content,
+  };
 }

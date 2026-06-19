@@ -102,6 +102,9 @@ At this checkpoint:
 - `item_assets` is now created by migration `006_item_assets_schema` and
   backfilled from owned legacy `/uploads/...` paths in `links.image_path` and
   `links.thumbnail`; remote thumbnails remain link metadata.
+- `server/utils/itemContentStore.js` now exposes read helpers that prefer
+  `item_content` and fall back to legacy `links` content columns. Item detail
+  reads use those helpers while list reads keep the existing paginated shape.
 
 ## Recommended Runtime
 
@@ -364,13 +367,11 @@ The previous backlog is closed for this checkpoint:
 
 Recommended next work after this checkpoint:
 
-1. Add repository helpers that read content from `item_content` and fall back to
-   legacy `links` columns for rows that predate the backfill.
-2. Add write-path dual writes for new/updated content and owned upload assets
+1. Add write-path dual writes for new/updated content and owned upload assets
    while keeping `links` compatibility columns intact.
-3. Add a canonical-only browser E2E configuration that runs assistant retrieval
+2. Add a canonical-only browser E2E configuration that runs assistant retrieval
    with `ASSISTANT_ENABLE_LEGACY_FALLBACK=0`.
-4. Continue route JSON error helper migration opportunistically in larger route
+3. Continue route JSON error helper migration opportunistically in larger route
    edits; avoid broad mechanical churn without behavior tests.
-5. Add an admin consistency report for items missing canonical documents,
+4. Add an admin consistency report for items missing canonical documents,
    content rows, or expected assets before retiring legacy storage paths.

@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { initJobSchema } from '../utils/jobQueue.js';
+import { initItemContentSchema } from '../utils/itemContentStore.js';
 import {
   getItemForUser,
   listItemsForUser,
@@ -46,6 +47,7 @@ function withDb(fn) {
       );
     `);
     initJobSchema(db);
+    initItemContentSchema(db);
     return fn(db);
   } finally {
     db.close();
@@ -102,4 +104,20 @@ test('getItemForUser enforces ownership and attaches processing status', () => w
   assert.equal(owned.processing.state, 'queued');
   assert.equal(owned.display.canRetry, false);
   assert.equal(foreign, null);
+}));
+
+test('getItemForUser reads canonical item_content before legacy columns', () => withDb((db) => {
+  seed(db);
+  db.prepare(`
+    INSERT INTO item_content (item_id, user_id, text_content, extracted_markdown, summary, html_note, content_hash)
+    VALUES (2, 5, 'stored text', '# stored markdown', 'stored summary', '<p>stored</p>', 'hash')
+  `).run();
+
+  const owned = getItemForUser(db, { linkId: 2, userId: 5 });
+
+  assert.equal(owned.content, 'stored text');
+  assert.equal(owned.content_md, '# stored markdown');
+  assert.equal(owned.summary, 'stored summary');
+  assert.equal(owned.html_note, '<p>stored</p>');
+  assert.equal(owned.item_content.source, 'item_content');
 }));

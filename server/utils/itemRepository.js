@@ -1,5 +1,6 @@
 import { attachProcessingStatus } from './itemProcessingStatus.js';
 import { presentItem } from './itemPresentation.js';
+import { attachItemContent } from './itemContentStore.js';
 import { buildLinkListQuery } from './linkListQuery.js';
 
 export function attachTags(db, linkId) {
@@ -25,11 +26,11 @@ export function listItemsForUser(db, { userId, query = {} }) {
 export function getItemForUser(db, { linkId, userId }) {
   const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(linkId, userId);
   if (!link) return null;
-  return presentItem(attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) }));
+  return presentItem(attachProcessingStatus(db, attachItemContent(db, { ...link, tags: attachTags(db, link.id) })));
 }
 
 export function getItemById(db, linkId) {
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
   if (!link) return null;
-  return presentItem(attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) }));
+  return presentItem(attachProcessingStatus(db, attachItemContent(db, { ...link, tags: attachTags(db, link.id) })));
 }
