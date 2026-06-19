@@ -99,6 +99,9 @@ At this checkpoint:
 - `item_content` is now created by migration `005_item_content_schema` and
   backfilled from legacy `links.content`, `links.content_md`, `links.summary`,
   and `links.html_note` rows that contain content.
+- `item_assets` is now created by migration `006_item_assets_schema` and
+  backfilled from owned legacy `/uploads/...` paths in `links.image_path` and
+  `links.thumbnail`; remote thumbnails remain link metadata.
 
 ## Recommended Runtime
 
@@ -361,11 +364,10 @@ The previous backlog is closed for this checkpoint:
 
 Recommended next work after this checkpoint:
 
-1. Add the `item_assets` migration/backfill slice from
-   [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md),
-   starting with owned upload/image paths and tests against legacy rows.
-2. Add repository helpers that read content from `item_content` and fall back to
+1. Add repository helpers that read content from `item_content` and fall back to
    legacy `links` columns for rows that predate the backfill.
+2. Add write-path dual writes for new/updated content and owned upload assets
+   while keeping `links` compatibility columns intact.
 3. Add a canonical-only browser E2E configuration that runs assistant retrieval
    with `ASSISTANT_ENABLE_LEGACY_FALLBACK=0`.
 4. Continue route JSON error helper migration opportunistically in larger route

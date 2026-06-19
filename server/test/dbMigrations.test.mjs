@@ -46,13 +46,14 @@ test('runMigrations adds missing item columns to legacy links tables', () => wit
 
   const result = runMigrations(db);
 
-  assert.equal(result.applied, 5);
+  assert.equal(result.applied, 6);
   assert.deepEqual(result.names, [
     '001_links_item_columns',
     '002_links_batch_columns',
     '003_jobs_schema',
     '004_document_schema',
     '005_item_content_schema',
+    '006_item_assets_schema',
   ]);
   assert.deepEqual(columnNames(db, 'links'), [
     'id',
@@ -86,10 +87,10 @@ test('runMigrations is idempotent once migrations are recorded', () => withDb((d
   const first = runMigrations(db);
   const second = runMigrations(db);
 
-  assert.equal(first.applied, 5);
+  assert.equal(first.applied, 6);
   assert.equal(second.applied, 0);
   assert.deepEqual(second.names, []);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 5);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 6);
 }));
 
 test('runMigrations creates jobs table and indexes for legacy databases', () => withDb((db) => {
@@ -103,6 +104,7 @@ test('runMigrations creates jobs table and indexes for legacy databases', () => 
     '003_jobs_schema',
     '004_document_schema',
     '005_item_content_schema',
+    '006_item_assets_schema',
   ]);
   assert.deepEqual(columnNames(db, 'jobs'), [
     'id',
@@ -140,6 +142,7 @@ test('runMigrations creates document tables and indexes for legacy databases', (
     '003_jobs_schema',
     '004_document_schema',
     '005_item_content_schema',
+    '006_item_assets_schema',
   ]);
   assert.deepEqual(columnNames(db, 'documents'), [
     'id',
@@ -232,6 +235,7 @@ test('runMigrations creates item_content and backfills content-bearing legacy ro
     '003_jobs_schema',
     '004_document_schema',
     '005_item_content_schema',
+    '006_item_assets_schema',
   ]);
   assert.deepEqual(columnNames(db, 'item_content'), [
     'item_id',
@@ -287,4 +291,113 @@ test('runMigrations creates item_content and backfills content-bearing legacy ro
   const second = runMigrations(db);
   assert.equal(second.applied, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM item_content').get().count, 2);
+}));
+
+test('runMigrations creates item_assets and backfills owned upload paths', () => withDb((db) => {
+  createLegacyLinksTable(db);
+  db.exec(`
+    ALTER TABLE links ADD COLUMN type TEXT DEFAULT 'link';
+    ALTER TABLE links ADD COLUMN image_path TEXT DEFAULT '';
+    ALTER TABLE links ADD COLUMN summary TEXT DEFAULT '';
+    ALTER TABLE links ADD COLUMN html_note TEXT DEFAULT '';
+    ALTER TABLE links ADD COLUMN content_md TEXT DEFAULT '';
+  `);
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, description, thumbnail, image_path)
+    VALUES
+      (1, 7, 'image', 'Photo', '', '/uploads/photo.png', '/uploads/photo.png'),
+      (2, 7, 'file', 'Report', 'report.pdf (2 KB)', '', '/uploads/report.pdf'),
+      (3, 7, 'link', 'Remote Link', '', 'https://example.test/og.png', ''),
+      (4, 7, 'file', 'Slides', 'slides.pdf (1.5 MB)', '/uploads/slide-thumb.png', '/uploads/slides.pdf'),
+      (5, 7, 'image', 'Remote Path', '', '', 'https://cdn.example/image.png')
+  `).run();
+
+  const result = runMigrations(db);
+
+  assert.deepEqual(result.names, [
+    '001_links_item_columns',
+    '002_links_batch_columns',
+    '003_jobs_schema',
+    '004_document_schema',
+    '005_item_content_schema',
+    '006_item_assets_schema',
+  ]);
+  assert.deepEqual(columnNames(db, 'item_assets'), [
+    'id',
+    'item_id',
+    'user_id',
+    'kind',
+    'public_path',
+    'disk_path',
+    'original_name',
+    'mime_type',
+    'size_bytes',
+    'metadata_json',
+    'created_at',
+  ]);
+  assert.deepEqual(indexNames(db, 'item_assets'), [
+    'idx_item_assets_item',
+    'idx_item_assets_user',
+    'sqlite_autoindex_item_assets_1',
+  ]);
+
+  const rows = db.prepare(`
+    SELECT item_id, user_id, kind, public_path, disk_path, original_name, mime_type, size_bytes, metadata_json
+    FROM item_assets
+    ORDER BY item_id, kind, public_path
+  `).all();
+  assert.deepEqual(rows, [
+    {
+      item_id: 1,
+      user_id: 7,
+      kind: 'image',
+      public_path: '/uploads/photo.png',
+      disk_path: '',
+      original_name: 'photo.png',
+      mime_type: '',
+      size_bytes: 0,
+      metadata_json: '{"source":"links.image_path"}',
+    },
+    {
+      item_id: 2,
+      user_id: 7,
+      kind: 'file',
+      public_path: '/uploads/report.pdf',
+      disk_path: '',
+      original_name: 'report.pdf',
+      mime_type: '',
+      size_bytes: 2048,
+      metadata_json: '{"source":"links.image_path"}',
+    },
+    {
+      item_id: 4,
+      user_id: 7,
+      kind: 'file',
+      public_path: '/uploads/slides.pdf',
+      disk_path: '',
+      original_name: 'slides.pdf',
+      mime_type: '',
+      size_bytes: 1572864,
+      metadata_json: '{"source":"links.image_path"}',
+    },
+    {
+      item_id: 4,
+      user_id: 7,
+      kind: 'thumbnail',
+      public_path: '/uploads/slide-thumb.png',
+      disk_path: '',
+      original_name: 'slide-thumb.png',
+      mime_type: '',
+      size_bytes: 0,
+      metadata_json: '{"source":"links.thumbnail"}',
+    },
+  ]);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '006_item_assets_schema'").get().count,
+    1,
+  );
+
+  const second = runMigrations(db);
+  assert.equal(second.applied, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM item_assets').get().count, 4);
 }));
