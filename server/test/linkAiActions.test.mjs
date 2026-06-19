@@ -9,6 +9,7 @@ import {
   generateLinkLearningNote,
   summarizeLinkItem,
 } from '../utils/linkAiActions.js';
+import { initItemContentSchema } from '../utils/itemContentStore.js';
 
 async function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-ai-action-test-'));
@@ -30,6 +31,7 @@ async function withDb(fn) {
       CREATE TABLE tags (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT NOT NULL);
       CREATE TABLE link_tags (link_id INTEGER NOT NULL, tag_id INTEGER NOT NULL);
     `);
+    initItemContentSchema(db);
     return await fn(db);
   } finally {
     db.close();
@@ -53,6 +55,7 @@ test('summarizeLinkItem summarizes text items from title and content', async () 
   assert.deepEqual(calls, [{ text: 'T\n\nBody', type: 'text' }]);
   assert.equal(result.link.summary, '摘要');
   assert.equal(db.prepare('SELECT summary FROM links WHERE id = 1').get().summary, '摘要');
+  assert.equal(db.prepare('SELECT summary FROM item_content WHERE item_id = 1').get().summary, '摘要');
 }));
 
 test('summarizeLinkItem prefers extracted markdown when present', async () => withDb(async (db) => {
@@ -138,6 +141,10 @@ test('extractLinkContent extracts markdown, stores it, and indexes the link', as
     },
   });
   assert.equal(db.prepare('SELECT content_md FROM links WHERE id = 1').get().content_md, '# From https://article.example');
+  assert.equal(
+    db.prepare('SELECT extracted_markdown FROM item_content WHERE item_id = 1').get().extracted_markdown,
+    '# From https://article.example',
+  );
   assert.deepEqual(indexed, [1]);
   assert.deepEqual(indexedDocuments, [1]);
 }));
@@ -189,6 +196,7 @@ test('generateLinkLearningNote returns cached notes unless refresh is requested'
   assert.deepEqual(refreshed, { html_note: '<p>fresh</p>' });
   assert.equal(generated, 1);
   assert.equal(db.prepare('SELECT html_note FROM links WHERE id = 1').get().html_note, '<p>fresh</p>');
+  assert.equal(db.prepare('SELECT html_note FROM item_content WHERE item_id = 1').get().html_note, '<p>fresh</p>');
 }));
 
 test('generateLinkLearningNote validates item and extracted content', async () => withDb(async (db) => {

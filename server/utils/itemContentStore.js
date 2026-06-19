@@ -29,6 +29,15 @@ function tableExists(db, table) {
   return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
 }
 
+function tableColumns(db, table) {
+  return new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
+}
+
+export function hasItemContentSchema(db) {
+  if (!db) throw new Error('hasItemContentSchema requires a database');
+  return tableExists(db, 'item_content');
+}
+
 export function initItemContentSchema(db) {
   if (!db) throw new Error('initItemContentSchema requires a database');
   db.exec(`
@@ -91,6 +100,57 @@ export function backfillItemContent(db) {
   return { rows: rows.length };
 }
 
+export function upsertItemContent(db, itemId, fields = {}) {
+  if (!db) throw new Error('upsertItemContent requires a database');
+  if (!hasItemContentSchema(db)) return null;
+
+  const existing = getItemContent(db, itemId) || {};
+  const columns = tableColumns(db, 'links');
+  const select = [
+    'id',
+    'user_id',
+    columns.has('content') ? 'content' : "'' AS content",
+    columns.has('content_md') ? 'content_md' : "'' AS content_md",
+    columns.has('summary') ? 'summary' : "'' AS summary",
+    columns.has('html_note') ? 'html_note' : "'' AS html_note",
+  ].join(', ');
+  const link = db.prepare(`SELECT ${select} FROM links WHERE id = ?`).get(itemId);
+  if (!link) return null;
+  const content = {
+    text_content: fields.text_content ?? fields.content ?? existing.text_content ?? '',
+    extracted_markdown: fields.extracted_markdown ?? fields.content_md ?? existing.extracted_markdown ?? '',
+    summary: fields.summary ?? existing.summary ?? '',
+    html_note: fields.html_note ?? existing.html_note ?? '',
+  };
+  const hasContent = Object.values(content).some(value => String(value || '').trim());
+  if (!hasContent) return null;
+  const hash = itemContentHash(content);
+  db.prepare(`
+    INSERT INTO item_content (
+      item_id, user_id, text_content, extracted_markdown, summary, html_note,
+      content_hash, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(item_id) DO UPDATE SET
+      user_id = excluded.user_id,
+      text_content = excluded.text_content,
+      extracted_markdown = excluded.extracted_markdown,
+      summary = excluded.summary,
+      html_note = excluded.html_note,
+      content_hash = excluded.content_hash,
+      updated_at = excluded.updated_at
+  `).run(
+    link.id,
+    link.user_id,
+    content.text_content,
+    content.extracted_markdown,
+    content.summary,
+    content.html_note,
+    hash,
+  );
+  return { item_id: link.id, user_id: link.user_id, ...content, content_hash: hash };
+}
+
 export function getItemContent(db, itemId) {
   if (!db) throw new Error('getItemContent requires a database');
   if (tableExists(db, 'item_content')) {
@@ -102,8 +162,17 @@ export function getItemContent(db, itemId) {
     if (stored) return normalizeContentRow(stored, 'item_content');
   }
 
+  const columns = tableColumns(db, 'links');
+  const select = [
+    'id',
+    'user_id',
+    columns.has('content') ? 'content' : "'' AS content",
+    columns.has('content_md') ? 'content_md' : "'' AS content_md",
+    columns.has('summary') ? 'summary' : "'' AS summary",
+    columns.has('html_note') ? 'html_note' : "'' AS html_note",
+  ].join(', ');
   const legacy = db.prepare(`
-    SELECT id, user_id, content, content_md, summary, html_note
+    SELECT ${select}
     FROM links
     WHERE id = ?
   `).get(itemId);

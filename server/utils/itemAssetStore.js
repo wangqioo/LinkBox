@@ -31,6 +31,19 @@ function kindForRow(row) {
   return 'file';
 }
 
+function tableExists(db, table) {
+  return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
+}
+
+function tableColumns(db, table) {
+  return new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
+}
+
+export function hasItemAssetSchema(db) {
+  if (!db) throw new Error('hasItemAssetSchema requires a database');
+  return tableExists(db, 'item_assets');
+}
+
 export function initItemAssetSchema(db) {
   if (!db) throw new Error('initItemAssetSchema requires a database');
   db.exec(`
@@ -107,4 +120,67 @@ export function backfillItemAssets(db) {
   });
   tx();
   return { rows: rows.length };
+}
+
+export function upsertItemAsset(db, itemId, {
+  kind,
+  publicPath,
+  diskPath = '',
+  originalName = '',
+  mimeType = '',
+  sizeBytes = 0,
+  metadata = {},
+} = {}) {
+  if (!db) throw new Error('upsertItemAsset requires a database');
+  if (!hasItemAssetSchema(db)) return null;
+  if (!isOwnedUploadPath(publicPath)) return null;
+  const columns = tableColumns(db, 'links');
+  const select = [
+    'id',
+    'user_id',
+    columns.has('type') ? 'type' : "'file' AS type",
+    columns.has('imported_at') ? 'imported_at' : 'NULL AS imported_at',
+    columns.has('created_at') ? 'created_at' : 'NULL AS created_at',
+  ].join(', ');
+  const link = db.prepare(`SELECT ${select} FROM links WHERE id = ?`).get(itemId);
+  if (!link) return null;
+  const resolvedKind = kind || kindForRow(link);
+  const resolvedOriginalName = originalName || filenameFromPath(publicPath);
+  const resolvedSize = Number(sizeBytes) || 0;
+  db.prepare(`
+    INSERT INTO item_assets (
+      item_id, user_id, kind, public_path, disk_path, original_name, mime_type,
+      size_bytes, metadata_json, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+    ON CONFLICT(item_id, kind, public_path) DO UPDATE SET
+      user_id = excluded.user_id,
+      disk_path = excluded.disk_path,
+      original_name = excluded.original_name,
+      mime_type = excluded.mime_type,
+      size_bytes = excluded.size_bytes,
+      metadata_json = excluded.metadata_json
+  `).run(
+    link.id,
+    link.user_id,
+    resolvedKind,
+    publicPath,
+    diskPath || '',
+    resolvedOriginalName,
+    mimeType || '',
+    resolvedSize,
+    JSON.stringify(metadata || {}),
+    link.imported_at || link.created_at || null,
+  );
+  return {
+    item_id: link.id,
+    user_id: link.user_id,
+    kind: resolvedKind,
+    public_path: publicPath,
+    disk_path: diskPath || '',
+    original_name: resolvedOriginalName,
+    mime_type: mimeType || '',
+    size_bytes: resolvedSize,
+    metadata_json: JSON.stringify(metadata || {}),
+  };
 }

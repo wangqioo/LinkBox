@@ -6,6 +6,8 @@ import {
 } from './linkPayloads.js';
 import { attachProcessingStatus } from './itemProcessingStatus.js';
 import { presentItem } from './itemPresentation.js';
+import { upsertItemAsset } from './itemAssetStore.js';
+import { upsertItemContent } from './itemContentStore.js';
 
 export function attachTags(db, linkId) {
   return db.prepare('SELECT t.* FROM tags t JOIN link_tags lt ON t.id = lt.tag_id WHERE lt.link_id = ?').all(linkId);
@@ -65,6 +67,7 @@ export function createTextItem(db, {
   `).run(userId, title || '', content || '', comment || '', importedAt);
 
   setTags(db, result.lastInsertRowid, tagIds);
+  upsertItemContent(db, result.lastInsertRowid, { text_content: content || '' });
   indexLink(result.lastInsertRowid);
 
   return {
@@ -120,6 +123,13 @@ export function createImageItem(db, {
   `).run(userId, title || originalName, imagePath, imagePath, comment || '', importedAt, batchId || '', Number(batchIndex) || 0);
 
   setTags(db, result.lastInsertRowid, tagIds);
+  upsertItemAsset(db, result.lastInsertRowid, {
+    kind: 'image',
+    publicPath: imagePath,
+    diskPath,
+    originalName: originalName || title || '',
+    metadata: { source: 'createImageItem' },
+  });
   const link = getLinkWithTags(db, result.lastInsertRowid);
 
   return {
@@ -145,6 +155,12 @@ export function createAudioItem(db, {
   `).run(userId, title || '录音', audioPath, comment || '', importedAt);
 
   setTags(db, result.lastInsertRowid, tagIds);
+  upsertItemAsset(db, result.lastInsertRowid, {
+    kind: 'audio',
+    publicPath: audioPath,
+    originalName: title || audioPath.split('/').pop() || '',
+    metadata: { source: 'createAudioItem' },
+  });
 
   return {
     link: getLinkWithTags(db, result.lastInsertRowid),
@@ -170,6 +186,14 @@ export function createFileItem(db, {
   `).run(userId, title || originalName, description, filePath, comment || '', importedAt, status);
 
   setTags(db, result.lastInsertRowid, tagIds);
+  upsertItemAsset(db, result.lastInsertRowid, {
+    kind: 'file',
+    publicPath: filePath,
+    diskPath,
+    originalName,
+    sizeBytes,
+    metadata: { source: 'createFileItem' },
+  });
   const link = getLinkWithTags(db, result.lastInsertRowid);
   const processing = shouldExtractFile(originalName)
     ? {

@@ -105,6 +105,11 @@ At this checkpoint:
 - `server/utils/itemContentStore.js` now exposes read helpers that prefer
   `item_content` and fall back to legacy `links` content columns. Item detail
   reads use those helpers while list reads keep the existing paginated shape.
+- Create, extraction, summary, and learning-note write paths now dual-write
+  canonical content into `item_content` while preserving legacy `links`
+  compatibility columns.
+- Create and extraction write paths now dual-write owned `/uploads/...` assets
+  into `item_assets`; remote thumbnails remain link metadata only.
 
 ## Recommended Runtime
 
@@ -367,11 +372,9 @@ The previous backlog is closed for this checkpoint:
 
 Recommended next work after this checkpoint:
 
-1. Add write-path dual writes for new/updated content and owned upload assets
-   while keeping `links` compatibility columns intact.
-2. Add a canonical-only browser E2E configuration that runs assistant retrieval
+1. Add a canonical-only browser E2E configuration that runs assistant retrieval
    with `ASSISTANT_ENABLE_LEGACY_FALLBACK=0`.
-3. Continue route JSON error helper migration opportunistically in larger route
+2. Continue route JSON error helper migration opportunistically in larger route
    edits; avoid broad mechanical churn without behavior tests.
-4. Add an admin consistency report for items missing canonical documents,
+3. Add an admin consistency report for items missing canonical documents,
    content rows, or expected assets before retiring legacy storage paths.

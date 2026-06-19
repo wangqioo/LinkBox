@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { initJobSchema } from '../utils/jobQueue.js';
+import { initItemAssetSchema } from '../utils/itemAssetStore.js';
+import { initItemContentSchema } from '../utils/itemContentStore.js';
 import {
   createAudioItem,
   createFileItem,
@@ -47,6 +49,8 @@ function withDb(fn) {
       );
     `);
     initJobSchema(db);
+    initItemContentSchema(db);
+    initItemAssetSchema(db);
     db.prepare("INSERT INTO tags (id, user_id, name) VALUES (1, 5, 'AI'), (2, 5, 'Read')").run();
     return fn(db);
   } finally {
@@ -95,6 +99,7 @@ test('createTextItem saves text content and indexes the created link', () => wit
   assert.equal(result.link.type, 'text');
   assert.equal(result.link.title, 'Note');
   assert.equal(result.link.content, 'Body');
+  assert.equal(db.prepare('SELECT text_content FROM item_content WHERE item_id = ?').get(result.link.id).text_content, 'Body');
   assert.equal(result.link.processing.state, 'done');
   assert.equal(result.link.display.type, 'text');
   assert.deepEqual(result.link.tags.map(tag => tag.name), ['AI']);
@@ -149,6 +154,15 @@ test('createImageItem saves image metadata and returns image processing payload'
   assert.equal(result.link.processing.state, 'processing');
   assert.equal(result.link.display.type, 'image');
   assert.equal(result.link.display.primaryAssetUrl, '/uploads/a.png');
+  assert.deepEqual(
+    db.prepare('SELECT kind, public_path, disk_path, original_name FROM item_assets WHERE item_id = ?').get(result.link.id),
+    {
+      kind: 'image',
+      public_path: '/uploads/a.png',
+      disk_path: '/tmp/a.png',
+      original_name: 'photo.png',
+    },
+  );
   assert.deepEqual(result.processing, {
     linkId: result.link.id,
     diskPath: '/tmp/a.png',
@@ -168,6 +182,14 @@ test('createAudioItem saves audio uploads without background processing', () => 
   assert.equal(result.link.type, 'audio');
   assert.equal(result.link.title, '录音');
   assert.equal(result.link.image_path, '/uploads/a.wav');
+  assert.deepEqual(
+    db.prepare('SELECT kind, public_path, original_name FROM item_assets WHERE item_id = ?').get(result.link.id),
+    {
+      kind: 'audio',
+      public_path: '/uploads/a.wav',
+      original_name: 'a.wav',
+    },
+  );
   assert.equal(result.link.processing.state, 'done');
   assert.equal(result.link.display.type, 'audio');
   assert.deepEqual(result.link.tags.map(tag => tag.name), ['AI']);
@@ -192,6 +214,16 @@ test('createFileItem saves supported files as processing and returns extraction 
   assert.equal(result.link.status, 'processing');
   assert.equal(result.link.processing.state, 'processing');
   assert.equal(result.link.display.type, 'document');
+  assert.deepEqual(
+    db.prepare('SELECT kind, public_path, disk_path, original_name, size_bytes FROM item_assets WHERE item_id = ?').get(result.link.id),
+    {
+      kind: 'file',
+      public_path: '/uploads/report.html',
+      disk_path: '/tmp/report.html',
+      original_name: 'report.html',
+      size_bytes: 2048,
+    },
+  );
   assert.equal(result.link.display.status, 'processing');
   assert.deepEqual(result.processing, {
     linkId: result.link.id,

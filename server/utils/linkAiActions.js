@@ -8,6 +8,7 @@ import { extractPageMarkdown as defaultExtractPageMarkdown } from './extractCont
 import { generateLearningNote as defaultGenerateLearningNote } from './generateLearningNote.js';
 import { attachTags } from './linkCreateService.js';
 import { persistExtractedContent } from './extractedContentPersistence.js';
+import { upsertItemContent } from './itemContentStore.js';
 
 export class LinkActionError extends Error {
   constructor(status, message) {
@@ -44,6 +45,7 @@ export async function summarizeLinkItem(db, {
   if (!summary) throw new LinkActionError(400, '没有可摘要的内容');
 
   db.prepare('UPDATE links SET summary = ? WHERE id = ?').run(summary, link.id);
+  upsertItemContent(db, link.id, { summary });
   const updated = db.prepare('SELECT * FROM links WHERE id = ?').get(link.id);
   return { link: { ...updated, tags: attachTags(db, updated.id) } };
 }
@@ -96,5 +98,6 @@ export async function generateLinkLearningNote(db, {
 
   const html = await generateLearningNote(link.content_md, link.title, link.summary);
   db.prepare('UPDATE links SET html_note = ? WHERE id = ?').run(html, link.id);
+  upsertItemContent(db, link.id, { html_note: html });
   return { html_note: html };
 }

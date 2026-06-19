@@ -1,5 +1,7 @@
 import { indexLinkContent } from './chunkIndex.js';
 import { indexDocumentForItem } from './documentIndex.js';
+import { upsertItemAsset } from './itemAssetStore.js';
+import { upsertItemContent } from './itemContentStore.js';
 
 function linkColumns(db) {
   return new Set(db.prepare('PRAGMA table_info(links)').all().map(column => column.name));
@@ -71,6 +73,7 @@ export function persistExtractedContent(db, queue, {
       includeMarkdown: false,
       status: 'done',
     });
+    upsertItemContent(db, linkId, { html_note: rawHtml || '' });
     return { stored: false, document: null, summaryQueued: false };
   }
 
@@ -80,6 +83,15 @@ export function persistExtractedContent(db, queue, {
     rawHtml,
     thumbnail,
     includeMarkdown: true,
+  });
+  upsertItemContent(db, linkId, {
+    extracted_markdown: cleanMarkdown,
+    html_note: rawHtml || undefined,
+  });
+  upsertItemAsset(db, linkId, {
+    kind: 'thumbnail',
+    publicPath: thumbnail || '',
+    metadata: { source: 'persistExtractedContent.thumbnail' },
   });
 
   indexLink(linkId);

@@ -6,6 +6,8 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { initJobSchema } from '../utils/jobQueue.js';
 import { persistExtractedContent } from '../utils/extractedContentPersistence.js';
+import { initItemAssetSchema } from '../utils/itemAssetStore.js';
+import { initItemContentSchema } from '../utils/itemContentStore.js';
 
 async function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-extracted-content-test-'));
@@ -32,6 +34,8 @@ async function withDb(fn) {
       );
     `);
     initJobSchema(db);
+    initItemContentSchema(db);
+    initItemAssetSchema(db);
     db.prepare("INSERT INTO links (id, user_id, type, title) VALUES (1, 5, 'link', 'Article')").run();
     return await fn(db);
   } finally {
@@ -60,6 +64,10 @@ test('persistExtractedContent stores markdown and schedules summary work', () =>
   const row = db.prepare('SELECT content_md, status FROM links WHERE id = 1').get();
   assert.equal(row.content_md, '# Extracted\n\nBody');
   assert.equal(row.status, '');
+  assert.equal(
+    db.prepare('SELECT extracted_markdown FROM item_content WHERE item_id = 1').get().extracted_markdown,
+    '# Extracted\n\nBody',
+  );
   assert.deepEqual(indexed, [1]);
   assert.deepEqual(documents, [1]);
   assert.deepEqual(jobs.map(job => job.type), ['document.embed', 'link.summarize']);
@@ -82,6 +90,11 @@ test('persistExtractedContent stores raw html and thumbnail for file extraction'
   const row = db.prepare('SELECT html_note, thumbnail FROM links WHERE id = 1').get();
   assert.equal(row.html_note, '<h1>Original</h1>');
   assert.equal(row.thumbnail, '/uploads/slide.png');
+  assert.equal(db.prepare('SELECT html_note FROM item_content WHERE item_id = 1').get().html_note, '<h1>Original</h1>');
+  assert.deepEqual(
+    db.prepare('SELECT kind, public_path FROM item_assets WHERE item_id = 1').get(),
+    { kind: 'thumbnail', public_path: '/uploads/slide.png' },
+  );
   assert.equal(result.summaryQueued, false);
   assert.deepEqual(jobs, []);
 }));
@@ -112,6 +125,7 @@ test('persistExtractedContent preserves raw html when extracted markdown is empt
   const row = db.prepare('SELECT html_note, status FROM links WHERE id = 1').get();
   assert.equal(row.html_note, '<article>Original</article>');
   assert.equal(row.status, 'done');
+  assert.equal(db.prepare('SELECT html_note FROM item_content WHERE item_id = 1').get().html_note, '<article>Original</article>');
   assert.equal(result.stored, false);
   assert.deepEqual(jobs, []);
 }));
