@@ -1,5 +1,6 @@
 import { initJobSchema } from './jobQueue.js';
 import { initDocumentSchema } from './documentIndex.js';
+import { backfillItemContent } from './itemContentStore.js';
 
 const MIGRATIONS = [
   {
@@ -32,6 +33,12 @@ const MIGRATIONS = [
     name: '004_document_schema',
     up(db) {
       initDocumentSchema(db);
+    },
+  },
+  {
+    name: '005_item_content_schema',
+    up(db) {
+      backfillItemContent(db);
     },
   },
 ];

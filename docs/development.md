@@ -96,6 +96,9 @@ At this checkpoint:
 - Legacy `link_chunks` fallback can be disabled with
   `ASSISTANT_ENABLE_LEGACY_FALLBACK=0` while canonical `document_chunks`
   retrieval remains active.
+- `item_content` is now created by migration `005_item_content_schema` and
+  backfilled from legacy `links.content`, `links.content_md`, `links.summary`,
+  and `links.html_note` rows that contain content.
 
 ## Recommended Runtime
 
@@ -358,12 +361,14 @@ The previous backlog is closed for this checkpoint:
 
 Recommended next work after this checkpoint:
 
-1. Implement the first `item_content` migration from
-   [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md)
-   with backfill tests against legacy `links` rows.
-2. Add a canonical-only browser E2E configuration that runs assistant retrieval
+1. Add the `item_assets` migration/backfill slice from
+   [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md),
+   starting with owned upload/image paths and tests against legacy rows.
+2. Add repository helpers that read content from `item_content` and fall back to
+   legacy `links` columns for rows that predate the backfill.
+3. Add a canonical-only browser E2E configuration that runs assistant retrieval
    with `ASSISTANT_ENABLE_LEGACY_FALLBACK=0`.
-3. Continue route JSON error helper migration opportunistically in larger route
+4. Continue route JSON error helper migration opportunistically in larger route
    edits; avoid broad mechanical churn without behavior tests.
-4. Add an admin consistency report for items missing canonical documents,
+5. Add an admin consistency report for items missing canonical documents,
    content rows, or expected assets before retiring legacy storage paths.
