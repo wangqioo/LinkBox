@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import Database from 'better-sqlite3';
-import { mkdtempSync, rmSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, mkdtempSync, rmSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { generateToken } from '../middleware/auth.js';
 import { createJobQueue } from '../utils/jobQueue.js';
 import { setRuntimeQueue } from '../utils/runtimeQueue.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function withSettingsApp(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-settings-system-test-'));
@@ -88,6 +90,13 @@ function seedFailedJob(db, { id, type, linkId, attempts, maxAttempts, lastError,
     VALUES (?, ?, ?, '{}', 'failed', ?, ?, ?, ?)
   `).run(id, type, linkId, attempts, maxAttempts, lastError, updatedAt);
 }
+
+test('settings route uses centralized JSON error helpers', () => {
+  const routeSource = readFileSync(join(__dirname, '../routes/settings.js'), 'utf8');
+
+  assert.match(routeSource, /jsonError/);
+  assert.doesNotMatch(routeSource, /res\.status\([^)]*\)\.json\(\{\s*error:/);
+});
 
 test('GET /api/settings/system returns bounded recent failed jobs', async () => withSettingsApp(async ({ db, baseUrl, adminHeaders }) => {
   seedLink(db, 101);

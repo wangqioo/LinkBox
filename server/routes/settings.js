@@ -11,10 +11,11 @@ import {
   getDocumentMaintenanceStats,
   reindexAllDocuments,
 } from '../utils/documentMaintenance.js';
+import { errorPayload, httpError, jsonError } from '../utils/appError.js';
 
 // Only admin (user id=1) can manage settings
 function requireAdmin(req, res, next) {
-  if (req.userId !== 1) return res.status(403).json({ error: '仅管理员可操作' });
+  if (req.userId !== 1) return jsonError(res, httpError(403, '仅管理员可操作'), '权限不足');
   next();
 }
 
@@ -69,7 +70,7 @@ router.put('/ai', authMiddleware, requireAdmin, (req, res) => {
     const config = updateAIConfig(req.body || {});
     res.json({ ok: true, config });
   } catch (e) {
-    res.status(400).json({ error: e.message || 'AI 配置无效' });
+    jsonError(res, httpError(400, e.message || 'AI 配置无效'), 'AI 配置无效');
   }
 });
 
@@ -79,7 +80,8 @@ router.post('/ai/test', authMiddleware, requireAdmin, async (req, res) => {
     const result = await testAIConfig(req.body || {});
     res.json(result);
   } catch (e) {
-    res.status(400).json({ ok: false, error: e.message || 'AI 接口测试失败' });
+    const payload = errorPayload(httpError(400, e.message || 'AI 接口测试失败'), 'AI 接口测试失败');
+    res.status(payload.status).json({ ok: false, ...payload.body });
   }
 });
 
@@ -94,7 +96,7 @@ router.put('/embeddings', authMiddleware, requireAdmin, (req, res) => {
     const config = updateEmbeddingConfig(req.body || {});
     res.json({ ok: true, config });
   } catch (e) {
-    res.status(400).json({ error: e.message || 'Embedding settings are invalid' });
+    jsonError(res, httpError(400, e.message || 'Embedding settings are invalid'), 'Embedding settings are invalid');
   }
 });
 
@@ -104,7 +106,8 @@ router.post('/embeddings/test', authMiddleware, requireAdmin, async (req, res) =
     const result = await testEmbeddingConfig(req.body || {});
     res.json(result);
   } catch (e) {
-    res.status(400).json({ ok: false, error: e.message || 'Embedding endpoint test failed' });
+    const payload = errorPayload(httpError(400, e.message || 'Embedding endpoint test failed'), 'Embedding endpoint test failed');
+    res.status(payload.status).json({ ok: false, ...payload.body });
   }
 });
 
@@ -208,10 +211,10 @@ router.post('/system/retry-failed-jobs', authMiddleware, requireAdmin, (req, res
 router.put('/', authMiddleware, requireAdmin, (req, res) => {
   const updates = req.body;
   if (!updates || typeof updates !== 'object') {
-    return res.status(400).json({ error: '参数格式错误' });
+    return jsonError(res, httpError(400, '参数格式错误'), '保存设置失败');
   }
   if (Object.keys(updates).some(isReservedSettingKey)) {
-    return res.status(400).json({ error: 'AI 和 Embedding 配置请使用专用接口' });
+    return jsonError(res, httpError(400, 'AI 和 Embedding 配置请使用专用接口'), '保存设置失败');
   }
   const upsert = database.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
   const tx = database.transaction((entries) => {

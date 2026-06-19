@@ -119,6 +119,9 @@ At this checkpoint:
   canonical documents, missing `item_content` rows, and missing `item_assets`
   rows. The settings page surfaces counts and bounded samples before legacy
   storage paths are retired.
+- The settings route now uses the shared route JSON error helper for expected
+  admin permission and validation failures while preserving existing response
+  messages and `ok: false` test-endpoint shapes.
 
 ## Recommended Runtime
 
