@@ -8,6 +8,7 @@ import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { extractPageMarkdown } from '../utils/extractContent.js';
 import { indexLinkContent, removeLinkContentIndex } from '../utils/chunkIndex.js';
+import { indexDocumentForItem } from '../utils/documentIndex.js';
 import { attachProcessingStatus } from '../utils/itemProcessingStatus.js';
 import { createAudioItem, createTextItem } from '../utils/linkCreateService.js';
 import { summarizeLinkItem } from '../utils/linkAiActions.js';
@@ -74,6 +75,11 @@ function uploadedDiskPath(link) {
 function refreshLinkIndex(linkId) {
   removeLinkContentIndex(linkId);
   return indexLinkContent(linkId);
+}
+
+function refreshItemAiIndexes(linkId) {
+  refreshLinkIndex(linkId);
+  indexDocumentForItem(db, linkId);
 }
 
 router.post('/upload', upload.single('file'), async (req, res) => {
@@ -256,6 +262,7 @@ router.put('/:id/comment', (req, res) => {
   const result = db.prepare('UPDATE links SET comment = ? WHERE id = ? AND user_id = ?')
     .run(comment, req.params.id, req.userId);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  refreshItemAiIndexes(req.params.id);
   res.json(getMobileFileForUser(req.params.id, req.userId));
 });
 

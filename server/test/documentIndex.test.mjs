@@ -70,6 +70,19 @@ test('buildCanonicalMarkdown wraps item markdown with stable source metadata', (
   assert.match(markdown, /# Example Post\n\n## Notes\n\nMain body/);
 });
 
+test('buildCanonicalMarkdown includes user comments as first-class notes', () => {
+  const markdown = buildCanonicalMarkdown({
+    id: 10,
+    type: 'image',
+    title: 'Design Photo',
+    comment: '这里要重点关注左上角的按钮文案',
+    summary: '一张界面截图',
+  });
+
+  assert.match(markdown, /## 我的留言\n\n这里要重点关注左上角的按钮文案/);
+  assert.match(markdown, /## 内容\n\n一张界面截图/);
+});
+
 test('splitMarkdownIntoSemanticChunks keeps heading paths and chunk types', () => {
   const chunks = splitMarkdownIntoSemanticChunks(`# Root
 

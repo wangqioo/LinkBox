@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   inferImagePromptType,
   isLocalVisionConfig,
+  promptCacheType,
   promptForImageType,
 } from '../utils/imageVisionService.js';
 
@@ -32,7 +33,16 @@ test('inferImagePromptType chooses specialized prompts from filenames', () => {
 });
 
 test('promptForImageType returns conservative instructions', () => {
-  assert.match(promptForImageType('screenshot'), /visible text/);
-  assert.match(promptForImageType('document'), /unclear/);
-  assert.match(promptForImageType('photo'), /Do not invent/);
+  for (const type of ['screenshot', 'document', 'photo']) {
+    const prompt = promptForImageType(type);
+    assert.match(prompt, /只能使用中文/);
+    assert.doesNotMatch(prompt, /Return concise Chinese|Analyze this image/);
+  }
+  assert.match(promptForImageType('screenshot'), /界面结构/);
+  assert.match(promptForImageType('document'), /看不清/);
+  assert.match(promptForImageType('photo'), /不要编造/);
+});
+
+test('promptCacheType versions cached image descriptions when prompt language changes', () => {
+  assert.equal(promptCacheType('photo'), 'photo.zh-v2');
 });

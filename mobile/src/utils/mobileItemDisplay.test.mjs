@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   commentPreviewText,
+  shouldCloseCommentSheet,
   fileIcon,
   fileLabel,
   fileTypeBackground,
@@ -37,4 +38,10 @@ test('commentPreviewText trims blank comments for feed display', () => {
   assert.equal(commentPreviewText(''), '');
   assert.equal(commentPreviewText('   \n  '), '');
   assert.equal(commentPreviewText('  第一行\n\n第二行  '), '第一行\n第二行');
+});
+
+test('shouldCloseCommentSheet allows save success to close while blocking cancel during save', () => {
+  assert.equal(shouldCloseCommentSheet({ saving: false }), true);
+  assert.equal(shouldCloseCommentSheet({ saving: true }), false);
+  assert.equal(shouldCloseCommentSheet({ saving: true, force: true }), true);
 });

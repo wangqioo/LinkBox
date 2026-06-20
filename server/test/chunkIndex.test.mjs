@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rankChunkRows, scoreChunkForQuery, scoreTextFields, splitIntoChunks, tokenizeQuery } from '../utils/chunkIndex.js';
+import Database from 'better-sqlite3';
+import { mkdtempSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { indexLinkContent, rankChunkRows, scoreChunkForQuery, scoreTextFields, splitIntoChunks, tokenizeQuery } from '../utils/chunkIndex.js';
 
 test('splitIntoChunks preserves short paragraphs as one chunk', () => {
   const chunks = splitIntoChunks('第一段\n\n第二段');
@@ -80,4 +84,41 @@ test('scoreTextFields applies field weights consistently', () => {
   );
 
   assert.ok(titleScore > contentScore);
+});
+
+test('indexLinkContent includes user comments in legacy chunks', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'linkbox-chunk-index-test-'));
+  const db = new Database(join(dir, 'test.db'));
+  try {
+    db.exec(`
+      CREATE TABLE links (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title TEXT DEFAULT '',
+        summary TEXT DEFAULT '',
+        comment TEXT DEFAULT '',
+        content TEXT DEFAULT '',
+        content_md TEXT DEFAULT ''
+      );
+      CREATE TABLE link_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        link_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        text TEXT NOT NULL
+      );
+    `);
+    db.prepare(`
+      INSERT INTO links (id, user_id, title, summary, comment, content_md)
+      VALUES (1, 5, '图片资料', '图片摘要', '我的留言很重要', '图片正文')
+    `).run();
+
+    indexLinkContent(1, db);
+
+    const chunk = db.prepare('SELECT text FROM link_chunks WHERE link_id = 1').get();
+    assert.match(chunk.text, /我的留言：我的留言很重要/);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -49,12 +49,13 @@ export function splitIntoChunks(text) {
 }
 
 export function indexLinkContent(linkId, database = db) {
-  const link = database.prepare('SELECT id, user_id, title, summary, content, content_md FROM links WHERE id = ?').get(linkId);
+  const link = database.prepare('SELECT id, user_id, title, summary, comment, content, content_md FROM links WHERE id = ?').get(linkId);
   if (!link) return 0;
 
   const body = [
     link.title ? `# ${link.title}` : '',
     link.summary ? `摘要：${link.summary}` : '',
+    link.comment ? `我的留言：${link.comment}` : '',
     link.content_md || link.content || '',
   ].filter(Boolean).join('\n\n');
 

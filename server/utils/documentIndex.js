@@ -107,6 +107,11 @@ function bodyMarkdownForItem(item) {
   return '';
 }
 
+function itemCommentMarkdown(item) {
+  const comment = String(item.comment || '').trim();
+  return comment ? `## 我的留言\n\n${comment}` : '';
+}
+
 export function buildCanonicalMarkdown(item) {
   const title = item.title || item.url || `Item ${item.id}`;
   const body = bodyMarkdownForItem(item);
@@ -123,7 +128,16 @@ export function buildCanonicalMarkdown(item) {
 
   const titleHeading = `# ${title}`;
   const normalizedBody = body.replace(/^\s*#\s+.+\n*/, '').trim();
-  return `${frontmatter}\n\n${titleHeading}${normalizedBody ? `\n\n${normalizedBody}` : ''}\n`;
+  const commentSection = itemCommentMarkdown(item);
+  let bodySection = normalizedBody;
+  if (commentSection && normalizedBody && !isHeading(normalizedBody.split(/\r?\n/, 1)[0] || '')) {
+    bodySection = `## 内容\n\n${normalizedBody}`;
+  }
+  const sections = [
+    commentSection,
+    bodySection,
+  ].filter(Boolean).join('\n\n');
+  return `${frontmatter}\n\n${titleHeading}${sections ? `\n\n${sections}` : ''}\n`;
 }
 
 function isHeading(line) {

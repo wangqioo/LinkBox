@@ -94,3 +94,29 @@ test('mobile upload guards generic URLs and queues allowed Bilibili share links'
     title: '',
   });
 }));
+
+test('mobile comment updates refresh AI indexes for the item', async () => withMobileFilesApp(async ({ db, baseUrl, authHeaders }) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, summary, content_md, imported_at, status)
+    VALUES (30, 7, 'image', '图片资料', '旧摘要', '图片原文', '2026-06-21T00:00:00.000Z', 'done')
+  `).run();
+
+  const response = await fetch(`${baseUrl}/api/mobile/files/30/comment`, {
+    method: 'PUT',
+    headers: {
+      ...authHeaders,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ comment: '这张图后续要重点分析左上角按钮' }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.comment, '这张图后续要重点分析左上角按钮');
+
+  const legacyChunk = db.prepare('SELECT text FROM link_chunks WHERE link_id = 30').get();
+  assert.match(legacyChunk.text, /这张图后续要重点分析左上角按钮/);
+
+  const document = db.prepare('SELECT markdown FROM documents WHERE item_id = 30').get();
+  assert.match(document.markdown, /## 我的留言\n\n这张图后续要重点分析左上角按钮/);
+}));

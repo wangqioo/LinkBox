@@ -385,7 +385,7 @@ import ImageBatchCard from '../components/ImageBatchCard.vue'
 import { useTheme } from '../composables/useTheme'
 import { groupImageBatches } from '../utils/imageBatchGallery'
 import { getAutoProcessLinkUrl } from '../utils/linkAutoProcess'
-import { commentPreviewText, fileIcon, fileLabel, fileTypeBackground, isLinkLikeType } from '../utils/mobileItemDisplay'
+import { commentPreviewText, fileIcon, fileLabel, fileTypeBackground, isLinkLikeType, shouldCloseCommentSheet } from '../utils/mobileItemDisplay'
 import { mobileProcessingText } from '../utils/mobileProcessingStatus'
 import { buildTodayDigest, organizeFile } from '../utils/mobileOrganizer'
 
@@ -870,8 +870,8 @@ function openCommentSheet(f) {
   commentDraft.value = f.comment || ''
 }
 
-function closeCommentSheet() {
-  if (savingComment.value) return
+function closeCommentSheet({ force = false } = {}) {
+  if (!shouldCloseCommentSheet({ saving: savingComment.value, force })) return
   commentTarget.value = null
   commentDraft.value = ''
 }
@@ -894,7 +894,7 @@ async function saveComment() {
   try {
     const updated = await updateComment(commentTarget.value.id, commentDraft.value)
     applyUpdatedComment(updated)
-    closeCommentSheet()
+    closeCommentSheet({ force: true })
   } finally {
     savingComment.value = false
   }

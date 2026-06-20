@@ -90,26 +90,33 @@ export function inferImagePromptType({ originalName = '', filePath = '' } = {}) 
 export function promptForImageType(promptType = 'photo') {
   if (promptType === 'screenshot') {
     return [
-      'Analyze this screenshot for LinkBox.',
-      'Return concise Chinese.',
-      'Prioritize visible text, UI structure, key numbers, buttons, errors, and user intent.',
-      'Do not invent hidden content.',
+      '请为 LinkBox 分析这张截图。',
+      '只能使用中文回答，不要输出英文句子。',
+      '优先提取可见文字、界面结构、关键数字、按钮、错误信息和用户意图。',
+      '不要编造看不见的内容。',
+      '用 1 到 3 句简短中文概括。',
     ].join(' ');
   }
   if (promptType === 'document') {
     return [
-      'Analyze this document-like image for LinkBox.',
-      'Return concise Chinese.',
-      'Extract visible titles, fields, dates, amounts, names, and important text.',
-      'If text is unclear, say it is unclear instead of guessing.',
+      '请为 LinkBox 分析这张文档类图片。',
+      '只能使用中文回答，不要输出英文句子。',
+      '提取可见标题、字段、日期、金额、姓名和重要文字。',
+      '如果文字看不清，请直接说明“文字看不清”，不要猜测。',
+      '用 1 到 3 句简短中文概括。',
     ].join(' ');
   }
   return [
-    'Analyze this image for LinkBox.',
-    'Return concise Chinese.',
-    'Describe the main subject, scene, visible text, and useful details in 1-3 short sentences.',
-    'Do not invent details that are not visible.',
+    '请为 LinkBox 分析这张图片。',
+    '只能使用中文回答，不要输出英文句子。',
+    '描述主体、场景、可见文字和有用细节。',
+    '不要编造看不见的细节。',
+    '用 1 到 3 句简短中文概括。',
   ].join(' ');
+}
+
+export function promptCacheType(promptType = 'photo') {
+  return `${promptType || 'photo'}.zh-v2`;
 }
 
 function getCachedDescription({ imageHash, promptType, model }, database) {
@@ -214,9 +221,10 @@ export async function describeImage(localPath, {
   const useLocalOptimizations = isLocalVisionConfig(aiConfig);
   const model = aiConfig.visionModel || aiConfig.model;
   const imageHash = hashFile(localPath);
+  const cachePromptType = promptCacheType(promptType);
   if (useLocalOptimizations) {
     initImageVisionSchema(activeDb);
-    const cached = getCachedDescription({ imageHash, promptType, model }, activeDb);
+    const cached = getCachedDescription({ imageHash, promptType: cachePromptType, model }, activeDb);
     if (cached !== undefined) return cached;
   }
 
@@ -270,7 +278,7 @@ export async function describeImage(localPath, {
     if (useLocalOptimizations) {
       saveCachedDescription({
         imageHash,
-        promptType,
+        promptType: cachePromptType,
         model,
         description,
         sourceBytes: prepared.sourceBytes,

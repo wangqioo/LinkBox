@@ -68,3 +68,7 @@ export function commentPreviewText(comment) {
     .filter(Boolean)
     .join('\n');
 }
+
+export function shouldCloseCommentSheet({ saving = false, force = false } = {}) {
+  return Boolean(force) || !saving;
+}
