@@ -1,12 +1,4 @@
-const TYPE_LABELS = {
-  image: '图片',
-  video: '视频',
-  document: '文档',
-  audio: '音频',
-  link: '链接',
-  text: '文字',
-  other: '资料',
-}
+import { fileLabel, isLinkLikeType } from './mobileItemDisplay.js'
 
 const TOPIC_RULES = [
   { label: 'LinkBox', weight: 2, terms: ['linkbox', '知识库', '收集', '整理', '文件传输助手', '资料助理'] },
@@ -51,8 +43,9 @@ function matchRule(text, rules, fallback, { boostLabel = true } = {}) {
 
 export function organizeFile(file) {
   const text = textOf(file)
-  const topic = matchRule(text, TOPIC_RULES, TYPE_LABELS[file?.type] || '临时资料')
-  const kind = matchRule(text, KIND_RULES, TYPE_LABELS[file?.type] || '资料', { boostLabel: false })
+  const typeLabel = file?.type ? fileLabel(file.type) : '资料'
+  const topic = matchRule(text, TOPIC_RULES, typeLabel || '临时资料')
+  const kind = matchRule(text, KIND_RULES, typeLabel || '资料', { boostLabel: false })
   const action = KIND_RULES[0].terms.some(term => text.includes(term.toLowerCase()))
 
   return {
@@ -60,7 +53,7 @@ export function organizeFile(file) {
     kind,
     tags: [topic, kind].filter((value, index, arr) => value && arr.indexOf(value) === index).slice(0, 2),
     action,
-    confidence: topic === (TYPE_LABELS[file?.type] || '临时资料') ? 'low' : 'medium',
+    confidence: topic === (typeLabel || '临时资料') ? 'low' : 'medium',
   }
 }
 
@@ -87,7 +80,7 @@ export function buildTodayDigest(files, now = new Date()) {
 
   const actions = enriched.filter(item => item.org.action).slice(0, 4)
   const reading = enriched
-    .filter(item => ['link', 'document'].includes(item.file.type) || item.org.kind === '阅读')
+    .filter(item => isLinkLikeType(item.file.type) || item.file.type === 'document' || item.org.kind === '阅读')
     .slice(0, 4)
 
   return {

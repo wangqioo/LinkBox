@@ -2,14 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, type AdminUserDetail, type AdminUserSummary } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { AlertCircle, Loader2, RefreshCcw, UserRound } from 'lucide-react';
+import { getItemTypeLabel } from '../components/itemDisplay';
 
-const TYPE_LABELS: Record<string, string> = {
-  link: '链接',
-  text: '文本',
-  image: '图片',
-  audio: '录音',
-  file: '文件',
-};
+const ADMIN_TYPE_KEYS = ['link', 'article', 'video', 'text', 'image', 'audio', 'document'];
 
 function formatDate(value?: string | null) {
   if (!value) return '-';
@@ -25,8 +20,8 @@ function formatDate(value?: string | null) {
 }
 
 function typeSummary(stats: Record<string, number>) {
-  return Object.entries(TYPE_LABELS)
-    .map(([key, label]) => `${label} ${stats[key] || 0}`)
+  return ADMIN_TYPE_KEYS
+    .map(key => `${getItemTypeLabel(key) || key} ${stats[key] || 0}`)
     .join(' / ');
 }
 
@@ -201,9 +196,9 @@ export default function AdminUsersPage() {
               <div>
                 <h2 className="text-sm font-semibold">类型分布</h2>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  {Object.entries(TYPE_LABELS).map(([key, label]) => (
+                  {ADMIN_TYPE_KEYS.map(key => (
                     <div key={key} className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800">
-                      <span className="text-gray-500">{label}</span>
+                      <span className="text-gray-500">{getItemTypeLabel(key) || key}</span>
                       <span className="font-medium">{detail.stats.by_type[key] || 0}</span>
                     </div>
                   ))}
@@ -217,7 +212,7 @@ export default function AdminUsersPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 font-medium truncate">{item.title || item.url || `记录 ${item.id}`}</div>
                         <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                          {TYPE_LABELS[item.type] || item.type || '链接'}
+                          {getItemTypeLabel(item.type) || item.type || '链接'}
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-gray-400">{formatDate(item.imported_at || item.created_at)}</div>

@@ -70,6 +70,36 @@ test('deriveProcessingDisplay falls back to legacy extraction and summary states
   });
 });
 
+test('deriveProcessingDisplay uses video wording for Bilibili fallback processing', () => {
+  assert.deepEqual(deriveProcessingDisplay({
+    status: 'processing',
+    itemType: 'link',
+    url: 'https://www.bilibili.com/video/BV1GDjB66EE9/',
+    hasMarkdown: false,
+    hasSummary: false,
+  }), {
+    kind: 'active',
+    text: '正在处理视频...',
+    step: 1,
+    canRetry: false,
+  });
+});
+
+test('deriveProcessingDisplay uses video wording for normalized video items', () => {
+  assert.deepEqual(deriveProcessingDisplay({
+    status: 'processing',
+    itemType: 'video',
+    url: 'https://b23.tv/abc123',
+    hasMarkdown: false,
+    hasSummary: false,
+  }), {
+    kind: 'active',
+    text: '正在处理视频...',
+    step: 1,
+    canRetry: false,
+  });
+});
+
 test('deriveProcessingDisplay returns null for completed items', () => {
   assert.equal(deriveProcessingDisplay({
     status: 'done',

@@ -1,3 +1,6 @@
+export { getAutoProcessLinkUrl } from './sourceKind.ts';
+import { isVideoSourceUrl } from './sourceKind.ts';
+
 export function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
   if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
@@ -12,6 +15,10 @@ export function formatSize(bytes: number): string {
 
 export function isUrl(text: string) {
   return /^https?:\/\/.+/i.test(text.trim());
+}
+
+export function isBilibiliVideoUrl(value: string) {
+  return isVideoSourceUrl(value);
 }
 
 export function nowLocal() {

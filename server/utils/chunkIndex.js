@@ -1,4 +1,5 @@
 import db from '../db.js';
+import { sqlConditionForItemKind } from './itemKind.js';
 import { addTimeScopeConditions, normalizeTimeScope } from './timeScope.js';
 import { scoreTextFields, tokenizeQuery } from './textScoring.js';
 
@@ -159,15 +160,16 @@ function normalizeScope(scope = {}) {
   const type = String(scope.type || '').trim();
   return {
     ...normalizeTimeScope(scope),
-    type: type === 'document' ? 'file' : type,
+    type,
   };
 }
 
 function scopeWhere(scope, params) {
   const conditions = addTimeScopeConditions(scope, params, 'l.imported_at');
   if (scope.type) {
-    conditions.push('l.type = ?');
-    params.push(scope.type);
+    const condition = sqlConditionForItemKind(scope.type, 'l');
+    conditions.push(condition.sql);
+    params.push(...condition.params);
   }
   return conditions;
 }

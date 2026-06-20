@@ -96,6 +96,7 @@ test('acceptLinkItem saves a processing item and schedules metadata extraction',
     options: {
       linkId: result.link.id,
       payload: { url: 'https://example.com', title: '' },
+      maxAttempts: 3,
     },
   }]);
 }));
@@ -124,6 +125,7 @@ test('acceptImageItem schedules image description and can drain immediately', ()
     options: {
       linkId: result.link.id,
       payload: { diskPath: '/tmp/photo.png' },
+      maxAttempts: 3,
     },
   }]);
 }));
@@ -159,6 +161,7 @@ test('acceptFileItem only schedules extraction for supported files', () => withD
         originalName: 'report.html',
         isHtml: true,
       },
+      maxAttempts: 3,
     },
   }]);
 }));
@@ -222,6 +225,7 @@ test('scheduleItemProcessing marks an existing item processing and enqueues the 
       options: {
         linkId: 1,
         payload: { url: 'https://example.com', title: '' },
+        maxAttempts: 3,
       },
     },
     {
@@ -233,6 +237,7 @@ test('scheduleItemProcessing marks an existing item processing and enqueues the 
           originalName: 'report.html',
           isHtml: true,
         },
+        maxAttempts: 3,
       },
     },
   ]);

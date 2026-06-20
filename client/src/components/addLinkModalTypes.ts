@@ -6,7 +6,7 @@ export interface Tag {
   color: string;
 }
 
-export type ContentType = 'link' | 'image' | 'text' | 'audio' | 'file';
+export type ContentType = 'link' | 'video' | 'image' | 'text' | 'audio' | 'file';
 
 export interface AddLinkModalProps {
   open: boolean;

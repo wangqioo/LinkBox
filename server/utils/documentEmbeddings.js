@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { initDocumentSchema } from './documentIndex.js';
 import { scoreTextFields, tokenizeQuery } from './chunkIndex.js';
+import { sqlConditionForItemKind } from './itemKind.js';
 import { addTimeScopeConditions } from './timeScope.js';
 
 export const LOCAL_EMBEDDING_PROVIDER = 'local';
@@ -259,8 +260,9 @@ function scopeConditions(scope, params) {
   const conditions = ['d.user_id = ?'];
   conditions.push(...addTimeScopeConditions(scope, params, 'l.imported_at'));
   if (scope.type) {
-    conditions.push('l.type = ?');
-    params.push(scope.type === 'document' ? 'file' : scope.type);
+    const condition = sqlConditionForItemKind(scope.type, 'l');
+    conditions.push(condition.sql);
+    params.push(...condition.params);
   }
   return conditions;
 }

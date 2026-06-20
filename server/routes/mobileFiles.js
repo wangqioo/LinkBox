@@ -11,8 +11,10 @@ import { indexLinkContent, removeLinkContentIndex } from '../utils/chunkIndex.js
 import { attachProcessingStatus } from '../utils/itemProcessingStatus.js';
 import { createAudioItem, createTextItem } from '../utils/linkCreateService.js';
 import { summarizeLinkItem } from '../utils/linkAiActions.js';
+import { getAutoProcessLinkUrl } from '../utils/linkAutoProcess.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { toMobileFile } from '../utils/mobileFilePresenter.js';
+import { buildMobileFilesListQuery, buildMobileFilesSearchQuery } from '../utils/mobileFilesQuery.js';
 import { normalizeUploadedAsset } from '../utils/uploadedAsset.js';
 import {
   acceptFileItem,
@@ -123,12 +125,23 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
   const url = String(req.body?.url || '').trim();
   if (url) {
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return res.status(400).json({ error: 'Please enter a valid URL' });
+    const autoUrl = getAutoProcessLinkUrl(url);
+    if (!autoUrl) {
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return res.status(400).json({ error: 'Please enter a valid URL' });
+      }
+      const { link } = createTextItem(db, {
+        userId: req.userId,
+        title: url.slice(0, 80),
+        content: url,
+        importedAt,
+        indexLink: refreshLinkIndex,
+      });
+      return res.json(getMobileFileForUser(link.id, req.userId));
     }
     const { link } = acceptLinkItem(db, queue, {
       userId: req.userId,
-      url,
+      url: autoUrl,
       importedAt,
       drain: analyzeNow,
     });
@@ -152,27 +165,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 });
 
 router.get('/', (req, res) => {
-  const { date, type, limit = 500, offset = 0 } = req.query;
-  const params = [req.userId];
-  const conditions = ['user_id = ?'];
-
-  if (date) {
-    conditions.push('substr(imported_at, 1, 10) = ?');
-    params.push(String(date));
-  }
-  if (type) {
-    const mapped = type === 'document' ? 'file' : String(type);
-    conditions.push('type = ?');
-    params.push(mapped);
-  }
-
-  params.push(Number(limit), Number(offset));
-  const rows = db.prepare(`
-    SELECT * FROM links
-    WHERE ${conditions.join(' AND ')}
-    ORDER BY id DESC
-    LIMIT ? OFFSET ?
-  `).all(...params);
+  const query = buildMobileFilesListQuery({ userId: req.userId, query: req.query });
+  const rows = db.prepare(query.sql).all(...query.params);
 
   res.json(rowsToMobileFiles(rows));
 });
@@ -181,26 +175,8 @@ router.get('/search', (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.status(400).json({ error: 'Query cannot be empty' });
 
-  const params = [req.userId];
-  const conditions = ['user_id = ?'];
-  if (req.query.date) {
-    conditions.push('substr(imported_at, 1, 10) = ?');
-    params.push(String(req.query.date));
-  }
-  if (req.query.type) {
-    conditions.push('type = ?');
-    params.push(req.query.type === 'document' ? 'file' : String(req.query.type));
-  }
-  const like = `%${q}%`;
-  conditions.push('(title LIKE ? OR url LIKE ? OR description LIKE ? OR content LIKE ? OR content_md LIKE ? OR summary LIKE ?)');
-  params.push(like, like, like, like, like, like);
-
-  const rows = db.prepare(`
-    SELECT * FROM links
-    WHERE ${conditions.join(' AND ')}
-    ORDER BY id DESC
-    LIMIT 50
-  `).all(...params);
+  const query = buildMobileFilesSearchQuery({ userId: req.userId, query: req.query });
+  const rows = db.prepare(query.sql).all(...query.params);
 
   res.json({
     query: q,

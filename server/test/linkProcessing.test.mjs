@@ -27,6 +27,7 @@ test('enqueueLinkProcessing schedules metadata job with link url and optional ti
       url: 'https://example.com/article',
       title: 'Example title',
     },
+    maxAttempts: 3,
   }]);
 });
 
@@ -47,6 +48,7 @@ test('enqueueImageProcessing schedules image description job', () => {
     type: 'image.describe',
     linkId: 321,
     payload: { diskPath: '/tmp/uploaded.png' },
+    maxAttempts: 3,
   }]);
 });
 
@@ -73,5 +75,6 @@ test('enqueueFileProcessing schedules file extraction job', () => {
       originalName: 'note.html',
       isHtml: true,
     },
+    maxAttempts: 3,
   }]);
 });

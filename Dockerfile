@@ -51,6 +51,15 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends ca-certificates unzip poppler-utils libreoffice; \
     rm -rf /var/lib/apt/lists/*
 
+RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i 's/deb.debian.org/mirrors.aliyun.com/g; s/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ffmpeg python3-pip; \
+    rm -rf /var/lib/apt/lists/*; \
+    pip3 install --break-system-packages --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple yt-dlp
+
 COPY server/ ./server/
 COPY --from=server-deps /app/server/node_modules ./server/node_modules
 COPY --from=client-builder /app/client/dist ./client/dist

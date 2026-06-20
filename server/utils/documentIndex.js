@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { scoreTextFields, tokenizeQuery } from './textScoring.js';
+import { sqlConditionForItemKind } from './itemKind.js';
 import { addTimeScopeConditions } from './timeScope.js';
 
 export const DOCUMENT_PARSER_VERSION = 'linkbox-canonical-v1';
@@ -361,8 +362,9 @@ export function searchDocumentChunks({ db, userId, query, limit = 12, scope = {}
 
   conditions.push(...addTimeScopeConditions(scope, params, 'l.imported_at'));
   if (scope.type) {
-    conditions.push('l.type = ?');
-    params.push(scope.type === 'document' ? 'file' : scope.type);
+    const condition = sqlConditionForItemKind(scope.type, 'l');
+    conditions.push(condition.sql);
+    params.push(...condition.params);
   }
 
   const rows = db.prepare(`

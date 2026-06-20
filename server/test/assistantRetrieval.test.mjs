@@ -170,6 +170,52 @@ orchid-matrix canonical content`);
   }
 }));
 
+test('retrieveSources applies normalized video scope to legacy chunk fallback', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
+    VALUES
+      (1, 5, 'link', 'https://b23.tv/abc123', 'Video Legacy', '', '2026-06-10T00:00:00.000Z', ''),
+      (2, 5, 'link', 'https://example.com/plain', 'Plain Legacy', '', '2026-06-11T00:00:00.000Z', '')
+  `).run();
+  db.prepare(`
+    INSERT INTO link_chunks (link_id, user_id, chunk_index, text)
+    VALUES
+      (1, 5, 0, 'hamburger transcript legacy chunk'),
+      (2, 5, 0, 'hamburger plain legacy chunk')
+  `).run();
+
+  const sources = retrieveSources({
+    db,
+    userId: 5,
+    question: 'hamburger legacy',
+    task: 'ask',
+    scope: { type: 'video' },
+    maxSources: 4,
+  });
+
+  assert.deepEqual(sources.map(source => source.id), [1]);
+}));
+
+test('retrieveSources applies normalized video scope to row-level fallback', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)
+    VALUES
+      (1, 5, 'link', 'https://www.bilibili.com/video/BV1GDjB66EE9/', 'Video Row', 'hamburger row summary', '2026-06-10T00:00:00.000Z', ''),
+      (2, 5, 'link', 'https://example.com/plain', 'Plain Row', 'hamburger row summary', '2026-06-11T00:00:00.000Z', '')
+  `).run();
+
+  const sources = retrieveSources({
+    db,
+    userId: 5,
+    question: 'hamburger',
+    task: 'ask',
+    scope: { type: 'video' },
+    maxSources: 4,
+  });
+
+  assert.deepEqual(sources.map(source => source.id), [1]);
+}));
+
 test('retrieveSources can merge embedding candidates when hybrid retrieval is enabled', () => withDb((db) => {
   db.prepare(`
     INSERT INTO links (id, user_id, type, url, title, summary, imported_at, content_md)

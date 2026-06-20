@@ -20,14 +20,14 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import ChatBox from '../components/ChatBox.vue'
+import { fileLabel } from '../utils/mobileItemDisplay'
 
 const route = useRoute()
 const date = computed(() => route.query.date || '')
 const fileType = computed(() => route.query.type || '')
 const initialQ = computed(() => route.query.q || '')
 
-const TYPE_LABELS = { image:'图片', video:'视频', document:'文档', audio:'音频', link:'链接', other:'其他' }
-const typeLabel = computed(() => TYPE_LABELS[fileType.value] || '')
+const typeLabel = computed(() => fileType.value ? fileLabel(fileType.value) : '')
 </script>
 
 <style scoped>

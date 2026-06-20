@@ -1,22 +1,16 @@
-const JOB_LABELS = {
-  'link.fetchMetadata': '抓取网页信息',
-  'link.extractMarkdown': '提取网页正文',
-  'link.summarize': '生成网页摘要',
-  'image.describe': '识别图片内容',
-  'file.extractMarkdown': '解析文件正文',
-  'file.summarize': '生成文件摘要',
-};
+import { labelForEnrichmentJob } from './itemEnrichmentPlan.js';
+import { itemKindForRow } from './itemKind.js';
 
-function labelForJob(type) {
-  return JOB_LABELS[type] || type || '';
+function labelForJob(type, link = null) {
+  return labelForEnrichmentJob(type, link);
 }
 
-function normalizeJob(row) {
+function normalizeJob(row, link = null) {
   if (!row) return null;
   return {
     id: row.id,
     type: row.type,
-    label: labelForJob(row.type),
+    label: labelForJob(row.type, link),
     status: row.status,
     attempts: row.attempts,
     maxAttempts: row.max_attempts,
@@ -31,12 +25,12 @@ export function buildProcessingStatus(link, jobs = []) {
     return {
       state: 'failed',
       stage: failedJob.type,
-      label: labelForJob(failedJob.type),
+      label: labelForJob(failedJob.type, link),
       canRetry: true,
       failedJobId: failedJob.id,
       lastError: failedJob.last_error || '',
       updatedAt: failedJob.updated_at || '',
-      activeJob: normalizeJob(failedJob),
+      activeJob: normalizeJob(failedJob, link),
     };
   }
 
@@ -45,12 +39,12 @@ export function buildProcessingStatus(link, jobs = []) {
     return {
       state: activeJob?.status || 'processing',
       stage: activeJob?.type || '',
-      label: activeJob ? labelForJob(activeJob.type) : '等待后台处理',
+      label: activeJob ? labelForJob(activeJob.type, link) : (itemKindForRow(link) === 'video' ? '等待视频处理' : '等待后台处理'),
       canRetry: false,
       failedJobId: null,
       lastError: activeJob?.last_error || '',
       updatedAt: activeJob?.updated_at || '',
-      activeJob: normalizeJob(activeJob),
+      activeJob: normalizeJob(activeJob, link),
     };
   }
 

@@ -94,6 +94,7 @@
 import { ref, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { getStats, getFiles } from '../api/files'
+import { CATEGORY_TYPES, categoryItems, filesForCategory } from '../utils/mobileCategoryDisplay'
 
 const router = useRouter()
 const searchQ = ref('')
@@ -144,26 +145,35 @@ const SvgText = () => h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'cu
   h('path', { d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' }),
 ])
 
-const CATS = [
-  { type: 'image',    label: '图片', svg: SvgImage },
-  { type: 'video',    label: '视频', svg: SvgVideo },
-  { type: 'document', label: '文档', svg: SvgDoc   },
-  { type: 'audio',    label: '音频', svg: SvgAudio },
-  { type: 'link',     label: '链接', svg: SvgLink  },
-  { type: 'text',     label: '文字', svg: SvgText  },
-  { type: 'other',    label: '其他', svg: SvgOther },
-]
+const CATEGORY_ICONS = {
+  image: SvgImage,
+  video: SvgVideo,
+  article: SvgDoc,
+  document: SvgDoc,
+  audio: SvgAudio,
+  link: SvgLink,
+  text: SvgText,
+  other: SvgOther,
+}
 
 const categories = computed(() =>
-  CATS.map(c => ({ ...c, count: stats.value?.by_type?.[c.type] || 0 }))
-    .filter(c => c.count > 0)
-    .sort((a, b) => b.count - a.count)
+  categoryItems(stats.value).map(category => ({
+    ...category,
+    svg: CATEGORY_ICONS[category.type] || SvgOther,
+  }))
 )
 
-const expandedCat = computed(() => CATS.find(c => c.type === expanded.value))
+const expandedCat = computed(() => {
+  const type = expanded.value
+  const category = categories.value.find(c => c.type === type)
+  if (category) return category
+  return CATEGORY_TYPES.includes(type)
+    ? { type, label: type, svg: CATEGORY_ICONS[type] || SvgOther, count: 0 }
+    : null
+})
 
 const catFiles = computed(() =>
-  allFiles.value.filter(f => f.type === expanded.value)
+  filesForCategory(allFiles.value, expanded.value)
 )
 
 /* Build year → month → day tree from catFiles */

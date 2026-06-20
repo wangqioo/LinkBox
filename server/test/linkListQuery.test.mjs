@@ -57,3 +57,16 @@ test('buildLinkListQuery clamps invalid pagination values', () => {
   assert.equal(query.limit, 50);
   assert.deepEqual(query.params, [2, 50, 0]);
 });
+
+test('buildLinkListQuery maps video filter to Bilibili link URLs', () => {
+  const query = buildLinkListQuery({
+    userId: 6,
+    query: { type: 'video' },
+  });
+
+  assert.match(query.sql, /l\.type = 'link'/);
+  assert.match(query.sql, /bilibili\.com\/video\/BV/);
+  assert.match(query.sql, /b23\.tv/);
+  assert.deepEqual(query.countParams, [6]);
+  assert.deepEqual(query.params, [6, 50, 0]);
+});

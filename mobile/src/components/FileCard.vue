@@ -2,12 +2,12 @@
   <div class="fm-card-wrap" @touchstart.passive="onTS" @touchmove.passive="onTM" @touchend.passive="onTE">
     <div
       class="fm-file-card gc"
-      :class="{ 'no-pad': file.type === 'link' && file.og_image }"
+      :class="{ 'no-pad': isLinkLike && file.og_image }"
       :style="{ transform: `translateX(${swipeX}px)` }"
       @click="handleClick"
     >
       <!-- Link card with OG image banner -->
-      <template v-if="file.type === 'link' && file.og_image">
+      <template v-if="isLinkLike && file.og_image">
         <div class="fm-link-card">
           <img class="link-og" :src="file.og_image" loading="lazy" @error="e => e.target.style.display='none'" />
           <div class="link-body">
@@ -16,7 +16,7 @@
               <span class="fm-file-name">{{ file.original_filename }}</span>
             </div>
             <div class="fm-file-meta">
-              <span class="type-chip link">链接</span>
+              <span class="type-chip" :class="file.type">{{ typeLabel }}</span>
               <span class="status-dot" :class="file.status"></span>
               <span class="meta-time">{{ timeStr }}</span>
             </div>
@@ -26,7 +26,7 @@
       </template>
       <template v-else>
         <div class="fm-file-ico" :class="iconBg">
-          <img v-if="file.type === 'link' && file.favicon_url" class="ico-favicon" :src="file.favicon_url" loading="lazy" @error="e => e.target.style.display='none'" />
+          <img v-if="isLinkLike && file.favicon_url" class="ico-favicon" :src="file.favicon_url" loading="lazy" @error="e => e.target.style.display='none'" />
           <span v-else>{{ typeIcon }}</span>
         </div>
         <div class="fm-file-body">
@@ -51,17 +51,15 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { fileIcon, fileLabel, iconBackgroundClass, isLinkLikeType } from '../utils/mobileItemDisplay'
 
 const props = defineProps({ file: Object })
 const emit = defineEmits(['click', 'delete'])
 
-const TYPE_ICONS  = { image:'🖼', video:'🎬', document:'📄', audio:'🎵', link:'🔗', other:'📦' }
-const TYPE_LABELS = { image:'图片', video:'视频', document:'文档', audio:'音频', link:'链接', other:'其他' }
-const ICON_BG     = { image:'ico-purple', video:'ico-red', document:'ico-teal', audio:'ico-orange', link:'ico-blue', other:'ico-gray' }
-
-const typeIcon  = computed(() => TYPE_ICONS[props.file.type]  || '📦')
-const typeLabel = computed(() => TYPE_LABELS[props.file.type] || '其他')
-const iconBg    = computed(() => ICON_BG[props.file.type]     || 'ico-gray')
+const typeIcon = computed(() => fileIcon(props.file.type))
+const typeLabel = computed(() => fileLabel(props.file.type))
+const iconBg = computed(() => iconBackgroundClass(props.file.type))
+const isLinkLike = computed(() => isLinkLikeType(props.file.type))
 
 const timeStr = computed(() => {
   const d = new Date(props.file.created_at)

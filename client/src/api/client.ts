@@ -344,6 +344,7 @@ export interface AdminUserSummary {
 export interface AdminRecentItem {
   id: number;
   type: string;
+  stored_type?: string;
   url: string;
   title: string;
   description: string;

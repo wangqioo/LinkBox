@@ -156,6 +156,6 @@ export function downloadUrl(id) {
 export function imgUrl(url) {
   if (!url) return ''
   if (url.startsWith('/api/')) return url
-  const needsProxy = ['qpic.cn', 'mmbiz', 'weixin'].some(k => url.includes(k))
+  const needsProxy = ['qpic.cn', 'mmbiz', 'weixin', 'hdslb.com', 'biliimg.com'].some(k => url.includes(k))
   return needsProxy ? `/api/links/image-proxy?url=${encodeURIComponent(url)}` : url
 }

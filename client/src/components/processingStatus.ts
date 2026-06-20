@@ -1,8 +1,12 @@
+import { isVideoSourceUrl } from './sourceKind.ts';
+
 export interface ProcessingDisplayInput {
   status?: string;
   isProcessing?: boolean;
   hasMarkdown?: boolean;
   hasSummary?: boolean;
+  itemType?: string;
+  url?: string;
   processing?: {
     state?: string;
     stage?: string;
@@ -21,6 +25,7 @@ export interface ProcessingDisplay {
 
 export function deriveProcessingDisplay(input: ProcessingDisplayInput): ProcessingDisplay | null {
   const processing = input.processing;
+  const isVideoItem = input.itemType === 'video' || (input.itemType === 'link' && isVideoSourceUrl(input.url || ''));
 
   if (processing?.state === 'failed') {
     return {
@@ -54,7 +59,7 @@ export function deriveProcessingDisplay(input: ProcessingDisplayInput): Processi
   if (!input.hasMarkdown && !input.hasSummary) {
     return {
       kind: 'active',
-      text: '正在提取正文...',
+      text: isVideoItem ? '正在处理视频...' : '正在提取正文...',
       step: 1,
       canRetry: false,
     };

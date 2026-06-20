@@ -17,11 +17,27 @@ LinkBox 支持保存多种内容：
 | 类型 | 能力 |
 | --- | --- |
 | 链接 | 保存 URL，后台抓取标题、描述、封面图，并提取正文 |
+| 文章 | 微信公众号、知乎文章会作为可自动处理文章来源进入正文提取流程 |
+| 视频 | Bilibili 视频链接会自动提取字幕；无字幕时可下载音频并调用 Whisper 转写 |
 | 文本 | 保存文字笔记，支持标签和 AI 摘要 |
 | 图片 | 上传图片，后台生成图片描述并索引 |
 | 音频 | 上传或录制音频，作为收藏项保存 |
 | 文件 | 上传 PDF、Office、Markdown、文本、HTML 等文件 |
 | HTML | 保存原始 HTML，可在沙箱 iframe 中预览 |
+
+自动处理规则是白名单式的：
+
+- 微信公众号文章：`mp.weixin.qq.com` / `weixin.qq.com`
+- 知乎文章：`zhihu.com/p/...` / `zhuanlan.zhihu.com/p/...`
+- Bilibili 视频：`bilibili.com/video/BV...` / `m.bilibili.com/video/BV...` / `b23.tv/...`
+
+移动端和 Web 端都支持从分享文本中提取白名单链接，例如：
+
+```text
+【B站】视频标题 https://www.bilibili.com/video/BVxxxxxxxx/?share_source=copy_web
+```
+
+普通网页链接不会因为出现在一段文本里就自动处理，会按文本笔记保存，避免误抓取用户只是临时发送的内容。
 
 ### AI 处理流水线
 
@@ -41,9 +57,35 @@ LinkBox 支持保存多种内容：
   -> 提取图片或表格内容
   -> 生成摘要
   -> 建立检索索引
+
+保存 Bilibili 视频
+  -> 抓取视频元数据和封面
+  -> 优先提取公开字幕
+  -> 无字幕时通过 yt-dlp + ffmpeg 准备音频
+  -> 调用 Whisper 兼容服务转写
+  -> 使用 LLM 补全中文标点
+  -> 保存视频原文、生成摘要、建立检索索引
 ```
 
 后台任务在管理员设置页可查看状态，包括等待、运行、完成、失败任务数，并支持重试失败任务。
+
+处理状态会按内容类型展示，例如 Bilibili 会显示视频处理阶段，而不是泛化成“抓取网页”。
+
+### 类型归一
+
+数据库中仍兼容历史 `links.type` 值，但 UI、筛选、检索和统计使用归一后的展示类型：
+
+| 展示类型 | 来源 |
+| --- | --- |
+| `link` | 普通链接 |
+| `article` | 微信公众号、知乎文章 |
+| `video` | Bilibili 视频 |
+| `document` | 上传文件，兼容历史 `file` |
+| `image` | 图片 |
+| `audio` | 音频 |
+| `text` | 文本笔记 |
+
+这些类型会统一用于 Web 列表筛选、移动端分类页、管理员用户统计、Assistant 检索 scope、文档索引和 embedding 检索。
 
 ### 文件解析
 
@@ -62,6 +104,19 @@ LinkBox 支持保存多种内容：
 ### 检索与问答
 
 LinkBox 会把标题、摘要、正文切分为 `link_chunks`，用于 Assistant 问答。检索排序会综合标题、摘要、正文命中情况，支持中英文 token，并对来源做去重，减少同一篇内容重复占满结果。
+
+新的 canonical document 索引会把正文 Markdown 写入 `documents` / `document_chunks`，并可选写入 `document_embeddings`。Assistant 检索优先使用 canonical 文档块和 embedding 候选，legacy `link_chunks` 作为兼容 fallback。`video`、`article`、`document` 等 scope 过滤会走统一类型条件，保证列表、搜索和问答看到的是同一类内容。
+
+### 移动端体验
+
+移动端文件助手支持：
+
+- 粘贴微信、知乎、Bilibili 分享文本后自动识别白名单链接
+- Bilibili 视频详情页展示“视频原文”
+- 详情页内长内容区域可独立滚动
+- 从详情页返回首页时保留原滚动位置
+- 刷新首页后滚动到最新上传内容
+- 分类页按归一类型展示 `video`、`article`、`document` 等内容
 
 ### 管理能力
 
@@ -101,6 +156,11 @@ LinkBox/
     utils/
       jobQueue.js          SQLite 持久化任务队列
       enrichmentJobs.js    链接/图片/文件后台任务注册
+      itemKind.js          链接来源和展示类型归一
+      itemPresentation.js  统一列表/详情展示契约
+      itemMaterial.js      统一正文、摘要、封面和资产读取
+      itemEnrichmentPlan.js 后台处理计划
+      videoTranscriptExtractor.js Bilibili 字幕/音频转写
       chunkIndex.js        内容切块、索引、检索排序
       fileToMarkdown.js    文件转 Markdown 入口
       officeXmlUtils.js    Word XML 解析
@@ -114,7 +174,7 @@ LinkBox/
   docker-compose.yml
 ```
 
-详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。知识库重构计划见 [docs/markdown-knowledge-base-plan.md](docs/markdown-knowledge-base-plan.md)。
+详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。Bilibili 视频处理说明见 [docs/bilibili-video-processing.md](docs/bilibili-video-processing.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。知识库重构计划见 [docs/markdown-knowledge-base-plan.md](docs/markdown-knowledge-base-plan.md)。
 
 ## 快速开始
 
@@ -124,7 +184,10 @@ LinkBox/
 - `unzip`：解析 Office 文件
 - `pdftotext`：PDF 文本提取，通常来自 `poppler-utils`
 - `libreoffice`：旧版 `.doc/.xls/.ppt` 转换，可选
+- `ffmpeg`：Bilibili 无字幕转写时提取音频
+- `yt-dlp`：Bilibili 无字幕转写时下载音频
 - OpenAI 兼容模型服务，可选但推荐
+- Whisper 兼容转写服务，可选；仅 Bilibili 无字幕音频转写需要
 
 ### 本地构建运行
 
@@ -186,6 +249,7 @@ docker compose up -d --build
 
 - 数据库：`/data/linkbox.db`
 - 上传文件：`/data/uploads`
+- Bilibili cookies（可选）：`/data/cookies/bilibili.txt`
 
 按需修改 `docker-compose.yml` 中的挂载目录、端口和模型地址。
 
@@ -201,6 +265,10 @@ docker compose up -d --build
 | `LOCAL_LLM_URL` | `http://localhost:8000/v1` | OpenAI 兼容接口地址 |
 | `LOCAL_LLM_MODEL` | `Qwen3.5-4B` | 默认文本模型 |
 | `LOCAL_VISION_MODEL` | `Qwen3.5-4B` | 默认视觉模型 |
+| `WHISPER_SERVER_URL` | 空 | Whisper 转写接口地址，用于无字幕 Bilibili 视频转文字 |
+| `YTDLP_BIN` | `yt-dlp` | `yt-dlp` 命令路径 |
+| `FFMPEG_BIN` | `ffmpeg` | `ffmpeg` 命令路径 |
+| `BILIBILI_COOKIE_FILE` | 空 | Bilibili cookies 文件路径，Docker 示例为 `/data/cookies/bilibili.txt` |
 
 AI 配置也可以在 Web 管理端的系统设置中修改，支持 DeepSeek、OpenAI、OpenRouter、Kimi、DashScope、智谱和自定义 OpenAI 兼容服务。
 
@@ -231,16 +299,21 @@ openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
 cd server
 npm test
 
+# 重点链路测试示例
+node --test test/itemKind.test.mjs test/bilibiliVideoSource.test.mjs test/videoTranscriptExtractor.test.mjs
+
 # Web 端生产构建
 cd client
+npm test
 npm run build
 
 # 移动端生产构建
 cd mobile
+node --test src/utils/linkAutoProcess.test.mjs src/utils/mobileCategoryDisplay.test.mjs
 npm run build
 ```
 
-当前后端测试覆盖了队列、链接创建、上传处理、AI 动作、导出、检索排序、Office/XML 解析、表格解析和任务重试等核心路径。
+当前后端测试覆盖了队列、链接创建、上传处理、AI 动作、导出、Bilibili 视频转写、类型归一、检索排序、Office/XML 解析、表格解析和任务重试等核心路径。
 
 ## 常用 API
 

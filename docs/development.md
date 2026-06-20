@@ -1,6 +1,6 @@
 # LinkBox Development Guide
 
-Last updated: 2026-06-17
+Last updated: 2026-06-21
 
 This document records the current development state so future work can resume
 without rediscovering the architecture, commands, and validation steps.
@@ -10,7 +10,7 @@ without rediscovering the architecture, commands, and validation steps.
 The current architecture follow-up checkpoint is:
 
 ```bash
-HEAD Add admin embedding diagnostics and E2E coverage
+working tree Bilibili video processing, type normalization, and mobile detail polish
 ```
 
 This includes the earlier 2026-06-15 item intake pass, the follow-up
@@ -18,7 +18,9 @@ architecture slices for assistant retrieval, item presentation, extracted
 content persistence, isolated server smoke coverage, admin health checks,
 shared route JSON error shaping, explicit database migrations, the
 2026-06-16/17 admin observability pass, and the 2026-06-17 processing/status
-and migration-hardening pass.
+and migration-hardening pass. It also includes the 2026-06-21 Bilibili video
+processing pass, normalized item kind pass, and mobile detail/list behavior
+fixes.
 
 At this checkpoint:
 
@@ -122,6 +124,25 @@ At this checkpoint:
 - The settings route now uses the shared route JSON error helper for expected
   admin permission and validation failures while preserving existing response
   messages and `ok: false` test-endpoint shapes.
+- Link auto-processing is now an explicit allowlist. WeChat articles, Zhihu
+  articles, and Bilibili videos can be auto-processed from shared text; generic
+  URLs inside mixed text are saved as text notes instead of being fetched.
+- Bilibili video rows are classified as `video`, fetch metadata/cover, prefer
+  public subtitles, fall back to `yt-dlp` + `ffmpeg` + `WHISPER_SERVER_URL`
+  audio transcription, run LLM punctuation restoration, persist the video
+  transcript in `content_md`, generate summaries, and index the canonical
+  document.
+- Server, desktop, and mobile code now use normalized item kinds for user-facing
+  categories: `article`, `video`, `document`, `link`, `image`, `audio`, and
+  `text`. Backend list queries, admin user stats, Assistant scope filters,
+  document chunk retrieval, and embedding retrieval share the same semantics.
+- Desktop add tabs, filters, cards, and processing labels include video-specific
+  presentation. Mobile cards, category pages, detail pages, search, and
+  organizer hints use the same normalized kinds.
+- Mobile detail pages expose video transcript/original content, allow long
+  content sections to scroll inside fixed panels, preserve list scroll position
+  when navigating back from detail, and scroll to newest content after page
+  refresh.
 
 ## Recommended Runtime
 
@@ -160,6 +181,12 @@ server/utils/itemController.js      Item HTTP handlers
 server/utils/itemRepository.js      Item lookup/list ownership helpers
 server/utils/itemProcessingStatus.js Derived processing contract
 server/utils/itemPresentation.js Shared item display contract
+server/utils/itemKind.js          Source classification and normalized item kind helpers
+server/utils/itemMaterial.js      Unified content, summary, cover, and asset reads
+server/utils/itemEnrichmentPlan.js Type-aware background processing plan
+server/utils/linkAutoProcess.js   Allowlisted shared-text URL extraction
+server/utils/bilibiliVideoSource.js Bilibili URL parsing and metadata/subtitle source helpers
+server/utils/videoTranscriptExtractor.js Bilibili subtitle/audio transcription pipeline
 server/utils/uploadMiddleware.js    Multer upload setup and file filters
 server/utils/uploadedAsset.js       Upload-derived asset normalization
 server/utils/assistantSourceRetrieval.js Assistant retrieval interface
@@ -184,6 +211,8 @@ client/src/pages/useLinkExports.ts      JSON and Markdown export actions
 client/src/pages/linksPageUtils.ts      Small pure helpers
 client/src/context/ToastContext.tsx     Global toast provider
 client/src/components/LinkCard.tsx      Item card composition
+client/src/components/itemDisplay.ts    Desktop normalized item labels/icons
+client/src/components/sourceKind.ts     Desktop allowlisted URL classification
 client/src/components/ProcessingBanner.tsx Shared processing/failure banner
 client/src/components/processingStatus.ts Processing display derivation helper
 client/src/components/markdownParser.ts Markdown block/inline parser and sanitizer
@@ -199,6 +228,9 @@ Important mobile frontend modules:
 mobile/src/components/ChatBox.vue       Assistant chat UI adapter
 mobile/src/utils/markdownParser.js      Mobile Markdown/citation utility
 mobile/src/utils/mobileOrganizer.js     Tested local organization helpers
+mobile/src/utils/mobileItemDisplay.js   Mobile normalized item presentation
+mobile/src/utils/mobileCategoryDisplay.js Mobile category labels/icons
+mobile/src/utils/linkAutoProcess.js     Mobile shared-text allowlist extraction
 mobile/src/utils/mobileProcessingStatus.js Mobile processing display helper
 ```
 

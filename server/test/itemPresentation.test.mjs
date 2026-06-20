@@ -34,3 +34,15 @@ test('presentItem prefers durable processing state over legacy status', () => {
   assert.equal(result.display.statusLabel, 'Failed');
   assert.equal(result.display.canRetry, true);
 });
+
+test('presentItem treats Bilibili links as analyzable video items', () => {
+  const result = presentItem({
+    type: 'link',
+    url: 'https://www.bilibili.com/video/BV1GDjB66EE9/',
+    status: 'done',
+  });
+
+  assert.equal(result.display.type, 'video');
+  assert.equal(result.display.typeLabel, 'Video');
+  assert.equal(result.display.canAnalyze, true);
+});

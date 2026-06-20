@@ -44,10 +44,11 @@ export function parseMobileFileSize(link = {}) {
 export function toMobileFile(link = {}) {
   const item = presentItem(link);
   const title = item.title || item.url || item.file_name || `Item ${item.id}`;
-  const content = item.content || item.content_md || '';
-  const displaySummary = item.summary || item.description || (item.type === 'text' ? content : '');
+  const material = item.material || {};
+  const content = material.textContent || material.extractedMarkdown || '';
+  const displaySummary = material.summary || item.description || (item.type === 'text' ? content : '');
   const status = normalizeMobileStatus(item);
-  const assetUrl = item.display.primaryAssetUrl;
+  const assetUrl = material.primaryAssetUrl || item.display.primaryAssetUrl;
 
   return {
     id: String(item.id),
@@ -62,13 +63,13 @@ export function toMobileFile(link = {}) {
     batch_id: item.batch_id || '',
     batch_index: Number(item.batch_index || 0),
     content,
-    content_md: item.content_md || '',
-    has_content: Boolean(item.content_md),
+    content_md: material.extractedMarkdown || item.content_md || '',
+    has_content: Boolean(material.hasExtractedMarkdown),
     summary: displaySummary,
     description: item.description || '',
     keywords: [],
     highlights: [],
-    og_image: item.thumbnail || item.image_path || '',
+    og_image: material.thumbnailUrl || item.thumbnail || item.image_path || '',
     favicon_url: item.url ? `/api/mobile/files/favicon?url=${encodeURIComponent(item.url)}` : '',
     created_at: item.imported_at || item.created_at,
     analyzed_at: item.imported_at || item.created_at,

@@ -1,3 +1,5 @@
+import { sqlConditionForItemKind } from './itemKind.js';
+
 function positiveInt(value, fallback) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -25,9 +27,14 @@ export function buildLinkListQuery({ userId, query = {} }) {
     params.push(tag);
   }
 
-  if (type) {
-    conditions.push('l.type = ?');
-    params.push(type);
+  if (type === 'video') {
+    const condition = sqlConditionForItemKind('video', 'l');
+    conditions.push(condition.sql);
+    params.push(...condition.params);
+  } else if (type) {
+    const condition = sqlConditionForItemKind(type, 'l');
+    conditions.push(condition.sql);
+    params.push(...condition.params);
   }
 
   if (search) {

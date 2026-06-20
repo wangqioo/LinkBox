@@ -3,6 +3,7 @@ import { indexAllMissingChunks, scoreTextFields, searchRelevantChunks, tokenizeQ
 import { indexAllMissingDocuments, searchDocumentChunks } from './documentIndex.js';
 import { searchEmbeddedDocumentChunks, searchEmbeddedDocumentChunksAsync } from './documentEmbeddings.js';
 import { rerankDocumentCandidates } from './documentRerank.js';
+import { sqlConditionForItemKind } from './itemKind.js';
 import { addTimeScopeConditions, normalizeTimeScope, resolveTimeScope } from './timeScope.js';
 
 const DEFAULT_MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
@@ -42,15 +43,16 @@ function normalizeScope(scope = {}) {
   const type = String(scope.type || '').trim();
   return {
     ...normalizeTimeScope(scope),
-    type: type === 'document' ? 'file' : type,
+    type,
   };
 }
 
 function scopeWhere(scope, params) {
   const conditions = addTimeScopeConditions(scope, params, 'l.imported_at');
   if (scope.type) {
-    conditions.push('l.type = ?');
-    params.push(scope.type);
+    const condition = sqlConditionForItemKind(scope.type, 'l');
+    conditions.push(condition.sql);
+    params.push(...condition.params);
   }
   return conditions;
 }

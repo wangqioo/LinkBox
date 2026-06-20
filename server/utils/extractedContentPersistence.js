@@ -1,5 +1,6 @@
 import { indexLinkContent } from './chunkIndex.js';
 import { indexDocumentForItem } from './documentIndex.js';
+import { followupEnrichmentJobs } from './itemEnrichmentPlan.js';
 import { upsertItemAsset } from './itemAssetStore.js';
 import { upsertItemContent } from './itemContentStore.js';
 
@@ -52,6 +53,16 @@ function enqueueDocumentEmbedding(db, queue, linkId) {
   return queue.enqueue('document.embed', { linkId, maxAttempts: 2 });
 }
 
+function enqueueFollowupJob(db, queue, job) {
+  if (!job || !queue) return null;
+  if (job.type === 'document.embed') return enqueueDocumentEmbedding(db, queue, job.linkId);
+  return queue.enqueue(job.type, {
+    linkId: job.linkId,
+    payload: job.payload,
+    maxAttempts: job.maxAttempts,
+  });
+}
+
 export function persistExtractedContent(db, queue, {
   linkId,
   markdown = '',
@@ -96,8 +107,13 @@ export function persistExtractedContent(db, queue, {
 
   indexLink(linkId);
   const document = indexDocument(db, linkId);
-  if (document?.documentId && queue) enqueueDocumentEmbedding(db, queue, linkId);
-  if (summarize && queue) queue.enqueue(summaryJobType, { linkId });
+  const followups = followupEnrichmentJobs({
+    linkId,
+    summarize,
+    summaryJobType,
+    documentId: document?.documentId || null,
+  });
+  for (const job of followups) enqueueFollowupJob(db, queue, job);
 
   return {
     stored: true,

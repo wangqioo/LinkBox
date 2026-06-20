@@ -109,7 +109,7 @@
               </div>
 
               <div
-                v-else-if="f.file.type === 'link'"
+                v-else-if="isLinkLikeType(f.file.type)"
                 class="fm-link-card"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
                 @click="handleCardClick(f.file, f.id)"
@@ -118,7 +118,7 @@
                   <img v-if="f.file.og_image" :src="imgUrl(f.file.og_image)" class="link-og-img" loading="lazy" @error="e => e.target.style.display='none'" />
                   <template v-else>
                     <img v-if="f.file.favicon_url" :src="f.file.favicon_url" class="link-fav-big" loading="lazy" @error="e => e.target.style.display='none'" />
-                    <span v-else class="fallback-ico">🔗</span>
+                    <span v-else class="fallback-ico">{{ f.file.type === 'video' ? '🎬' : '🔗' }}</span>
                   </template>
                 </div>
                 <div class="fm-link-info">
@@ -159,7 +159,7 @@
                   </div>
                   <FileHints :file="f.file" in-card />
                 </div>
-                <button class="fm-file-open" @click.stop="router.push(`/file/${f.file.id}`)">↗</button>
+                <button class="fm-file-open" @click.stop="openFile(f.file.id)">↗</button>
               </div>
 
               <button
@@ -334,6 +334,8 @@ import { deleteFile, downloadUrl, getFiles, getStats, imgUrl, uploadFile, upload
 import ImageBatchCard from '../components/ImageBatchCard.vue'
 import { useTheme } from '../composables/useTheme'
 import { groupImageBatches } from '../utils/imageBatchGallery'
+import { getAutoProcessLinkUrl } from '../utils/linkAutoProcess'
+import { fileIcon, fileLabel, fileTypeBackground, isLinkLikeType } from '../utils/mobileItemDisplay'
 import { mobileProcessingText } from '../utils/mobileProcessingStatus'
 import { buildTodayDigest, organizeFile } from '../utils/mobileOrganizer'
 
@@ -380,17 +382,8 @@ const swipe = reactive({})
 const swipeMeta = reactive({})
 const activeBatchImageIds = reactive({})
 
-const FILE_ICONS = { image: '🖼', video: '🎬', document: '📄', audio: '🎵', link: '🔗', text: '💬', other: '📦' }
-const FILE_LABELS = { image: '图片', video: '视频', document: '文档', audio: '音频', link: '链接', text: '文字', other: '其他' }
-const FILE_BG = {
-  image: 'rgba(139,114,255,.15)',
-  video: 'rgba(255,110,122,.15)',
-  document: 'rgba(94,234,181,.15)',
-  audio: 'rgba(255,170,92,.15)',
-  link: 'rgba(100,170,255,.15)',
-  text: 'rgba(139,114,255,.15)',
-  other: 'rgba(255,255,255,.08)',
-}
+const HOME_SCROLL_TOP_KEY = 'linkbox.mobile.home.scrollTop'
+const HOME_SCROLL_PENDING_KEY = 'linkbox.mobile.home.restoreScroll'
 
 function isImageUpload(file) {
   return file?.type?.startsWith('image/')
@@ -400,9 +393,7 @@ function createImageBatchId() {
   return `imgbatch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function fileIcon(t) { return FILE_ICONS[t] || '📦' }
-function fileLabel(t) { return FILE_LABELS[t] || '其他' }
-function fileIconBg(t) { return FILE_BG[t] || FILE_BG.other }
+function fileIconBg(t) { return fileTypeBackground(t) }
 function itemColorIndex(f) { return String(f?.id || '0').charCodeAt(0) % 3 }
 function imgBgClass(f) { return ['img-bg-a', 'img-bg-b', 'img-bg-c'][itemColorIndex(f)] }
 function linkBgClass(f) { return ['link-bg-a', 'link-bg-b', 'link-bg-c'][itemColorIndex(f)] }
@@ -447,6 +438,7 @@ const dateGroups = computed(() => {
 
 function openFile(id) {
   showOrganizer.value = false
+  saveFeedScrollForReturn()
   router.push(`/file/${id}`)
 }
 function openTopic(topic) {
@@ -519,7 +511,30 @@ function handleCardClick(f, rowId = f?.id) {
     swipe[rowId] = 0
     return
   }
+  saveFeedScrollForReturn()
   router.push(`/file/${f.id}`)
+}
+
+function saveFeedScrollForReturn() {
+  const el = feedEl.value
+  if (!el) return
+  try {
+    sessionStorage.setItem(HOME_SCROLL_TOP_KEY, String(el.scrollTop))
+    sessionStorage.setItem(HOME_SCROLL_PENDING_KEY, '1')
+  } catch {}
+}
+
+function consumeSavedFeedScroll() {
+  try {
+    if (sessionStorage.getItem(HOME_SCROLL_PENDING_KEY) !== '1') return null
+    const raw = sessionStorage.getItem(HOME_SCROLL_TOP_KEY)
+    sessionStorage.removeItem(HOME_SCROLL_PENDING_KEY)
+    sessionStorage.removeItem(HOME_SCROLL_TOP_KEY)
+    const top = Number(raw)
+    return Number.isFinite(top) ? top : null
+  } catch {
+    return null
+  }
 }
 
 function rememberBatchActive(row, image) {
@@ -584,7 +599,11 @@ onMounted(() => {
     recognition.onerror = () => { isRecording.value = false }
     recognition.onend = () => { isRecording.value = false }
   }
-  loadFiles()
+  const savedScrollTop = consumeSavedFeedScroll()
+  loadFiles({
+    restoreScrollTop: savedScrollTop,
+    scrollToBottom: savedScrollTop === null,
+  })
 })
 onUnmounted(() => {
   recognition?.abort()
@@ -602,13 +621,17 @@ function toggleVoice() {
   }
 }
 
-async function loadFiles() {
+async function loadFiles({ restoreScrollTop = null, scrollToBottom = false } = {}) {
   loading.value = true
   try {
     ;[files.value, stats.value] = await Promise.all([getFiles({ limit: 200 }), getStats()])
     syncProcessingPoll()
     await nextTick()
-    feedEl.value?.scrollTo({ top: feedEl.value.scrollHeight })
+    if (restoreScrollTop !== null) {
+      feedEl.value?.scrollTo({ top: restoreScrollTop })
+    } else if (scrollToBottom) {
+      feedEl.value?.scrollTo({ top: feedEl.value.scrollHeight })
+    }
   } finally {
     loading.value = false
   }
@@ -648,8 +671,9 @@ async function handlePaste(e) {
 
   const text = e.clipboardData?.getData('text/plain')?.trim()
   if (!text) return
-  if (text.startsWith('http://') || text.startsWith('https://')) {
-    await doUpload(null, text)
+  const autoUrl = getAutoProcessLinkUrl(text)
+  if (autoUrl) {
+    await doUpload(null, autoUrl)
   } else {
     await sendText(text)
   }
@@ -659,8 +683,9 @@ async function submitText() {
   const val = textInput.value.trim()
   if (!val) return
   textInput.value = ''
-  if (val.startsWith('http://') || val.startsWith('https://')) {
-    await doUpload(null, val)
+  const autoUrl = getAutoProcessLinkUrl(val)
+  if (autoUrl) {
+    await doUpload(null, autoUrl)
   } else {
     await sendText(val)
   }
@@ -671,7 +696,7 @@ async function sendText(text) {
   uploadToast.value = '发送中…'
   try {
     await uploadText(text)
-    await loadFiles()
+    await loadFiles({ scrollToBottom: true })
     uploadToast.value = '✓ 发送成功'
     setTimeout(() => { feedEl.value?.scrollTo({ top: feedEl.value.scrollHeight, behavior: 'smooth' }) }, 100)
   } catch (e) {
@@ -687,7 +712,7 @@ async function doUpload(file, url, metadata = {}) {
   try {
     if (file) await uploadFile(file, analyzeNow.value, metadata)
     else await uploadLink(url, analyzeNow.value)
-    await loadFiles()
+    await loadFiles({ scrollToBottom: true })
     uploadToast.value = '✓ 发送成功'
     setTimeout(() => { feedEl.value?.scrollTo({ top: feedEl.value.scrollHeight, behavior: 'smooth' }) }, 100)
   } catch (e) {

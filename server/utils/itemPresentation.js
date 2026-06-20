@@ -1,5 +1,10 @@
+import { itemKindForRow } from './itemKind.js';
+import { materialForItem } from './itemMaterial.js';
+
 const TYPE_LABELS = {
   link: 'Link',
+  article: 'Article',
+  video: 'Video',
   text: 'Text',
   image: 'Image',
   audio: 'Audio',
@@ -18,7 +23,7 @@ const STATUS_LABELS = {
 };
 
 function displayType(item) {
-  return item.type === 'file' ? 'document' : item.type || 'link';
+  return itemKindForRow(item);
 }
 
 function displayStatus(item) {
@@ -28,24 +33,24 @@ function displayStatus(item) {
 }
 
 function primaryAssetUrl(item) {
-  if (item.image_path) return item.image_path;
-  if (item.thumbnail) return item.thumbnail;
-  return '';
+  return materialForItem(item).primaryAssetUrl;
 }
 
 export function presentItem(item = {}) {
   const type = displayType(item);
   const status = displayStatus(item);
+  const material = materialForItem(item);
 
   return {
     ...item,
+    material,
     display: {
       type,
       typeLabel: TYPE_LABELS[type] || type,
       status,
       statusLabel: STATUS_LABELS[status] || status,
       canRetry: Boolean(item.processing?.canRetry),
-      canAnalyze: ['link', 'image', 'document'].includes(type),
+      canAnalyze: ['link', 'article', 'video', 'image', 'document'].includes(type),
       primaryAssetUrl: primaryAssetUrl(item),
     },
   };

@@ -33,12 +33,12 @@
             </div>
           </template>
           <!-- Link -->
-          <template v-else-if="f.type === 'link'">
+          <template v-else-if="isLinkLikeType(f.type)">
             <div class="dc-link-cover">
               <img v-if="f.og_image" :src="imgUrl(f.og_image)" class="dc-img" loading="lazy" @error="e => e.target.style.display='none'" />
               <template v-else>
                 <img v-if="f.favicon_url" :src="f.favicon_url" class="dc-fav" loading="lazy" @error="e => e.target.style.display='none'" />
-                <span v-else class="dc-icon">🔗</span>
+                <span v-else class="dc-icon">{{ f.type === 'video' ? '🎬' : '🔗' }}</span>
               </template>
             </div>
           </template>
@@ -91,6 +91,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getFiles, imgUrl, downloadUrl } from '../api/files'
+import { fileIcon, fileLabel, fileTypeBackground, isLinkLikeType } from '../utils/mobileItemDisplay'
 import { mobileProcessingText } from '../utils/mobileProcessingStatus'
 
 const route = useRoute()
@@ -102,17 +103,8 @@ const searchQ = ref('')
 const loading = ref(false)
 const allFiles = ref([])
 
-const TYPE_LABELS = { image:'图片', video:'视频', document:'文档', audio:'音频', link:'链接', other:'其他' }
-const FILE_ICONS  = { image:'🖼', video:'🎬', document:'📄', audio:'🎵', link:'🔗', other:'📦' }
-const FILE_BG = {
-  image:'rgba(139,114,255,.15)', video:'rgba(255,110,122,.15)',
-  document:'rgba(94,234,181,.15)', audio:'rgba(255,170,92,.15)',
-  link:'rgba(100,170,255,.15)', other:'rgba(255,255,255,.08)',
-}
-const typeLabel  = computed(() => TYPE_LABELS[fileType.value] || '')
-const fileIcon   = t => FILE_ICONS[t]  || '📦'
-const fileLabel  = t => TYPE_LABELS[t] || '其他'
-const iconBg     = t => FILE_BG[t]     || FILE_BG.other
+const typeLabel = computed(() => fileType.value ? fileLabel(fileType.value) : '')
+const iconBg = t => fileTypeBackground(t)
 
 const dateLabel = computed(() => {
   if (!date.value) return ''

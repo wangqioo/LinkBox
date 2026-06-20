@@ -14,6 +14,10 @@ services:
       LOCAL_LLM_URL: http://127.0.0.1:8000/v1
       LOCAL_LLM_MODEL: Qwen3.5-4B
       LOCAL_VISION_MODEL: Qwen3.5-4B
+      WHISPER_SERVER_URL: http://127.0.0.1:8086/inference
+      YTDLP_BIN: yt-dlp
+      FFMPEG_BIN: ffmpeg
+      BILIBILI_COOKIE_FILE: /data/cookies/bilibili.txt
       TZ: Asia/Shanghai
     volumes:
       - /home/wq/linkbox-data:/data

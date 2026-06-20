@@ -67,6 +67,43 @@ test('buildProcessingStatus reports active queued or running jobs', () => {
   assert.equal(status.activeJob.id, 11);
 });
 
+test('buildProcessingStatus reports Bilibili video processing stages', () => {
+  const extracting = buildProcessingStatus(
+    { id: 43, status: 'processing', url: 'https://www.bilibili.com/video/BV1GDjB66EE9/' },
+    [{
+      id: 12,
+      type: 'link.extractMarkdown',
+      status: 'running',
+      attempts: 1,
+      max_attempts: 3,
+      last_error: '',
+      updated_at: '2026-06-10T00:00:00.000Z',
+    }],
+  );
+  assert.equal(extracting.label, '转写视频文字');
+  assert.equal(extracting.activeJob.label, '转写视频文字');
+
+  const summarizing = buildProcessingStatus(
+    { id: 44, status: 'processing', url: 'https://b23.tv/bM46kSH' },
+    [{
+      id: 13,
+      type: 'link.summarize',
+      status: 'queued',
+      attempts: 0,
+      max_attempts: 3,
+      last_error: '',
+      updated_at: '2026-06-10T00:00:00.000Z',
+    }],
+  );
+  assert.equal(summarizing.label, '生成视频摘要');
+
+  const waiting = buildProcessingStatus(
+    { id: 45, status: 'processing', url: 'https://www.bilibili.com/video/BV1GDjB66EE9/' },
+    [],
+  );
+  assert.equal(waiting.label, '等待视频处理');
+});
+
 test('attachProcessingStatus derives status for lists from jobs table', () => withDb((db) => {
   db.prepare(`
     INSERT INTO jobs (type, link_id, status, attempts, max_attempts, last_error, updated_at)

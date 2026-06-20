@@ -97,6 +97,7 @@ export function registerEnrichmentJobsWithDeps(queue, {
     persistExtractedContent(database, queue, {
       linkId,
       markdown: extracted.markdown,
+      thumbnail: extracted.thumbnail,
       summaryJobType: 'link.summarize',
     });
   });

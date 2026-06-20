@@ -164,6 +164,25 @@ test('searchDocumentChunks ranks document chunks and returns item metadata', () 
   assert.ok(results.every(row => row.user_id === 5));
 }));
 
+test('searchDocumentChunks applies normalized source type scopes', () => withDb((db) => {
+  const insert = db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, imported_at, content_md)
+    VALUES (?, 5, 'link', ?, ?, ?, ?)
+  `);
+  insert.run(1, 'https://www.bilibili.com/video/BV1GDjB66EE9/', 'Video Transcript', '2026-06-10T00:00:00.000Z', '# Video Transcript\n\nHamburger build process.');
+  insert.run(2, 'https://example.com/video-note', 'Generic Link', '2026-06-11T00:00:00.000Z', '# Generic Link\n\nHamburger notes.');
+  insert.run(3, 'https://mp.weixin.qq.com/s/article', 'Article Link', '2026-06-12T00:00:00.000Z', '# Article Link\n\nHamburger article.');
+  indexDocumentForItem(db, 1);
+  indexDocumentForItem(db, 2);
+  indexDocumentForItem(db, 3);
+
+  const videos = searchDocumentChunks({ db, userId: 5, query: 'Hamburger', limit: 4, scope: { type: 'video' } });
+  assert.deepEqual(videos.map(row => row.id), [1]);
+
+  const articles = searchDocumentChunks({ db, userId: 5, query: 'Hamburger', limit: 4, scope: { type: 'article' } });
+  assert.deepEqual(articles.map(row => row.id), [3]);
+}));
+
 test('indexMissingDocumentEmbeddings stores deterministic vectors for document chunks', () => withDb((db) => {
   db.prepare(`
     INSERT INTO links (id, user_id, type, title, imported_at, content_md)
@@ -210,6 +229,28 @@ test('searchEmbeddedDocumentChunks ranks semantically similar embedded chunks', 
   assert.equal(results[0].id, 1);
   assert.equal(results[0].retrieval_mode, 'embedding');
   assert.ok(results[0].embedding_score > results[1].embedding_score);
+}));
+
+test('searchEmbeddedDocumentChunks applies normalized source type scopes', () => withDb((db) => {
+  const insert = db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, imported_at, content_md)
+    VALUES (?, 5, 'link', ?, ?, ?, ?)
+  `);
+  insert.run(1, 'https://b23.tv/abc123', 'Scoped Video', '2026-06-10T00:00:00.000Z', '# Scoped Video\n\nsemantic video transcript');
+  insert.run(2, 'https://example.com/plain', 'Plain Link', '2026-06-11T00:00:00.000Z', '# Plain Link\n\nsemantic plain note');
+  indexDocumentForItem(db, 1);
+  indexDocumentForItem(db, 2);
+  indexMissingDocumentEmbeddings(db);
+
+  const results = searchEmbeddedDocumentChunks({
+    db,
+    userId: 5,
+    query: 'semantic',
+    limit: 4,
+    scope: { type: 'video' },
+  });
+
+  assert.deepEqual(results.map(row => row.id), [1]);
 }));
 
 test('embedTextsWithOpenAICompatible parses OpenAI-compatible embedding responses', async () => {

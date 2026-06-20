@@ -1,14 +1,6 @@
-import { FileText, Filter, Image, Link2, Mic, Paperclip, Search, X } from 'lucide-react';
+import { Filter, Search, X } from 'lucide-react';
 import type { LinkPageTag } from './linksPageTypes';
-
-const TYPE_FILTERS = [
-  { key: '', label: '全部', icon: null },
-  { key: 'link', label: '链接', icon: Link2 },
-  { key: 'image', label: '图片', icon: Image },
-  { key: 'text', label: '文字', icon: FileText },
-  { key: 'audio', label: '录音', icon: Mic },
-  { key: 'file', label: '文件', icon: Paperclip },
-];
+import { ITEM_TYPE_FILTERS } from '../components/itemDisplay';
 
 interface Props {
   search: string;
@@ -67,7 +59,7 @@ export default function LinksFilters({
       </div>
 
       <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-        {TYPE_FILTERS.map(typeFilter => (
+        {ITEM_TYPE_FILTERS.map(typeFilter => (
           <button key={typeFilter.key} onClick={() => onTypeChange(typeFilter.key)}
             className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
               activeType === typeFilter.key

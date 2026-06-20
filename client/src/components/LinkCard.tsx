@@ -6,7 +6,7 @@ import DocumentInspectorModal from './DocumentInspectorModal';
 import { LazyHtmlModal, MarkdownModal } from './LinkContentModals';
 import ProcessingBanner from './ProcessingBanner';
 import type { LinkCardProps } from './linkCardTypes';
-import { formatLinkDate, getItemTypeLabel, getLinkDomain, proxyImage } from './linkCardUtils';
+import { formatLinkDate, getItemTypeLabel, getLinkDomain, isLinkLikeItemType, proxyImage } from './linkCardUtils';
 import { deriveProcessingDisplay } from './processingStatus';
 
 export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummarize, onExtract, onRetryProcessing, onNoteUpdated, isProcessing = false, selectMode = false, selected = false, onToggleSelect }: LinkCardProps) {
@@ -26,6 +26,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
   const [showDocumentInspector, setShowDocumentInspector] = useState(false);
 
   const itemType = link.type || 'link';
+  const isLinkLike = isLinkLikeItemType(itemType);
   const itemLabel = link.title || link.url || link.description || `收藏 ${link.id}`;
 
   const selectOverlay = selectMode ? (
@@ -157,8 +158,8 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
 
   const fileExt0 = (link.title || '').match(/\.(\w+)$/)?.[1]?.toLowerCase() || '';
   const isHtmlFile = itemType === 'file' && ['html', 'htm'].includes(fileExt0);
-  const canSummarize = onSummarize && (itemType === 'link' || itemType === 'text' || itemType === 'file');
-  const canExtract = onExtract && (itemType === 'link' || itemType === 'file');
+  const canSummarize = onSummarize && (isLinkLike || itemType === 'text' || itemType === 'file' || itemType === 'document');
+  const canExtract = onExtract && (isLinkLike || itemType === 'file' || itemType === 'document');
   // Use flag columns from list API (content_md not included in list response)
   const hasMarkdown = !!(link.has_content_md || link.content_md);
   const hasHtml = isHtmlFile && !!(link.has_html_note || link.html_note);
@@ -169,42 +170,42 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
         <button onClick={() => setShowHtml(true)}
           disabled={!hasHtml}
           title={hasHtml ? '预览网页' : '正在处理...'}
-          className={`btn-ghost p-1.5 opacity-0 group-hover:opacity-100 disabled:opacity-50 ${hasHtml ? 'text-teal-500' : 'text-gray-400'}`}>
+          className={`btn-ghost p-1.5 disabled:opacity-50 ${hasHtml ? 'text-teal-500' : 'text-gray-400'}`}>
           <Globe className="w-3.5 h-3.5" />
         </button>
       ) : canExtract && (
         <button onClick={hasMarkdown ? () => setShowMarkdown(true) : handleExtract}
           disabled={extracting}
           title={hasMarkdown ? '查看正文 Markdown' : '提取正文'}
-          className={`btn-ghost p-1.5 opacity-0 group-hover:opacity-100 disabled:opacity-50 ${hasMarkdown ? 'text-teal-500' : 'text-gray-400'}`}>
+          className={`btn-ghost p-1.5 disabled:opacity-50 ${hasMarkdown ? 'text-teal-500' : 'text-gray-500'}`}>
           {extracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookOpen className="w-3.5 h-3.5" />}
         </button>
       )}
       {hasMarkdown && !isHtmlFile && (
         <button onClick={() => setShowNote(true)}
           title="AI 学习笔记"
-          className={`btn-ghost p-1.5 opacity-0 group-hover:opacity-100 ${link.html_note ? 'text-violet-500' : 'text-gray-400'}`}>
+          className={`btn-ghost p-1.5 ${link.html_note ? 'text-violet-500' : 'text-gray-400'}`}>
           <GraduationCap className="w-3.5 h-3.5" />
         </button>
       )}
       {hasMarkdown && (
         <button onClick={() => setShowDocumentInspector(true)}
           title="查看文档索引"
-          className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100 text-indigo-500">
+          className="btn-ghost p-1.5 text-indigo-500">
           <FileSearch className="w-3.5 h-3.5" />
         </button>
       )}
       {canSummarize && (
         <button onClick={handleSummarize} disabled={summarizing}
           title="AI 摘要"
-          className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100 text-purple-500 disabled:opacity-50">
+          className="btn-ghost p-1.5 text-purple-500 disabled:opacity-50">
           {summarizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
         </button>
       )}
-      <button onClick={() => setEditing(true)} aria-label={`编辑收藏 ${itemLabel}`} className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100">
+      <button onClick={() => setEditing(true)} aria-label={`编辑收藏 ${itemLabel}`} className="btn-ghost p-1.5 text-gray-500">
         <Pencil className="w-3.5 h-3.5" />
       </button>
-      <button onClick={() => onDelete(link.id)} aria-label={`删除收藏 ${itemLabel}`} className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100 text-red-500">
+      <button onClick={() => onDelete(link.id)} aria-label={`删除收藏 ${itemLabel}`} className="btn-ghost p-1.5 text-red-500">
         <Trash2 className="w-3.5 h-3.5" />
       </button>
     </div>
@@ -247,6 +248,8 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
     isProcessing,
     hasMarkdown,
     hasSummary: Boolean(link.summary),
+    itemType,
+    url: link.url,
     processing: link.processing,
   });
   const autoProcessingBanner = autoStatus && (
@@ -265,7 +268,7 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
     </div>
   );
 
-  const markdownBadge = !editing && hasMarkdown && (itemType === 'link' || itemType === 'file') && (
+  const markdownBadge = !editing && hasMarkdown && (isLinkLike || itemType === 'file' || itemType === 'document') && (
     <button onClick={() => setShowMarkdown(true)}
       className="mt-2 inline-flex items-center gap-1 text-xs text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20 rounded-lg px-2.5 py-1.5 hover:bg-teal-100 transition-colors">
       <BookOpen className="w-3 h-3" />

@@ -6,7 +6,7 @@ import type { UploadProgress } from '../api/client';
 import AddLinkTabs from './AddLinkTabs';
 import UploadProgressBar from './UploadProgressBar';
 import type { AddLinkModalProps, ContentType } from './addLinkModalTypes';
-import { formatSize, isUrl, nowLocal, titleFromUploadName } from './addLinkModalUtils';
+import { formatSize, getAutoProcessLinkUrl, isBilibiliVideoUrl, isUrl, nowLocal, titleFromUploadName } from './addLinkModalUtils';
 
 export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText, onAddImage, onAddAudio, onAddFile }: AddLinkModalProps) {
   const [type, setType] = useState<ContentType>('link');
@@ -45,8 +45,9 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
     (async () => {
       try {
         const text = await navigator.clipboard.readText();
-        if (text && isUrl(text)) {
-          setUrl(text.trim());
+        const autoUrl = getAutoProcessLinkUrl(text);
+        if (autoUrl || (text && isUrl(text))) {
+          setUrl(autoUrl || text.trim());
           setClipboardRead(true);
           setType('link');
           setTimeout(() => commentRef.current?.focus(), 100);
@@ -88,9 +89,23 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
       const onProgress = (p: UploadProgress) => setUploadProgress(p);
 
       if (type === 'link') {
-        if (!url.trim()) { setError('请输入链接地址'); setLoading(false); return; }
+        const normalizedUrl = getAutoProcessLinkUrl(url) || url.trim();
+        if (!normalizedUrl) { setError('请输入链接地址'); setLoading(false); return; }
         await onAddLink({
-          url: url.trim(),
+          url: normalizedUrl,
+          comment: comment.trim() || undefined,
+          tag_ids: tagIds,
+          imported_at: time,
+        });
+      } else if (type === 'video') {
+        const normalizedUrl = getAutoProcessLinkUrl(url);
+        if (!normalizedUrl || !isBilibiliVideoUrl(normalizedUrl)) {
+          setError('请输入 Bilibili 视频链接或分享文本');
+          setLoading(false);
+          return;
+        }
+        await onAddLink({
+          url: normalizedUrl,
           comment: comment.trim() || undefined,
           tag_ids: tagIds,
           imported_at: time,
@@ -170,18 +185,24 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           {/* Link input */}
-          {type === 'link' && (
+          {(type === 'link' || type === 'video') && (
             <div>
               <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1.5">
-                链接地址 *
+                {type === 'video' ? '视频链接 *' : '链接地址 *'}
                 {clipboardRead && (
                   <span className="inline-flex items-center gap-1 text-xs text-green-600">
                     <Clipboard className="w-3 h-3" /> 已从剪贴板读取
                   </span>
                 )}
               </label>
-              <input className="input" placeholder="https://..." value={url}
+              <input
+                className="input"
+                placeholder={type === 'video' ? '粘贴 Bilibili 分享文本或视频链接' : 'https://...'}
+                value={url}
                 onChange={e => { setUrl(e.target.value); setClipboardRead(false); }} />
+              {type === 'video' && (
+                <p className="mt-1 text-xs text-gray-400">支持 Bilibili 视频转文字。</p>
+              )}
             </div>
           )}
 
@@ -352,7 +373,7 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
           <div className="flex gap-2 pt-2">
             <button type="submit" className="btn-primary flex-1" disabled={loading}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              {loading && uploadProgress ? `上传中 ${uploadProgress.percent}%` : loading ? (type === 'link' ? '保存中...' : '保存中...') : '保存'}
+              {loading && uploadProgress ? `上传中 ${uploadProgress.percent}%` : loading ? '保存中...' : '保存'}
             </button>
             <button type="button" onClick={onClose} className="btn-secondary" disabled={loading}>取消</button>
           </div>

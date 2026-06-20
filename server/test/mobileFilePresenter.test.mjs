@@ -57,6 +57,27 @@ test('toMobileFile sources type and retry state from shared presentation', () =>
   assert.equal(result.url, '/uploads/plan.pdf');
 });
 
+test('toMobileFile exposes Bilibili links as videos with transcript material', () => {
+  const result = toMobileFile({
+    id: 70,
+    type: 'link',
+    url: 'https://b23.tv/abc123',
+    title: 'Bilibili video',
+    thumbnail: 'https://i.hdslb.com/bfs/archive/cover.jpg',
+    content_md: '# Video Transcription\n\nhello world',
+    summary: 'video summary',
+    status: 'done',
+  });
+
+  assert.equal(result.id, '70');
+  assert.equal(result.type, 'video');
+  assert.equal(result.url, 'https://b23.tv/abc123');
+  assert.equal(result.og_image, 'https://i.hdslb.com/bfs/archive/cover.jpg');
+  assert.equal(result.content_md, '# Video Transcription\n\nhello world');
+  assert.equal(result.has_content, true);
+  assert.equal(result.summary, 'video summary');
+});
+
 test('toMobileFile exposes image batch metadata', () => {
   const result = toMobileFile({
     id: 10,

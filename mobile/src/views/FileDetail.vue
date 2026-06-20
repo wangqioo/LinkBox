@@ -13,7 +13,7 @@
 
       <template v-else>
         <!-- Hero -->
-        <div class="hero gc" :class="{ 'hero-img': file.type === 'image' || (file.type === 'link' && file.og_image) }">
+        <div class="hero gc" :class="{ 'hero-img': file.type === 'image' || (isLinkLike && file.og_image) }">
           <div class="hero-glow"></div>
           <!-- Image preview -->
           <template v-if="file.type === 'image'">
@@ -27,7 +27,7 @@
             </div>
           </template>
           <!-- Link cover image -->
-          <template v-else-if="file.type === 'link' && file.og_image">
+          <template v-else-if="isLinkLike && file.og_image">
             <div class="hero-img-wrap">
               <img
                 :src="imgUrl(file.og_image)"
@@ -38,7 +38,7 @@
             </div>
           </template>
           <div v-else class="hero-icon">{{ typeIcon }}</div>
-          <div class="hero-name">{{ file.type === 'link' ? (file.summary || file.original_filename) : file.original_filename }}</div>
+          <div class="hero-name">{{ isLinkLike ? (file.summary || file.original_filename) : file.original_filename }}</div>
           <div class="hero-badges">
             <span class="type-chip" :class="file.type">{{ typeLabel }}</span>
             <span class="status-chip" :class="file.status">{{ statusLabel }}</span>
@@ -84,14 +84,20 @@
             <button class="action-link" @click="triggerAnalyze" :disabled="analyzing">重试</button>
           </div>
           <template v-else>
-            <div v-if="file.type !== 'link'" class="summary-text">{{ file.summary || '暂无简介' }}</div>
-            <div class="desc-text">{{ file.description || (file.type === 'link' ? file.summary : '') || '暂无简介' }}</div>
+            <div v-if="!isLinkLike" class="summary-text">{{ file.summary || '暂无简介' }}</div>
+            <div class="desc-text">{{ file.description || (isLinkLike ? file.summary : '') || '暂无简介' }}</div>
             <!-- WeChat read full article button -->
             <button v-if="isWechat" class="read-btn" @click="loadArticle" :disabled="extracting">
               <span v-if="extracting" class="read-btn-orb"></span>
               <span>{{ extracting ? '正在提取正文…' : (file.has_content || file.content_md ? '📖 查看原文' : '📖 提取原文') }}</span>
             </button>
           </template>
+        </div>
+
+        <!-- Video transcript -->
+        <div v-if="isBilibiliVideo && videoTranscriptMd" class="info-card gc transcript-card">
+          <div class="card-label">视频原文</div>
+          <div class="transcript-body md-content" v-html="renderedVideoTranscript"></div>
         </div>
 
         <!-- Article markdown reader overlay -->
@@ -129,7 +135,7 @@
 
         <!-- Actions -->
         <div class="actions">
-          <a v-if="file.type !== 'link'"
+          <a v-if="!isLinkLike"
             :href="downloadUrl(file.id)"
             class="btn-primary" download>
             ⬇ 下载文件
@@ -151,6 +157,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getFile, analyzeFile, deleteFile, extractContent, imgUrl, downloadUrl, updateComment } from '../api/files'
+import { fileIcon, fileLabel, isLinkLikeType } from '../utils/mobileItemDisplay'
 
 const route = useRoute()
 const router = useRouter()
@@ -164,12 +171,29 @@ const showArticle = ref(false)
 const commentText = ref('')
 const savingComment = ref(false)
 
+const isLinkLike = computed(() => {
+  return isLinkLikeType(file.value?.type)
+})
+
 const isWechat = computed(() => {
   const url = file.value?.url || ''
-  return file.value?.type === 'link' && (url.includes('mp.weixin.qq.com') || url.includes('weixin.qq.com'))
+  return isLinkLike.value && (url.includes('mp.weixin.qq.com') || url.includes('weixin.qq.com'))
+})
+
+const isBilibiliVideo = computed(() => {
+  const url = file.value?.url || ''
+  return file.value?.type === 'video' || (
+    /https?:\/\/([^/]+\.)?bilibili\.com\/video\/BV[A-Za-z0-9]+/i.test(url) ||
+    /https?:\/\/([^/]+\.)?b23\.tv\/[^/\s]+/i.test(url)
+  )
 })
 
 const renderedMd = computed(() => articleMd.value ? renderMarkdown(articleMd.value) : '')
+const videoTranscriptMd = computed(() => {
+  if (!isBilibiliVideo.value) return ''
+  return String(file.value?.content_md || file.value?.content || '').trim()
+})
+const renderedVideoTranscript = computed(() => videoTranscriptMd.value ? renderMarkdown(videoTranscriptMd.value) : '')
 
 function escapeHtml(text) {
   return String(text)
@@ -276,7 +300,7 @@ function renderMarkdown(markdown) {
 
 async function loadArticle() {
   if (articleMd.value) { showArticle.value = true; return }
-  const cachedArticle = file.value?.content_md || (file.value?.type === 'link' ? file.value?.content : '')
+  const cachedArticle = file.value?.content_md || (isLinkLike.value ? file.value?.content : '')
   if (cachedArticle) {
     articleMeta.value = {
       title: file.value.original_filename,
@@ -300,12 +324,10 @@ async function loadArticle() {
   }
 }
 
-const ICONS  = { image:'🖼', video:'🎬', document:'📄', audio:'🎵', link:'🔗', text:'💬', other:'📦' }
-const LABELS = { image:'图片', video:'视频', document:'文档', audio:'音频', link:'链接', text:'文字', other:'其他' }
 const SLABELS = { pending:'分析中', ready:'已完成', failed:'分析失败' }
 
-const typeIcon   = computed(() => ICONS[file.value?.type]   || '📦')
-const typeLabel  = computed(() => LABELS[file.value?.type]  || '其他')
+const typeIcon = computed(() => isBilibiliVideo.value ? fileIcon('video') : fileIcon(file.value?.type))
+const typeLabel = computed(() => isBilibiliVideo.value ? fileLabel('video') : fileLabel(file.value?.type))
 const statusLabel = computed(() => SLABELS[file.value?.status] || '')
 const processingLabel = computed(() => file.value?.processing?.label || '后台处理中')
 const processingError = computed(() => file.value?.error || file.value?.processing?.lastError || '请稍后重试')
@@ -360,7 +382,15 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page { position: relative; height: 100%; background: var(--bg); display: flex; flex-direction: column; overflow: hidden; }
+.page {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .detail-bg {
   position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse 300px 240px at 50% 0%, rgba(139,114,255,.1) 0%, transparent 65%), var(--bg);
@@ -388,8 +418,14 @@ onMounted(load)
 .app-hdr-act:hover { background: rgba(255,110,122,.15); color: var(--red); }
 
 .app-body {
-  flex: 1; overflow-y: auto;
-  padding: 14px 16px 48px;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  padding: 14px 16px calc(96px + env(safe-area-inset-bottom, 0px));
   display: flex; flex-direction: column; gap: 10px;
   position: relative; z-index: 1;
 }
@@ -398,9 +434,12 @@ onMounted(load)
 
 /* Hero card */
 .hero {
+  flex-shrink: 0;
+  max-height: 360px;
   padding: 24px 18px; text-align: center;
   border-radius: var(--radius);
   background: var(--s2); border: 1px solid var(--border2);
+  overflow: hidden;
 }
 .hero.hero-img { padding: 0 0 16px; overflow: hidden; }
 .hero.hero-img .hero-name,
@@ -427,6 +466,11 @@ onMounted(load)
 .hero-name {
   font-size: 15px; font-weight: 700; color: var(--text);
   word-break: break-all; margin-bottom: 10px;
+  max-height: 96px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 .hero-badges { display: flex; gap: 8px; justify-content: center; margin-bottom: 8px; }
 .hero-time { font-size: 11px; color: var(--text3); }
@@ -448,8 +492,13 @@ onMounted(load)
 
 /* Info cards */
 .info-card {
+  flex-shrink: 0;
+  max-height: 220px;
   padding: 14px 16px; border-radius: var(--radius);
   background: var(--s2); border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .card-label {
   font-size: 10px; font-weight: 600; color: var(--text3);
@@ -461,7 +510,21 @@ onMounted(load)
 }
 .comment-head .card-label { margin-bottom: 0; }
 .comment-card {
+  max-height: 156px;
   padding: 12px 14px;
+}
+.transcript-card {
+  max-height: 320px;
+}
+.transcript-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  padding-right: 2px;
 }
 .comment-save {
   height: 24px; padding: 0 10px; border-radius: 999px;
@@ -473,7 +536,14 @@ onMounted(load)
   opacity: .38;
 }
 .comment-box {
-  width: 100%; min-height: 44px; resize: vertical;
+  width: 100%;
+  height: 74px;
+  min-height: 74px;
+  resize: none;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
   border: 1px solid var(--border2); border-radius: 10px;
   background: var(--s1); color: var(--text);
   padding: 7px 10px; outline: none;
@@ -486,6 +556,11 @@ onMounted(load)
 }
 
 .state-row {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
   display: flex; align-items: flex-start; gap: 8px;
   font-size: 13px; color: var(--text2);
 }
@@ -528,8 +603,23 @@ onMounted(load)
 }
 .action-link:disabled { opacity: .4; cursor: not-allowed; }
 
-.summary-text { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.5; }
-.desc-text { font-size: 13px; color: var(--text2); margin-top: 6px; line-height: 1.65; }
+.summary-text {
+  min-height: 0;
+  max-height: 72px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.5;
+}
+.desc-text {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  font-size: 13px; color: var(--text2); margin-top: 6px; line-height: 1.65;
+}
 
 .kw-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .kw-tag {
@@ -538,7 +628,14 @@ onMounted(load)
   font-size: 12px; color: var(--text2);
 }
 
-.highlight-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+.highlight-list {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  list-style: none; display: flex; flex-direction: column; gap: 7px;
+}
 .highlight-list li {
   font-size: 13px; color: var(--text2); line-height: 1.6;
   padding-left: 16px; position: relative;
@@ -549,6 +646,12 @@ onMounted(load)
 }
 
 .link-url {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  display: block;
   font-size: 13px; color: var(--accent); word-break: break-all; text-decoration: none;
 }
 .link-url:hover { text-decoration: underline; }
@@ -598,6 +701,7 @@ onMounted(load)
 .article-overlay {
   position: absolute; inset: 0; z-index: 100;
   background: var(--bg); display: flex; flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 .article-hdr {
@@ -618,7 +722,16 @@ onMounted(load)
 }
 .article-title { font-size: 18px; font-weight: 800; color: var(--text); line-height: 1.4; margin-bottom: 8px; }
 .article-byline { font-size: 12px; color: var(--text3); display: flex; gap: 6px; }
-.article-body { flex: 1; overflow-y: auto; padding: 16px 18px 40px; }
+.article-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  padding: 16px 18px calc(96px + env(safe-area-inset-bottom, 0px));
+}
 
 /* Markdown content styles */
 .md-content { color: var(--text); font-size: 15px; line-height: 1.8; }

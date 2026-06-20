@@ -1,3 +1,6 @@
+import { isVideoSourceUrl } from './sourceKind.ts';
+export { getItemTypeLabel, isLinkLikeItemType } from './itemDisplay.ts';
+
 export const proxyImage = (url: string) => {
   if (!url || url.startsWith('/')) return url;
   return '/api/links/image-proxy?url=' + encodeURIComponent(url);
@@ -23,10 +26,6 @@ export const formatLinkDate = (date: string) => {
   }
 };
 
-export const getItemTypeLabel = (itemType: string) => {
-  if (itemType === 'image') return '图片';
-  if (itemType === 'text') return '笔记';
-  if (itemType === 'audio') return '录音';
-  if (itemType === 'file') return '文件';
-  return '';
+export const isBilibiliLink = (url: string) => {
+  return isVideoSourceUrl(url);
 };

@@ -121,13 +121,14 @@ test('link.extractMarkdown persists extracted content through the injected datab
     db,
     extractMarkdown: async (url) => {
       assert.equal(url, 'https://article.example');
-      return { markdown: '# Extracted\n\nBody' };
+      return { markdown: '# Extracted\n\nBody', thumbnail: 'https://i0.hdslb.com/bfs/archive/cover.jpg' };
     },
   });
 
   await queue.handlers['link.extractMarkdown']({ link_id: 1, payload: {} });
 
-  const row = db.prepare('SELECT content_md FROM links WHERE id = 1').get();
+  const row = db.prepare('SELECT content_md, thumbnail FROM links WHERE id = 1').get();
   assert.equal(row.content_md, '# Extracted\n\nBody');
+  assert.equal(row.thumbnail, 'https://i0.hdslb.com/bfs/archive/cover.jpg');
   assert.deepEqual(queue.jobs.map(job => job.type), ['document.embed', 'link.summarize']);
 }));
