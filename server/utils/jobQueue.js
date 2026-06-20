@@ -37,11 +37,26 @@ function backoffSeconds(attempts) {
   return Math.min(300, Math.max(5, 5 * Math.pow(2, Math.max(0, attempts - 1))));
 }
 
+async function withTimeout(promise, timeoutMs, message) {
+  let timeout = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 export function createJobQueue({
   db,
   handlers = {},
-  concurrency = Number(process.env.BACKGROUND_QUEUE_CONCURRENCY || 1),
+  concurrency = Number(process.env.BACKGROUND_QUEUE_CONCURRENCY || 3),
   pollIntervalMs = 1000,
+  jobTimeoutMs = Number(process.env.BACKGROUND_JOB_TIMEOUT_MS || 180000),
   autoStart = true,
   onFinalFailure = null,
 } = {}) {
@@ -180,7 +195,11 @@ export function createJobQueue({
     }
 
     try {
-      await handler({ ...job, payload: parsePayload(job.payload) });
+      await withTimeout(
+        handler({ ...job, payload: parsePayload(job.payload) }),
+        jobTimeoutMs,
+        `Job ${job.type} timed out after ${jobTimeoutMs}ms`,
+      );
       markDone(job.id);
     } catch (error) {
       markFailed(job, error);

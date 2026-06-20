@@ -81,6 +81,26 @@ test('runJob retries failed jobs until max attempts is reached', async () => wit
   assert.match(finalFailure.last_error, /LLM offline/);
 }));
 
+test('runJob times out stuck handlers so the queue can continue', async () => withDb(async (db) => {
+  const queue = createJobQueue({
+    db,
+    autoStart: false,
+    jobTimeoutMs: 10,
+    handlers: {
+      'link.extractMarkdown': async () => new Promise(resolve => setTimeout(resolve, 30)),
+    },
+  });
+  const first = queue.enqueue('link.extractMarkdown', { linkId: 7, maxAttempts: 1 });
+  const leased = queue.leaseNextJob();
+
+  await queue.runJob(leased);
+
+  const after = db.prepare('SELECT status, attempts, last_error FROM jobs WHERE id = ?').get(first.id);
+  assert.equal(after.status, 'failed');
+  assert.equal(after.attempts, 1);
+  assert.match(after.last_error, /timed out after 10ms/);
+}));
+
 test('retryFailedJobs returns failed jobs to queued', async () => withDb((db) => {
   db.prepare(`
     INSERT INTO jobs (type, link_id, payload, status, attempts, max_attempts, locked_at, last_error)
