@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  commentPreviewText,
   fileIcon,
   fileLabel,
   fileTypeBackground,
@@ -30,4 +31,10 @@ test('mobile item display groups URL-backed items as link-like', () => {
   assert.equal(isLinkLikeType('article'), true);
   assert.equal(isLinkLikeType('video'), true);
   assert.equal(isLinkLikeType('image'), false);
+});
+
+test('commentPreviewText trims blank comments for feed display', () => {
+  assert.equal(commentPreviewText(''), '');
+  assert.equal(commentPreviewText('   \n  '), '');
+  assert.equal(commentPreviewText('  第一行\n\n第二行  '), '第一行\n第二行');
 });

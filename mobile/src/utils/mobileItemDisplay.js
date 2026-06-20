@@ -60,3 +60,11 @@ export function iconBackgroundClass(type) {
 export function isLinkLikeType(type) {
   return ['link', 'article', 'video'].includes(type);
 }
+
+export function commentPreviewText(comment) {
+  return String(comment || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n');
+}

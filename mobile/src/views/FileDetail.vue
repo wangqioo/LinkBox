@@ -46,23 +46,6 @@
           <div class="hero-time">{{ timeStr }}</div>
         </div>
 
-        <!-- Personal comment -->
-        <div class="info-card gc comment-card">
-          <div class="comment-head">
-            <div class="card-label">我的评论</div>
-            <button class="comment-save" @click="saveComment" :disabled="savingComment || commentText === (file.comment || '')">
-              {{ savingComment ? '保存中' : '保存' }}
-            </button>
-          </div>
-          <textarea
-            v-model="commentText"
-            class="comment-box"
-            rows="2"
-            maxlength="2000"
-            placeholder="写评论"
-          ></textarea>
-        </div>
-
         <!-- AI Summary -->
         <div class="info-card gc">
           <div class="card-label">AI 简介</div>
@@ -156,7 +139,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getFile, analyzeFile, deleteFile, extractContent, imgUrl, downloadUrl, updateComment } from '../api/files'
+import { getFile, analyzeFile, deleteFile, extractContent, imgUrl, downloadUrl } from '../api/files'
 import { fileIcon, fileLabel, isLinkLikeType } from '../utils/mobileItemDisplay'
 
 const route = useRoute()
@@ -168,8 +151,6 @@ const articleMd = ref('')
 const articleMeta = ref(null)
 const extracting = ref(false)
 const showArticle = ref(false)
-const commentText = ref('')
-const savingComment = ref(false)
 
 const isLinkLike = computed(() => {
   return isLinkLikeType(file.value?.type)
@@ -343,19 +324,8 @@ async function load() {
   loading.value = true
   try {
     file.value = await getFile(route.params.id)
-    commentText.value = file.value?.comment || ''
   }
   finally { loading.value = false }
-}
-
-async function saveComment() {
-  savingComment.value = true
-  try {
-    file.value = await updateComment(file.value.id, commentText.value)
-    commentText.value = file.value.comment || ''
-  } finally {
-    savingComment.value = false
-  }
 }
 
 async function triggerAnalyze() {
@@ -504,15 +474,6 @@ onMounted(load)
   font-size: 10px; font-weight: 600; color: var(--text3);
   letter-spacing: .08em; text-transform: uppercase; margin-bottom: 9px;
 }
-.comment-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-bottom: 6px;
-}
-.comment-head .card-label { margin-bottom: 0; }
-.comment-card {
-  max-height: 156px;
-  padding: 12px 14px;
-}
 .transcript-card {
   max-height: 320px;
 }
@@ -526,35 +487,6 @@ onMounted(load)
   touch-action: pan-y;
   padding-right: 2px;
 }
-.comment-save {
-  height: 24px; padding: 0 10px; border-radius: 999px;
-  border: 1px solid rgba(139,114,255,.28);
-  background: var(--accent-s); color: var(--accent);
-  font-size: 11px; font-weight: 700; font-family: inherit;
-}
-.comment-save:disabled {
-  opacity: .38;
-}
-.comment-box {
-  width: 100%;
-  height: 74px;
-  min-height: 74px;
-  resize: none;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
-  touch-action: pan-y;
-  border: 1px solid var(--border2); border-radius: 10px;
-  background: var(--s1); color: var(--text);
-  padding: 7px 10px; outline: none;
-  font: inherit; font-size: 13px; line-height: 1.45;
-}
-.comment-box::placeholder { color: var(--text3); }
-.comment-box:focus {
-  border-color: rgba(139,114,255,.5);
-  box-shadow: 0 0 0 3px rgba(139,114,255,.08);
-}
-
 .state-row {
   min-height: 0;
   overflow-y: auto;

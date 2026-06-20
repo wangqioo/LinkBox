@@ -85,6 +85,11 @@
             @touchstart.passive="onCardTS($event, f.id)"
             @touchmove.passive="onCardTM($event, f.id)"
             @touchend.passive="onCardTE(f.id)"
+            @mousedown="onCardMouseDown($event, f.id)"
+            @mousemove="onCardMouseMove($event, f.id)"
+            @mouseup="onCardMouseUp(f.id)"
+            @mouseleave="onCardMouseUp(f.id)"
+            @contextmenu.prevent="openCommentSheet(rowCommentTarget(f))"
           >
             <div class="fm-row-inner">
               <ImageBatchCard
@@ -94,6 +99,7 @@
                 @open="handleCardClick"
                 @active-change="rememberBatchActive(f, $event)"
                 @delete-active="confirmDelete"
+                @contextmenu.prevent="openCommentSheet(rowCommentTarget(f))"
               />
 
               <div
@@ -101,6 +107,7 @@
                 class="fm-img-card"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
                 @click="handleCardClick(f.file, f.id)"
+                @contextmenu.prevent="openCommentSheet(f.file)"
               >
                 <div class="fm-img-inner" :class="imgBgClass(f.file)">
                   <img :src="downloadUrl(f.file.id)" class="img-thumb" loading="lazy" @error="e => e.target.style.display='none'" />
@@ -113,6 +120,7 @@
                 class="fm-link-card"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
                 @click="handleCardClick(f.file, f.id)"
+                @contextmenu.prevent="openCommentSheet(f.file)"
               >
                 <div class="fm-link-preview" :class="linkBgClass(f.file)">
                   <img v-if="f.file.og_image" :src="imgUrl(f.file.og_image)" class="link-og-img" loading="lazy" @error="e => e.target.style.display='none'" />
@@ -128,6 +136,9 @@
                     {{ linkHost(f.file.url || f.file.original_filename) }}
                   </div>
                   <FileHints :file="f.file" in-card />
+                  <div v-if="commentPreviewText(f.file.comment)" class="fm-comment-preview">
+                    {{ commentPreviewText(f.file.comment) }}
+                  </div>
                 </div>
               </div>
 
@@ -136,9 +147,13 @@
                 class="fm-text-bubble"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
                 @click="handleCardClick(f.file, f.id)"
+                @contextmenu.prevent="openCommentSheet(f.file)"
               >
                 <div class="text-bubble-content">{{ f.file.content || f.file.summary || f.file.original_filename }}</div>
                 <FileHints :file="f.file" bubble />
+                <div v-if="commentPreviewText(f.file.comment)" class="fm-comment-preview bubble">
+                  {{ commentPreviewText(f.file.comment) }}
+                </div>
               </div>
 
               <div
@@ -146,6 +161,7 @@
                 class="fm-file-card"
                 :style="{ transform: `translateX(${swipe[f.id] || 0}px)` }"
                 @click="handleCardClick(f.file, f.id)"
+                @contextmenu.prevent="openCommentSheet(f.file)"
               >
                 <div class="fm-file-ico" :style="{ background: fileIconBg(f.file.type) }">
                   {{ fileIcon(f.file.type) }}
@@ -158,6 +174,9 @@
                     <span class="status-dot" :class="f.file.status"></span>
                   </div>
                   <FileHints :file="f.file" in-card />
+                  <div v-if="commentPreviewText(f.file.comment)" class="fm-comment-preview">
+                    {{ commentPreviewText(f.file.comment) }}
+                  </div>
                 </div>
                 <button class="fm-file-open" @click.stop="openFile(f.file.id)">↗</button>
               </div>
@@ -172,6 +191,9 @@
                   <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
                 </svg>
               </button>
+            </div>
+            <div v-if="rowCommentText(f)" class="fm-row-comment">
+              {{ rowCommentText(f) }}
             </div>
             <div class="fm-time">{{ timeStr(f.created_at || f.file?.created_at) }}</div>
           </div>
@@ -226,6 +248,34 @@
           <div class="sheet-actions">
             <button class="sheet-btn cancel" @click="deleteTarget = null">取消</button>
             <button class="sheet-btn danger" @click="doDelete">删除</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="sheet">
+      <div v-if="commentTarget" class="modal-mask" @click.self="closeCommentSheet">
+        <div class="bottom-sheet comment-sheet">
+          <div class="sheet-handle"></div>
+          <div class="comment-sheet-head">
+            <div>
+              <div class="sheet-title">留言</div>
+              <div class="comment-sheet-sub">{{ commentTarget.original_filename }}</div>
+            </div>
+            <button class="sheet-close" @click="closeCommentSheet">✕</button>
+          </div>
+          <textarea
+            v-model="commentDraft"
+            class="comment-input"
+            maxlength="2000"
+            placeholder="写一点自己的备注、想法或待办"
+          ></textarea>
+          <div class="sheet-actions">
+            <button class="sheet-btn cancel" @click="closeCommentSheet">取消</button>
+            <button class="sheet-btn danger muted" @click="clearComment" :disabled="savingComment || !commentDraft.trim()">清空</button>
+            <button class="sheet-btn primary" @click="saveComment" :disabled="savingComment">
+              {{ savingComment ? '保存中' : '保存' }}
+            </button>
           </div>
         </div>
       </div>
@@ -330,12 +380,12 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { deleteFile, downloadUrl, getFiles, getStats, imgUrl, uploadFile, uploadLink, uploadText } from '../api/files'
+import { deleteFile, downloadUrl, getFiles, getStats, imgUrl, updateComment, uploadFile, uploadLink, uploadText } from '../api/files'
 import ImageBatchCard from '../components/ImageBatchCard.vue'
 import { useTheme } from '../composables/useTheme'
 import { groupImageBatches } from '../utils/imageBatchGallery'
 import { getAutoProcessLinkUrl } from '../utils/linkAutoProcess'
-import { fileIcon, fileLabel, fileTypeBackground, isLinkLikeType } from '../utils/mobileItemDisplay'
+import { commentPreviewText, fileIcon, fileLabel, fileTypeBackground, isLinkLikeType } from '../utils/mobileItemDisplay'
 import { mobileProcessingText } from '../utils/mobileProcessingStatus'
 import { buildTodayDigest, organizeFile } from '../utils/mobileOrganizer'
 
@@ -375,12 +425,16 @@ const analyzeNow = ref(false)
 const showSettings = ref(false)
 const showOrganizer = ref(false)
 const deleteTarget = ref(null)
+const commentTarget = ref(null)
+const commentDraft = ref('')
+const savingComment = ref(false)
 const stats = ref(null)
 const feedEl = ref(null)
 const uploadToast = ref('')
 const swipe = reactive({})
 const swipeMeta = reactive({})
 const activeBatchImageIds = reactive({})
+const suppressNextClick = reactive({})
 
 const HOME_SCROLL_TOP_KEY = 'linkbox.mobile.home.scrollTop'
 const HOME_SCROLL_PENDING_KEY = 'linkbox.mobile.home.restoreScroll'
@@ -491,22 +545,70 @@ function onMouseUp(e) {
 }
 
 function onCardTS(e, id) {
-  swipeMeta[id] = { sx: e.touches[0].clientX, sy: e.touches[0].clientY, moving: false }
+  const row = rowById(id)
+  const target = rowCommentTarget(row)
+  const timer = target ? setTimeout(() => {
+    const m = swipeMeta[id]
+    if (!m || m.moving) return
+    suppressNextClick[id] = true
+    openCommentSheet(target)
+  }, 620) : null
+  swipeMeta[id] = { sx: e.touches[0].clientX, sy: e.touches[0].clientY, moving: false, timer }
 }
 function onCardTM(e, id) {
   const m = swipeMeta[id]
   if (!m) return
   const dx = e.touches[0].clientX - m.sx
   const dy = e.touches[0].clientY - m.sy
-  if (!m.moving && Math.abs(dx) > Math.abs(dy) + 5) m.moving = true
+  if (!m.moving && Math.abs(dx) > Math.abs(dy) + 5) {
+    m.moving = true
+    clearLongPressTimer(m)
+  }
   if (!m.moving) return
   swipe[id] = Math.max(-72, Math.min(0, dx))
 }
 function onCardTE(id) {
+  const m = swipeMeta[id]
+  clearLongPressTimer(m)
   swipe[id] = (swipe[id] || 0) < -36 ? -64 : 0
-  if (swipeMeta[id]) swipeMeta[id].moving = false
+  if (m) m.moving = false
 }
+
+function onCardMouseDown(e, id) {
+  if (e.button !== 0 || e.target.closest('button, input, textarea, select, a')) return
+  const row = rowById(id)
+  const target = rowCommentTarget(row)
+  const timer = target ? setTimeout(() => {
+    const m = swipeMeta[id]
+    if (!m || m.moving) return
+    suppressNextClick[id] = true
+    openCommentSheet(target)
+  }, 620) : null
+  swipeMeta[id] = { sx: e.clientX, sy: e.clientY, moving: false, timer }
+}
+
+function onCardMouseMove(e, id) {
+  const m = swipeMeta[id]
+  if (!m) return
+  const dx = e.clientX - m.sx
+  const dy = e.clientY - m.sy
+  if (!m.moving && Math.abs(dx) > Math.abs(dy) + 5) {
+    m.moving = true
+    clearLongPressTimer(m)
+  }
+}
+
+function onCardMouseUp(id) {
+  const m = swipeMeta[id]
+  clearLongPressTimer(m)
+  if (m) m.moving = false
+}
+
 function handleCardClick(f, rowId = f?.id) {
+  if (suppressNextClick[rowId]) {
+    suppressNextClick[rowId] = false
+    return
+  }
   if ((swipe[rowId] || 0) < -10) {
     swipe[rowId] = 0
     return
@@ -549,6 +651,34 @@ function activeBatchImage(row) {
 
 function rowDeleteTarget(row) {
   return row?.kind === 'image-batch' ? activeBatchImage(row) : row?.file
+}
+
+function rowCommentTarget(row) {
+  return rowDeleteTarget(row)
+}
+
+function rowCommentText(row) {
+  const file = rowCommentTarget(row)
+  if (!file) return ''
+  if (row?.kind !== 'image-batch' && file.type !== 'image') return ''
+  return commentPreviewText(file.comment)
+}
+
+function rowById(id) {
+  for (const f of files.value) {
+    if (String(f.id) === String(id)) return { file: f }
+  }
+  for (const group of dateGroups.value) {
+    const found = group.files.find(row => String(row.id) === String(id))
+    if (found) return found
+  }
+  return null
+}
+
+function clearLongPressTimer(meta) {
+  if (!meta?.timer) return
+  clearTimeout(meta.timer)
+  meta.timer = null
 }
 
 const isRecording = ref(false)
@@ -732,6 +862,47 @@ async function doDelete() {
     files.value = files.value.filter(f => f.id !== deleteTarget.value.id)
   } catch {}
   deleteTarget.value = null
+}
+
+function openCommentSheet(f) {
+  if (!f) return
+  commentTarget.value = f
+  commentDraft.value = f.comment || ''
+}
+
+function closeCommentSheet() {
+  if (savingComment.value) return
+  commentTarget.value = null
+  commentDraft.value = ''
+}
+
+function applyUpdatedComment(updated) {
+  if (!updated?.id) return
+  files.value = files.value.map(file => (
+    file.id === updated.id
+      ? { ...file, comment: updated.comment || '' }
+      : file
+  ))
+  if (commentTarget.value?.id === updated.id) {
+    commentTarget.value = { ...commentTarget.value, comment: updated.comment || '' }
+  }
+}
+
+async function saveComment() {
+  if (!commentTarget.value) return
+  savingComment.value = true
+  try {
+    const updated = await updateComment(commentTarget.value.id, commentDraft.value)
+    applyUpdatedComment(updated)
+    closeCommentSheet()
+  } finally {
+    savingComment.value = false
+  }
+}
+
+async function clearComment() {
+  commentDraft.value = ''
+  await saveComment()
 }
 </script>
 
@@ -1046,6 +1217,42 @@ async function doDelete() {
   align-items: center;
   gap: 4px;
 }
+.fm-comment-preview,
+.fm-row-comment {
+  margin-top: 7px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(139,114,255,.18);
+  background: rgba(139,114,255,.08);
+  color: var(--text2);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fm-comment-preview::before,
+.fm-row-comment::before {
+  content: '留言';
+  margin-right: 6px;
+  color: var(--accent);
+  font-weight: 800;
+}
+.fm-comment-preview.bubble {
+  border-color: rgba(255,255,255,.24);
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.92);
+}
+.fm-comment-preview.bubble::before {
+  color: rgba(255,255,255,.86);
+}
+.fm-row-comment {
+  max-width: 185px;
+  align-self: flex-end;
+}
 .fm-file-card {
   padding: 12px 14px;
   display: flex;
@@ -1219,6 +1426,64 @@ async function doDelete() {
 }
 .sheet-btn.cancel { background: var(--s2); border: 1px solid var(--border2); color: var(--text); }
 .sheet-btn.danger { background: rgba(255,110,122,.15); border: 1.5px solid rgba(255,110,122,.3); color: var(--red); }
+.sheet-btn.danger.muted {
+  flex: .7;
+  background: var(--s2);
+  border-color: var(--border2);
+  color: var(--text3);
+}
+.sheet-btn.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.sheet-btn:disabled {
+  opacity: .45;
+}
+.comment-sheet {
+  padding-bottom: 28px;
+}
+.comment-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.comment-sheet-sub {
+  margin-top: 5px;
+  color: var(--text3);
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 270px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.comment-input {
+  width: 100%;
+  min-height: 132px;
+  max-height: 240px;
+  resize: vertical;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border2);
+  border-radius: 15px;
+  background: var(--s1);
+  color: var(--text);
+  padding: 11px 12px;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+.comment-input::placeholder {
+  color: var(--text3);
+}
+.comment-input:focus {
+  border-color: rgba(139,114,255,.55);
+  box-shadow: 0 0 0 3px rgba(139,114,255,.1);
+}
 .organizer-head {
   display: flex;
   align-items: flex-start;
