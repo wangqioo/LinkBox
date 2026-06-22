@@ -93,7 +93,7 @@ test('extractTranscriptWithYtDlp returns downloaded subtitles before audio trans
   assert.equal(calls.some(call => call.command === 'ffmpeg'), false);
 }));
 
-test('extractTranscriptWithYtDlp downloads audio and calls whisper when subtitles are absent', async () => withTempDir(async (dir) => {
+test('extractTranscriptWithYtDlp splits downloaded audio into chunks before whisper transcription', async () => withTempDir(async (dir) => {
   const calls = [];
   const execFile = (command, args, options, callback) => {
     calls.push({ command, args, cwd: options.cwd });
@@ -111,17 +111,25 @@ test('extractTranscriptWithYtDlp downloads audio and calls whisper when subtitle
       return;
     }
     if (command === 'ffmpeg') {
-      const outputPath = args.at(-1);
-      writeFileSync(outputPath, readFileSync(join(options.cwd, 'audio.webm')));
+      if (args.includes('-f') && args.includes('segment')) {
+        writeFileSync(join(options.cwd, 'chunk-000.wav'), 'first chunk');
+        writeFileSync(join(options.cwd, 'chunk-001.wav'), 'second chunk');
+      } else {
+        const outputPath = args.at(-1);
+        writeFileSync(outputPath, readFileSync(join(options.cwd, 'audio.webm')));
+      }
       callback(null, '', '');
       return;
     }
     callback(new Error(`unexpected command ${command}`), '', '');
   };
+  const requestedFiles = [];
   const fetch = async (url, options) => {
     assert.equal(url, 'http://whisper.local/inference');
     assert.equal(options.method, 'POST');
-    return Response.json({ text: '转写出来的视频内容' });
+    const file = options.body.get('file');
+    requestedFiles.push(file.name);
+    return Response.json({ text: file.name === 'chunk-000.wav' ? '第一段内容' : '第二段内容' });
   };
 
   const result = await extractTranscriptWithYtDlp('https://www.bilibili.com/video/BV1ZBjB6UEbt/', {
@@ -134,8 +142,51 @@ test('extractTranscriptWithYtDlp downloads audio and calls whisper when subtitle
 
   assert.equal(result.title, '无字幕视频');
   assert.equal(result.mode, 'whisper');
-  assert.match(result.markdown, /转写出来的视频内容/);
-  assert.equal(calls.some(call => call.command === 'ffmpeg'), true);
+  assert.match(result.markdown, /第一段内容\n\n第二段内容/);
+  assert.deepEqual(requestedFiles, ['chunk-000.wav', 'chunk-001.wav']);
+  assert.equal(calls.filter(call => call.command === 'ffmpeg').length, 2);
+}));
+
+test('extractTranscriptWithYtDlp reports the failing whisper chunk number', async () => withTempDir(async (dir) => {
+  const execFile = (command, args, options, callback) => {
+    if (args.includes('--dump-single-json')) {
+      callback(null, JSON.stringify({ title: '无字幕视频', subtitles: {}, automatic_captions: {} }), '');
+      return;
+    }
+    if (command === 'yt-dlp') {
+      writeFileSync(join(options.cwd, 'audio.webm'), 'fake audio');
+      callback(null, '', '');
+      return;
+    }
+    if (command === 'ffmpeg') {
+      if (args.includes('-f') && args.includes('segment')) {
+        writeFileSync(join(options.cwd, 'chunk-000.wav'), 'first chunk');
+        writeFileSync(join(options.cwd, 'chunk-001.wav'), 'second chunk');
+      } else {
+        writeFileSync(args.at(-1), readFileSync(join(options.cwd, 'audio.webm')));
+      }
+      callback(null, '', '');
+      return;
+    }
+    callback(new Error(`unexpected command ${command}`), '', '');
+  };
+  let requestCount = 0;
+  const fetch = async () => {
+    requestCount += 1;
+    if (requestCount === 2) throw new Error('timeout');
+    return Response.json({ text: '第一段内容' });
+  };
+
+  await assert.rejects(
+    () => extractTranscriptWithYtDlp('https://www.bilibili.com/video/BV1ZBjB6UEbt/', {
+      tempDir: dir,
+      execFile,
+      fetch,
+      whisperServerUrl: 'http://whisper.local/inference',
+      transcriptPostProcessor: null,
+    }),
+    /Whisper chunk 2\/2 failed: timeout/,
+  );
 }));
 
 test('extractTranscriptWithYtDlp post-processes whisper transcript punctuation', async () => withTempDir(async (dir) => {
@@ -150,7 +201,11 @@ test('extractTranscriptWithYtDlp post-processes whisper transcript punctuation',
       return;
     }
     if (command === 'ffmpeg') {
-      writeFileSync(args.at(-1), readFileSync(join(options.cwd, 'audio.webm')));
+      if (args.includes('-f') && args.includes('segment')) {
+        writeFileSync(join(options.cwd, 'chunk-000.wav'), readFileSync(join(options.cwd, 'audio_transcribe.wav')));
+      } else {
+        writeFileSync(args.at(-1), readFileSync(join(options.cwd, 'audio.webm')));
+      }
       callback(null, '', '');
       return;
     }
@@ -180,7 +235,11 @@ test('extractTranscriptWithYtDlp keeps raw whisper transcript when post-process 
       return;
     }
     if (command === 'ffmpeg') {
-      writeFileSync(args.at(-1), readFileSync(join(options.cwd, 'audio.webm')));
+      if (args.includes('-f') && args.includes('segment')) {
+        writeFileSync(join(options.cwd, 'chunk-000.wav'), readFileSync(join(options.cwd, 'audio_transcribe.wav')));
+      } else {
+        writeFileSync(args.at(-1), readFileSync(join(options.cwd, 'audio.webm')));
+      }
       callback(null, '', '');
       return;
     }

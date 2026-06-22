@@ -101,6 +101,29 @@ test('runJob times out stuck handlers so the queue can continue', async () => wi
   assert.match(after.last_error, /timed out after 10ms/);
 }));
 
+test('runJob can use a longer timeout for selected job types', async () => withDb(async (db) => {
+  const queue = createJobQueue({
+    db,
+    autoStart: false,
+    jobTimeoutMs: 10,
+    jobTimeoutsByType: {
+      'link.extractMarkdown': 80,
+    },
+    handlers: {
+      'link.extractMarkdown': async () => new Promise(resolve => setTimeout(resolve, 30)),
+    },
+  });
+  const first = queue.enqueue('link.extractMarkdown', { linkId: 7, maxAttempts: 1 });
+  const leased = queue.leaseNextJob();
+
+  await queue.runJob(leased);
+
+  const after = db.prepare('SELECT status, attempts, last_error FROM jobs WHERE id = ?').get(first.id);
+  assert.equal(after.status, 'done');
+  assert.equal(after.attempts, 1);
+  assert.equal(after.last_error, '');
+}));
+
 test('retryFailedJobs returns failed jobs to queued', async () => withDb((db) => {
   db.prepare(`
     INSERT INTO jobs (type, link_id, payload, status, attempts, max_attempts, locked_at, last_error)

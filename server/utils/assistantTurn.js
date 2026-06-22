@@ -27,12 +27,31 @@ const TASKS = {
 function textForItem(item) {
   return [
     item.title ? `标题：${item.title}` : '',
-    item.url ? `链接：${item.url}` : '',
+    item.url ? `来源：${sourceLabel(item.url)}` : '',
     item.summary ? `摘要：${item.summary}` : '',
-    item.chunk_text ? `相关片段：\n${item.chunk_text}` : (
-      item.content_md ? `正文 Markdown：\n${item.content_md}` : (item.content ? `内容：\n${item.content}` : '')
+    item.chunk_text ? `相关片段：\n${cleanContextText(item.chunk_text)}` : (
+      item.content_md ? `正文 Markdown：\n${cleanContextText(item.content_md)}` : (item.content ? `内容：\n${cleanContextText(item.content)}` : '')
     ),
   ].filter(Boolean).join('\n');
+}
+
+function sourceLabel(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname;
+  } catch {
+    return String(url || '').slice(0, 80);
+  }
+}
+
+function cleanContextText(text) {
+  return String(text || '')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, (_match, alt) => alt ? `图片：${alt}` : '图片')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export function groupSources(items) {
@@ -98,9 +117,9 @@ function trimContext(sources, {
     const body = source.chunks?.length
       ? [
           source.title ? `标题：${source.title}` : '',
-          source.url ? `链接：${source.url}` : '',
+          source.url ? `来源：${sourceLabel(source.url)}` : '',
           source.summary ? `摘要：${source.summary}` : '',
-          ...source.chunks.map((chunk, index) => `相关片段 ${index + 1}：\n${chunk.chunk_text}`),
+          ...source.chunks.map((chunk, index) => `相关片段 ${index + 1}：\n${cleanContextText(chunk.chunk_text)}`),
         ].filter(Boolean).join('\n\n')
       : textForItem(source);
     const block = `资料 ${source.source_index}（ID: ${source.id}）\n${body}`;

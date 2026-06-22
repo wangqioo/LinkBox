@@ -367,6 +367,13 @@ export async function streamAIChat({ messages, model, maxTokens = 200, temperatu
           continue;
         }
 
+        if (parsed.error) {
+          const message = typeof parsed.error === 'string'
+            ? parsed.error
+            : (parsed.error.message || JSON.stringify(parsed.error));
+          throw new Error(`LLM stream error: ${message}`);
+        }
+
         const delta = parsed.choices?.[0]?.delta?.content
           ?? parsed.choices?.[0]?.delta?.reasoning_content
           ?? parsed.choices?.[0]?.delta?.reasoning

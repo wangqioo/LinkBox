@@ -18,12 +18,65 @@ const router = Router();
 const MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
 const MAX_FALLBACK_SOURCES = Number(process.env.ASSISTANT_MAX_FALLBACK_SOURCES || 2);
 const ASSISTANT_MAX_TOKENS = Number(process.env.ASSISTANT_MAX_TOKENS || 900);
+const ASSISTANT_RETRY_CONTEXT_CHARS = Number(process.env.ASSISTANT_RETRY_CONTEXT_CHARS || 900);
+const ASSISTANT_RETRY_FIELD_CHARS = Number(process.env.ASSISTANT_RETRY_FIELD_CHARS || 500);
+const ASSISTANT_RETRY_MAX_TOKENS = Number(process.env.ASSISTANT_RETRY_MAX_TOKENS || 120);
 
 router.use(authMiddleware);
 
 function writeSse(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function isLocalRkllmFailure(error) {
+  return /RKLLM resident demo pty read failed|Input\/output error|LLM error 500/i.test(String(error?.message || error || ''));
+}
+
+function compactMessages(question, ranked, task) {
+  return buildMessages(question, ranked.slice(0, 1), task, {
+    maxContextChars: ASSISTANT_RETRY_CONTEXT_CHARS,
+    maxFieldChars: ASSISTANT_RETRY_FIELD_CHARS,
+  });
+}
+
+async function callAssistantWithFallback({ question, ranked, task, onToken }) {
+  const messages = buildMessages(question, ranked, task);
+  try {
+    if (onToken) {
+      return await streamAIChat({
+        messages,
+        maxTokens: ASSISTANT_MAX_TOKENS,
+        enableThinking: false,
+        timeoutMs: 90000,
+        onToken,
+      });
+    }
+    return await callAIChat({
+      messages,
+      maxTokens: ASSISTANT_MAX_TOKENS,
+      timeoutMs: 90000,
+    });
+  } catch (error) {
+    if (!isLocalRkllmFailure(error)) throw error;
+    console.warn('Assistant local RKLLM failed; retrying with compact context:', error.message);
+    if (onToken) {
+      return await streamAIChat({
+        messages: compactMessages(question, ranked, task),
+        maxTokens: ASSISTANT_RETRY_MAX_TOKENS,
+        enableThinking: false,
+        timeoutMs: 90000,
+        onToken,
+      });
+    }
+    const answer = await callAIChat({
+      messages: compactMessages(question, ranked, task),
+      maxTokens: ASSISTANT_RETRY_MAX_TOKENS,
+      timeoutMs: 90000,
+    });
+    await onToken?.(answer);
+    return answer;
+  }
 }
 
 async function retrieveForRequest(req, { question, task }) {
@@ -61,11 +114,7 @@ router.post('/chat', async (req, res) => {
     });
   }
 
-  const answer = await callAIChat({
-    messages: buildMessages(question, ranked, task),
-    maxTokens: ASSISTANT_MAX_TOKENS,
-    timeoutMs: 90000,
-  });
+  const answer = await callAssistantWithFallback({ question, ranked, task });
   const sources = publicSources(ranked);
 
   res.json({
@@ -95,11 +144,10 @@ router.post('/chat/stream', async (req, res) => {
   }
 
   try {
-    await streamAIChat({
-      messages: buildMessages(question, ranked, task),
-      maxTokens: ASSISTANT_MAX_TOKENS,
-      enableThinking: false,
-      timeoutMs: 90000,
+    await callAssistantWithFallback({
+      question,
+      ranked,
+      task,
       onToken: async text => writeSse(res, 'delta', { text: normalizeCitationText(text, sources.length) }),
     });
     writeSse(res, 'done', {});

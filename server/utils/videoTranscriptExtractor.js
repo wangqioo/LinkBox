@@ -8,6 +8,7 @@ import { isBilibiliVideoUrl } from './bilibiliVideoSource.js';
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_PUNCTUATION_TIMEOUT_MS = 3 * 60 * 1000;
 const DEFAULT_PUNCTUATION_CHUNK_CHARS = 1800;
+const DEFAULT_AUDIO_CHUNK_SECONDS = 60;
 const SUBTITLE_LANG_PRIORITY = [
   'zh-Hans',
   'zh-Hant',
@@ -21,6 +22,7 @@ const SUBTITLE_LANG_PRIORITY = [
 ];
 const AUDIO_EXTENSIONS = new Set(['.m4a', '.mp3', '.mp4', '.webm', '.wav', '.aac', '.opus']);
 const SUBTITLE_EXTENSIONS = new Set(['.vtt', '.srt']);
+const CHUNK_EXTENSIONS = new Set(['.wav']);
 
 function execFileAsync(execFile, command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -301,19 +303,35 @@ async function downloadAudio({ url, dir, execFile, ytDlpBin, timeoutMs }) {
 }
 
 async function convertAudio({ audioFile, dir, execFile, ffmpegBin, timeoutMs }) {
-  const output = join(dir, 'audio_transcribe.m4a');
+  const output = join(dir, 'audio_transcribe.wav');
   await execFileAsync(execFile, ffmpegBin, [
     '-y',
     '-i', audioFile,
     '-vn',
     '-ac', '1',
     '-ar', '16000',
-    '-c:a', 'aac',
-    '-b:a', '160k',
-    '-movflags', '+faststart',
+    '-c:a', 'pcm_s16le',
     output,
   ], { cwd: dir, timeout: timeoutMs });
   return output;
+}
+
+async function segmentAudio({ audioFile, dir, execFile, ffmpegBin, timeoutMs, chunkSeconds }) {
+  const outputPattern = join(dir, 'chunk-%03d.wav');
+  await execFileAsync(execFile, ffmpegBin, [
+    '-y',
+    '-i', audioFile,
+    '-f', 'segment',
+    '-segment_time', String(chunkSeconds),
+    '-c', 'copy',
+    outputPattern,
+  ], { cwd: dir, timeout: timeoutMs });
+  const chunks = readdirSync(dir)
+    .filter(name => /^chunk-\d+\.wav$/.test(name) && CHUNK_EXTENSIONS.has(extname(name).toLowerCase()))
+    .sort()
+    .map(name => join(dir, name));
+  if (!chunks.length) throw new Error('ffmpeg did not produce audio chunks');
+  return chunks;
 }
 
 async function transcribeAudio({ audioFile, fetchImpl, whisperServerUrl, timeoutMs }) {
@@ -339,6 +357,20 @@ async function transcribeAudio({ audioFile, fetchImpl, whisperServerUrl, timeout
   return text.trim();
 }
 
+async function transcribeAudioChunks({ audioFiles, fetchImpl, whisperServerUrl, timeoutMs }) {
+  const transcripts = [];
+  for (const [index, audioFile] of audioFiles.entries()) {
+    console.info(`[video-transcript] Transcribing audio chunk ${index + 1}/${audioFiles.length}: ${basename(audioFile)}`);
+    try {
+      const text = await transcribeAudio({ audioFile, fetchImpl, whisperServerUrl, timeoutMs });
+      if (text) transcripts.push(text);
+    } catch (error) {
+      throw new Error(`Whisper chunk ${index + 1}/${audioFiles.length} failed: ${error.message}`);
+    }
+  }
+  return transcripts.join('\n\n').trim();
+}
+
 export async function extractTranscriptWithYtDlp(url, options = {}) {
   const execFile = options.execFile || execFileCallback;
   const fetchImpl = options.fetch || globalThis.fetch;
@@ -349,6 +381,8 @@ export async function extractTranscriptWithYtDlp(url, options = {}) {
     ? punctuateTranscriptText
     : options.transcriptPostProcessor;
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const audioChunkSeconds = options.audioChunkSeconds
+    || positiveInteger(process.env.TRANSCRIPT_AUDIO_CHUNK_SECONDS, DEFAULT_AUDIO_CHUNK_SECONDS);
   const dir = options.tempDir || mkdtempSync(join(tmpdir(), 'linkbox-video-transcript-'));
   const shouldCleanup = !options.tempDir;
 
@@ -382,7 +416,20 @@ export async function extractTranscriptWithYtDlp(url, options = {}) {
 
     const audioFile = await downloadAudio({ url, dir, execFile, ytDlpBin, timeoutMs });
     const convertedAudio = await convertAudio({ audioFile, dir, execFile, ffmpegBin, timeoutMs });
-    const rawTranscript = await transcribeAudio({ audioFile: convertedAudio, fetchImpl, whisperServerUrl, timeoutMs });
+    const audioChunks = await segmentAudio({
+      audioFile: convertedAudio,
+      dir,
+      execFile,
+      ffmpegBin,
+      timeoutMs,
+      chunkSeconds: audioChunkSeconds,
+    });
+    const rawTranscript = await transcribeAudioChunks({
+      audioFiles: audioChunks,
+      fetchImpl,
+      whisperServerUrl,
+      timeoutMs,
+    });
     let transcript = rawTranscript;
     if (transcriptPostProcessor) {
       try {
