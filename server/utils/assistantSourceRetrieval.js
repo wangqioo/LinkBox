@@ -73,6 +73,7 @@ export function buildRetrievalDiagnostics({
 
 export function retrieveAssistantSources(db, {
   userId,
+  groupId,
   question,
   task = 'ask',
   scope = {},
@@ -88,6 +89,7 @@ export function retrieveAssistantSources(db, {
   const sources = retrieveSources({
     db,
     userId,
+    groupId,
     question,
     task,
     scope,
@@ -106,6 +108,7 @@ export function retrieveAssistantSources(db, {
 
 export async function retrieveAssistantSourcesAsync(db, {
   userId,
+  groupId,
   question,
   task = 'ask',
   scope = {},
@@ -122,6 +125,7 @@ export async function retrieveAssistantSourcesAsync(db, {
   const sources = await retrieveSourcesAsync({
     db,
     userId,
+    groupId,
     question,
     task,
     scope,

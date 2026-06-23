@@ -22,7 +22,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Lock
 from urllib.parse import urlparse
 
 
@@ -31,9 +31,9 @@ PORT = int(os.environ.get("RKLLM_ADAPTER_PORT", "8000"))
 MODEL_ID = os.environ.get("RKLLM_MODEL_ID", "qwen3-vl-2b-rk3576")
 MODEL_DIR = Path(os.environ.get("RKLLM_MODEL_DIR", "/home/lckfb/ai/qwen3-vl-2b"))
 DEMO_BIN = MODEL_DIR / "demo_Linux_aarch64" / "demo"
-DEFAULT_IMAGE = Path(os.environ.get("RKLLM_DEFAULT_IMAGE", str(MODEL_DIR / "demo_Linux_aarch64" / "demo.jpg")))
-VISION_MODEL = Path(os.environ.get("RKLLM_VISION_MODEL", str(MODEL_DIR / "qwen3-vl-2b_vision_rk3576.rknn")))
-LLM_MODEL = Path(os.environ.get("RKLLM_LLM_MODEL", str(MODEL_DIR / "qwen3-vl-2b-instruct_w4a16_g128_rk3576.rkllm")))
+DEFAULT_IMAGE = MODEL_DIR / "demo_Linux_aarch64" / "demo.jpg"
+VISION_MODEL = MODEL_DIR / "qwen3-vl-2b_vision_rk3576.rknn"
+LLM_MODEL = MODEL_DIR / "qwen3-vl-2b-instruct_w4a16_g128_rk3576.rkllm"
 LIB_DIR = MODEL_DIR / "demo_Linux_aarch64" / "lib"
 MAX_NEW_TOKENS = os.environ.get("QWEN_VL_MAX_NEW_TOKENS", "256")
 CONTEXT = os.environ.get("QWEN_VL_CONTEXT", "3072")
@@ -42,12 +42,6 @@ REQUEST_TIMEOUT = int(os.environ.get("RKLLM_REQUEST_TIMEOUT", "90"))
 BOOT_TIMEOUT = int(os.environ.get("RKLLM_BOOT_TIMEOUT", "45"))
 TMP_DIR = Path(os.environ.get("RKLLM_ADAPTER_TMP", "/tmp/rkllm-openai-adapter"))
 CACHE_DB = Path(os.environ.get("RKLLM_CACHE_DB", "/var/lib/rkllm-openai-adapter/cache.sqlite"))
-DISABLE_THINKING = os.environ.get("RKLLM_DISABLE_THINKING", "1").lower() not in {"0", "false", "no", "off"}
-NO_THINK_PREFIX = os.environ.get(
-    "RKLLM_NO_THINK_PREFIX",
-    "请直接给出最终答案，不要展示思考过程、推理步骤、分析过程或草稿。问题：",
-)
-REWARM_DEFAULT_AFTER_IMAGE = os.environ.get("RKLLM_REWARM_DEFAULT_AFTER_IMAGE", "1").lower() not in {"0", "false", "no", "off"}
 
 REQUEST_LOCK = Lock()
 IMAGE_ANSWER_CACHE: dict[str, str] = {}
@@ -60,8 +54,6 @@ STATS = {
     "memory_cache_hits": 0,
     "persistent_cache_hits": 0,
     "demo_restarts": 0,
-    "background_rewarms": 0,
-    "ask_retries": 0,
     "last_latency_ms": None,
     "last_error": "",
 }
@@ -104,41 +96,6 @@ def sse_response(handler: BaseHTTPRequestHandler, model: str, answer: str) -> No
     for payload in [chunk, done]:
         handler.wfile.write(f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
     handler.wfile.write(b"data: [DONE]\n\n")
-
-
-def sse_start(handler: BaseHTTPRequestHandler) -> None:
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/event-stream; charset=utf-8")
-    handler.send_header("Cache-Control", "no-cache")
-    handler.end_headers()
-
-
-def sse_delta(handler: BaseHTTPRequestHandler, request_id: str, model: str, text: str, finish_reason: str | None = None) -> None:
-    payload = {
-        "id": request_id,
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [{
-            "index": 0,
-            "delta": {"content": text} if text else {},
-            "finish_reason": finish_reason,
-        }],
-    }
-    handler.wfile.write(f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
-    handler.wfile.flush()
-
-
-def sse_done(handler: BaseHTTPRequestHandler) -> None:
-    handler.wfile.write(b"data: [DONE]\n\n")
-    handler.wfile.flush()
-
-
-def sse_error(handler: BaseHTTPRequestHandler, error: str) -> None:
-    payload = {"error": error}
-    handler.wfile.write(f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
-    handler.wfile.write(b"data: [DONE]\n\n")
-    handler.wfile.flush()
 
 
 def read_json(handler: BaseHTTPRequestHandler) -> dict:
@@ -268,7 +225,6 @@ def save_data_url(url: str) -> Path | None:
 
 
 def run_rkllm(prompt: str, image_path: Path) -> str:
-    prompt = prepare_prompt(prompt)
     if image_path != DEFAULT_IMAGE:
         image_key = image_path.name
         prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
@@ -282,78 +238,12 @@ def run_rkllm(prompt: str, image_path: Path) -> str:
             IMAGE_ANSWER_CACHE[cache_key] = cached
             return cached
         answer = RESIDENT_DEMO.ask(prompt, image_path)
-        schedule_default_rewarm()
         if len(IMAGE_ANSWER_CACHE) >= MAX_IMAGE_CACHE_ITEMS:
             IMAGE_ANSWER_CACHE.pop(next(iter(IMAGE_ANSWER_CACHE)))
         IMAGE_ANSWER_CACHE[cache_key] = answer
         persistent_cache_put(image_key, prompt_hash, answer)
         return answer
     return RESIDENT_DEMO.ask(prompt, image_path)
-
-
-def run_rkllm_stream(prompt: str, image_path: Path, on_delta) -> str:
-    prompt = prepare_prompt(prompt)
-    if image_path != DEFAULT_IMAGE:
-        image_key = image_path.name
-        prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-        cache_key = f"{image_key}:{prompt_hash}"
-        cached = IMAGE_ANSWER_CACHE.get(cache_key)
-        if cached is not None:
-            STATS["memory_cache_hits"] += 1
-            on_delta(cached)
-            return cached
-        cached = persistent_cache_get(image_key, prompt_hash)
-        if cached is not None:
-            IMAGE_ANSWER_CACHE[cache_key] = cached
-            on_delta(cached)
-            return cached
-        answer = RESIDENT_DEMO.ask_stream(prompt, image_path, on_delta)
-        schedule_default_rewarm()
-        if len(IMAGE_ANSWER_CACHE) >= MAX_IMAGE_CACHE_ITEMS:
-            IMAGE_ANSWER_CACHE.pop(next(iter(IMAGE_ANSWER_CACHE)))
-        IMAGE_ANSWER_CACHE[cache_key] = answer
-        persistent_cache_put(image_key, prompt_hash, answer)
-        return answer
-    return RESIDENT_DEMO.ask_stream(prompt, image_path, on_delta)
-
-
-def schedule_default_rewarm() -> None:
-    if not REWARM_DEFAULT_AFTER_IMAGE:
-        return
-    Thread(target=rewarm_default_demo, daemon=True).start()
-
-
-def rewarm_default_demo() -> None:
-    try:
-        RESIDENT_DEMO.start(DEFAULT_IMAGE)
-        STATS["background_rewarms"] += 1
-    except Exception as exc:
-        STATS["last_error"] = f"default rewarm failed: {exc}"
-
-
-def prepare_prompt(prompt: str) -> str:
-    if not DISABLE_THINKING:
-        return prompt
-    stripped = prompt.strip()
-    if stripped.startswith("/no_think"):
-        stripped = stripped[len("/no_think"):].strip()
-    stripped = suppress_thinking_requests(" ".join(stripped.splitlines()))
-    return NO_THINK_PREFIX + stripped
-
-
-def suppress_thinking_requests(prompt: str) -> str:
-    replacements = [
-        (r"请?先?详细?展示你的?思考过程[，,、 ]*", ""),
-        (r"请?先?详细?展示你的?推理过程[，,、 ]*", ""),
-        (r"请?先?一步一步地?思考[，,、 ]*", ""),
-        (r"请?输出你的?思考过程[，,、 ]*", ""),
-        (r"请?输出你的?分析过程[，,、 ]*", ""),
-        (r"show (your )?(chain[- ]of[- ]thought|reasoning|thinking)[,， ]*", ""),
-    ]
-    cleaned = prompt
-    for pattern, replacement in replacements:
-        cleaned = re.sub(pattern, replacement, cleaned, flags=re.I)
-    return cleaned.strip()
 
 
 def demo_cmd(image_path: Path) -> list[str]:
@@ -431,49 +321,16 @@ class ResidentDemo:
         self.image_path = None
 
     def ask(self, prompt: str, image_path: Path = DEFAULT_IMAGE) -> str:
-        last_error: Exception | None = None
         with REQUEST_LOCK:
-            for attempt in range(2):
-                try:
-                    self.start(image_path)
-                    assert self.master_fd is not None
-                    os.write(self.master_fd, (prompt + "\n").encode("utf-8"))
-                    output = self._read_until_prompt(REQUEST_TIMEOUT)
-                    return extract_first_answer(output)
-                except Exception as exc:
-                    last_error = exc
-                    self.stop()
-                    if attempt == 0:
-                        STATS["ask_retries"] += 1
-                        continue
-                    raise
-            if last_error:
+            self.start(image_path)
+            assert self.master_fd is not None
+            os.write(self.master_fd, (prompt + "\n").encode("utf-8"))
+            try:
+                output = self._read_until_prompt(REQUEST_TIMEOUT)
+            except Exception:
                 self.stop()
-                raise last_error
-            raise RuntimeError("RKLLM resident demo failed without an error")
-
-    def ask_stream(self, prompt: str, image_path: Path, on_delta) -> str:
-        last_error: Exception | None = None
-        with REQUEST_LOCK:
-            for attempt in range(2):
-                try:
-                    self.start(image_path)
-                    assert self.master_fd is not None
-                    os.write(self.master_fd, (prompt + "\n").encode("utf-8"))
-                    output = self._read_answer_stream_until_prompt(REQUEST_TIMEOUT, on_delta)
-                    answer = extract_first_answer(output)
-                    return answer
-                except Exception as exc:
-                    last_error = exc
-                    self.stop()
-                    if attempt == 0:
-                        STATS["ask_retries"] += 1
-                        continue
-                    raise
-            if last_error:
-                self.stop()
-                raise last_error
-            raise RuntimeError("RKLLM resident demo failed without an error")
+                raise
+        return extract_first_answer(output)
 
     def _read_until_prompt(self, timeout: int) -> str:
         assert self.master_fd is not None
@@ -485,41 +342,8 @@ class ResidentDemo:
                 if self.proc and self.proc.poll() is not None:
                     raise RuntimeError("RKLLM resident demo exited unexpectedly")
                 continue
-            try:
-                chunk = os.read(self.master_fd, 8192).decode("utf-8", errors="replace")
-            except OSError as exc:
-                raise RuntimeError(f"RKLLM resident demo pty read failed: {exc}") from exc
-            if not chunk:
-                raise RuntimeError("RKLLM resident demo pty closed")
+            chunk = os.read(self.master_fd, 8192).decode("utf-8", errors="replace")
             output += chunk
-            if re.search(r"\nuser:\s*$", output):
-                return output
-        raise TimeoutError("RKLLM resident demo timed out waiting for prompt")
-
-    def _read_answer_stream_until_prompt(self, timeout: int, on_delta) -> str:
-        assert self.master_fd is not None
-        output = ""
-        emitted = ""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            ready, _, _ = select.select([self.master_fd], [], [], 0.2)
-            if not ready:
-                if self.proc and self.proc.poll() is not None:
-                    raise RuntimeError("RKLLM resident demo exited unexpectedly")
-                continue
-            try:
-                chunk = os.read(self.master_fd, 8192).decode("utf-8", errors="replace")
-            except OSError as exc:
-                raise RuntimeError(f"RKLLM resident demo pty read failed: {exc}") from exc
-            if not chunk:
-                raise RuntimeError("RKLLM resident demo pty closed")
-
-            output += chunk
-            answer = current_stream_answer(output)
-            if len(answer) > len(emitted):
-                delta = answer[len(emitted):]
-                emitted = answer
-                on_delta(delta)
             if re.search(r"\nuser:\s*$", output):
                 return output
         raise TimeoutError("RKLLM resident demo timed out waiting for prompt")
@@ -532,27 +356,7 @@ def extract_first_answer(output: str) -> str:
     if not match:
         raise RuntimeError("RKLLM demo did not produce a parseable robot answer")
     text = match.group(1).strip()
-    text = strip_thinking(text)
     return re.sub(r"\s+\Z", "", text)
-
-
-def current_stream_answer(output: str) -> str:
-    normalized = output.replace("\r\n", "\n")
-    marker = normalized.rfind("robot:")
-    if marker < 0:
-        return ""
-    text = normalized[marker + len("robot:"):]
-    text = re.sub(r"\n\s*\n?user:\s*$", "", text, flags=re.S)
-    return text
-
-
-def strip_thinking(text: str) -> str:
-    if not DISABLE_THINKING:
-        return text
-    cleaned = re.sub(r"<think\b[^>]*>.*?</think>", "", text, flags=re.I | re.S).strip()
-    cleaned = re.sub(r"^思考[:：].*?(?=\n\n|最终答案[:：]|答案[:：])", "", cleaned, flags=re.S).strip()
-    cleaned = re.sub(r"^(最终答案|答案)[:：]\s*", "", cleaned).strip()
-    return cleaned
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -606,28 +410,13 @@ class Handler(BaseHTTPRequestHandler):
             STATS["chat_requests"] += 1
             payload = read_json(self)
             prompt, image_path = message_text_and_image(payload.get("messages") or [])
-            model = payload.get("model") or MODEL_ID
-            if payload.get("stream"):
-                request_id = f"chatcmpl-{uuid.uuid4().hex}"
-                sse_start(self)
-                try:
-                    answer = run_rkllm_stream(
-                        prompt,
-                        image_path,
-                        lambda text: sse_delta(self, request_id, model, text),
-                    )
-                    STATS["last_latency_ms"] = round((time.monotonic() - started) * 1000, 1)
-                    STATS["last_error"] = ""
-                    sse_delta(self, request_id, model, "", finish_reason="stop")
-                    sse_done(self)
-                except Exception as exc:
-                    STATS["failures_total"] += 1
-                    STATS["last_error"] = str(exc)
-                    sse_error(self, str(exc))
-                return
             answer = run_rkllm(prompt, image_path)
             STATS["last_latency_ms"] = round((time.monotonic() - started) * 1000, 1)
             STATS["last_error"] = ""
+            model = payload.get("model") or MODEL_ID
+            if payload.get("stream"):
+                sse_response(self, model, answer)
+                return
             now = int(time.time())
             json_response(self, 200, {
                 "id": f"chatcmpl-{uuid.uuid4().hex}",

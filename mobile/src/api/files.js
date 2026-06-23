@@ -99,7 +99,7 @@ export async function streamAssistant(question, task = 'ask', handlers = {}, sco
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ question, task, scope }),
+    body: JSON.stringify({ question, task, scope, groupId: handlers.groupId }),
   })
 
   if (!response.ok || !response.body) {
@@ -158,4 +158,60 @@ export function imgUrl(url) {
   if (url.startsWith('/api/')) return url
   const needsProxy = ['qpic.cn', 'mmbiz', 'weixin', 'hdslb.com', 'biliimg.com'].some(k => url.includes(k))
   return needsProxy ? `/api/links/image-proxy?url=${encodeURIComponent(url)}` : url
+}
+
+
+export async function searchUsers(q) {
+  const { data } = await api.get('/social/users/search', { params: { q } })
+  return data
+}
+
+export async function getFriends() {
+  const { data } = await api.get('/social/friends')
+  return data
+}
+
+export async function addFriend(username) {
+  const { data } = await api.post('/social/friends', { username })
+  return data
+}
+
+export async function acceptFriend(id) {
+  const { data } = await api.post(`/social/friends/${id}/accept`)
+  return data
+}
+
+export async function deleteFriend(id) {
+  const { data } = await api.delete(`/social/friends/${id}`)
+  return data
+}
+
+export async function getGroups() {
+  const { data } = await api.get('/social/groups')
+  return data
+}
+
+export async function createGroup(payload) {
+  const { data } = await api.post('/social/groups', payload)
+  return data
+}
+
+export async function getGroupMessages(groupId) {
+  const { data } = await api.get(`/social/groups/${groupId}/messages`)
+  return data
+}
+
+export async function sendGroupMessage(groupId, body) {
+  const { data } = await api.post(`/social/groups/${groupId}/messages`, { body })
+  return data
+}
+
+export async function getGroupMaterials(groupId) {
+  const { data } = await api.get(`/social/groups/${groupId}/materials`)
+  return data
+}
+
+export async function shareLinkToGroup(groupId, linkId, note = '') {
+  const { data } = await api.post(`/social/groups/${groupId}/materials`, { link_id: linkId, note })
+  return data
 }

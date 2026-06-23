@@ -37,21 +37,6 @@ function backoffSeconds(attempts) {
   return Math.min(300, Math.max(5, 5 * Math.pow(2, Math.max(0, attempts - 1))));
 }
 
-function parseTimeoutMap(value) {
-  if (!value) return {};
-  if (typeof value === 'object') return value;
-  return String(value)
-    .split(',')
-    .map(entry => entry.trim())
-    .filter(Boolean)
-    .reduce((result, entry) => {
-      const [type, timeout] = entry.split('=').map(part => part.trim());
-      const parsed = Number(timeout);
-      if (type && Number.isFinite(parsed) && parsed > 0) result[type] = parsed;
-      return result;
-    }, {});
-}
-
 async function withTimeout(promise, timeoutMs, message) {
   let timeout = null;
   try {
@@ -72,7 +57,6 @@ export function createJobQueue({
   concurrency = Number(process.env.BACKGROUND_QUEUE_CONCURRENCY || 3),
   pollIntervalMs = 1000,
   jobTimeoutMs = Number(process.env.BACKGROUND_JOB_TIMEOUT_MS || 180000),
-  jobTimeoutsByType = parseTimeoutMap(process.env.BACKGROUND_JOB_TIMEOUTS_BY_TYPE),
   autoStart = true,
   onFinalFailure = null,
 } = {}) {
@@ -211,13 +195,10 @@ export function createJobQueue({
     }
 
     try {
-      const effectiveTimeoutMs = Number(jobTimeoutsByType[job.type]) > 0
-        ? Number(jobTimeoutsByType[job.type])
-        : jobTimeoutMs;
       await withTimeout(
         handler({ ...job, payload: parsePayload(job.payload) }),
-        effectiveTimeoutMs,
-        `Job ${job.type} timed out after ${effectiveTimeoutMs}ms`,
+        jobTimeoutMs,
+        `Job ${job.type} timed out after ${jobTimeoutMs}ms`,
       );
       markDone(job.id);
     } catch (error) {

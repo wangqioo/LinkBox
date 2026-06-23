@@ -1,280 +1,115 @@
-# LinkBox on RK3576 4GB Box
+# LinkBox on TaishanPi RK3576
 
-This document records the stable deployment baseline used for a 4 GB RAM / 64 GB
-storage RK3576 box. The goal is not maximum model context. The goal is a usable
-LinkBox appliance: local AI answers, image understanding, video transcription,
-mobile access, FRP exposure, and acceptable stability on a small memory budget.
+This deployment runs LinkBox natively with systemd and connects AI features to
+the board-local Qwen3-VL-2B RKLLM/RKNN demo through a small OpenAI-compatible
+adapter.
 
-## Device Baseline
+## Why native instead of Docker
 
-- Board/SoC: RK3576
-- Memory/storage: 4 GB RAM, 64 GB storage
-- OS: Debian 13, Linux 6.1.y
-- LinkBox app: `/opt/linkbox`
-- LinkBox data: `/var/lib/linkbox`
-- LinkBox local URL: `http://0.0.0.0:3100`
-- Local LLM API: `http://127.0.0.1:8000/v1`
-- Whisper API: `http://127.0.0.1:8080`
-- FRP client config: `/opt/frp/frpc.toml`
+Docker is not ruled out by memory alone. On this 4 GB RK3576 board, the first
+version is simpler and more reliable as a native systemd deployment because
+Docker is not installed yet, image builds are slow on-board, and native Node
+modules such as `better-sqlite3` add avoidable build friction inside containers.
 
-## System Services
+## Services
 
-Expected services:
+- LinkBox: `http://0.0.0.0:3100`
+- RKLLM adapter: `http://127.0.0.1:8000/v1`
+- Data directory: `/var/lib/linkbox`
+- App checkout: `/opt/linkbox`
+- SSH management entrypoint: `lckfb@150.158.146.192:6277`
 
-```sh
-systemctl is-active linkbox rkllm-openai-adapter whisper frpc zram-swap
-```
+For the full deploy and rollback commands used from the Windows development
+machine, see [deployment.md](./deployment.md).
 
-Important paths:
+## Edge-mode environment
 
-```sh
-/opt/linkbox
-/var/lib/linkbox/linkbox.db
-/var/lib/linkbox/uploads
-/opt/rkllm-openai-adapter/rkllm_openai_adapter.py
-/opt/qwen3-vl-2b
-/opt/whisper/whisper.cpp
-/opt/frp/frpc.toml
-```
-
-## Memory Strategy
-
-This board is memory-bound. A Qwen3-VL 2B RKLLM process with vision support can
-reach about 3.2-3.4 GB service peak memory. Do not tune it like a desktop or
-server deployment.
-
-Use zram swap:
+Use smaller assistant defaults than a desktop/server deployment:
 
 ```sh
-swapon --show
-free -h
-```
-
-The deployed baseline uses a 2 GB zram swap device. Avoid a regular swapfile on
-overlay-style storage unless the filesystem is known to support it correctly.
-
-## RKLLM Adapter
-
-The adapter exposes the RKLLM/RKNN vendor demo as an OpenAI-compatible API.
-
-Systemd environment baseline:
-
-```sh
-RKLLM_ADAPTER_HOST=127.0.0.1
-RKLLM_ADAPTER_PORT=8000
-RKLLM_MODEL_ID=qwen3-vl-2b-rk3576
-RKLLM_MODEL_DIR=/opt/qwen3-vl-2b
-RKLLM_DEFAULT_IMAGE=/opt/qwen3-vl-2b/demo.jpg
-RKLLM_VISION_MODEL=/opt/qwen3-vl-2b/qwen3-vl_vision_rk3576.rknn
-RKLLM_LLM_MODEL=/opt/qwen3-vl-2b/qwen3-vl-2b-instruct_w8a8_rk3576.rkllm
-QWEN_VL_CONTEXT=2048
-QWEN_VL_MAX_NEW_TOKENS=192
-QWEN_VL_RKNN_CORES=1
-RKLLM_REQUEST_TIMEOUT=300
-RKLLM_BOOT_TIMEOUT=300
-RKLLM_DISABLE_THINKING=1
-RKLLM_REWARM_DEFAULT_AFTER_IMAGE=0
-RKLLM_CACHE_DB=/var/lib/rkllm-openai-adapter/cache.sqlite
-RKLLM_IMAGE_CACHE_ITEMS=128
-```
-
-Why these limits:
-
-- `QWEN_VL_CONTEXT=2048` is the stable target for 4 GB RAM.
-- `QWEN_VL_MAX_NEW_TOKENS=192` keeps answers short and reduces failure risk.
-- `RKLLM_REWARM_DEFAULT_AFTER_IMAGE=0` avoids loading a second demo in the
-  background after image requests.
-- `RKLLM_DISABLE_THINKING=1` keeps Qwen thinking mode permanently disabled.
-
-The adapter now supports real SSE streaming by reading the vendor demo pty while
-`robot:` output is being generated and forwarding deltas as OpenAI-compatible
-chat chunks. If the demo crashes during streaming, the adapter sends an SSE
-error payload so LinkBox can retry with compact context.
-
-Health check:
-
-```sh
-curl -s http://127.0.0.1:8000/v1/health
-```
-
-Direct streaming test:
-
-```sh
-curl -sS --no-buffer http://127.0.0.1:8000/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"qwen3-vl-2b-rk3576","stream":true,"messages":[{"role":"user","content":"用中文写三条很短的建议。"}],"max_tokens":80}'
-```
-
-## LinkBox AI Settings
-
-In the LinkBox AI settings UI:
-
-- Provider: `自定义 / 本地 OpenAI 兼容`
-- Base URL: `http://127.0.0.1:8000/v1`
-- Text model: `qwen3-vl-2b-rk3576`
-- Vision model: `qwen3-vl-2b-rk3576`
-- API key: empty
-- Temperature: `0.3`
-- Enable local Qwen thinking mode: off
-
-The base URL is used by the LinkBox backend running on the RK3576 box, so
-`127.0.0.1` means the device itself, not the user's phone or laptop.
-
-## LinkBox Edge Limits
-
-Systemd environment baseline:
-
-```sh
+PORT=3100
+DATA_DIR=/var/lib/linkbox
+UPLOADS_DIR=/var/lib/linkbox/uploads
+DB_PATH=/var/lib/linkbox/linkbox.db
+LOCAL_LLM_URL=http://127.0.0.1:8000/v1
+LOCAL_LLM_MODEL=qwen3-vl-2b-rk3576
+LOCAL_VISION_MODEL=qwen3-vl-2b-rk3576
+ASSISTANT_MAX_SOURCES=4
+ASSISTANT_MAX_CONTEXT_CHARS=6000
+ASSISTANT_MAX_FIELD_CHARS=2500
+ASSISTANT_MAX_TOKENS=400
 BACKGROUND_QUEUE_CONCURRENCY=1
-NODE_OPTIONS=--max-old-space-size=256
-WEB_IMAGE_VISION_TIMEOUT_MS=90000
-ASSISTANT_MAX_CONTEXT_CHARS=2500
-ASSISTANT_MAX_FIELD_CHARS=1200
-ASSISTANT_MAX_SOURCES=2
-ASSISTANT_MAX_FALLBACK_SOURCES=1
-ASSISTANT_MAX_TOKENS=220
+JWT_SECRET=<generate a local random secret>
 ```
 
-These limits intentionally keep retrieved assistant context small. On this
-device, long articles, image descriptions, and video transcripts can crash the
-RKLLM demo if passed through uncompressed.
+## Adapter limits
 
-The assistant path includes two additional safeguards:
+The adapter is intentionally first-version:
 
-- Context cleanup removes long image Markdown and long URLs before calling the
-  local model.
-- If RKLLM returns `Input/output error` or a stream error, LinkBox retries once
-  with a compact context and shorter output. The retry path is also streaming.
+- OpenAI-compatible streaming is emulated by returning one SSE delta after the
+  vendor demo finishes
+- one RKLLM request at a time
+- keeps one vendor demo process resident for the current image path, so text
+  requests and repeated requests for the same image avoid reloading RKLLM
+- parses each answer between `robot:` and the next `user:` prompt
+- supports OpenAI-style base64 `image_url` by writing a temporary image file;
+  switching to a different image restarts the resident demo because the vendor
+  demo binds the image path at startup
+- caches image answers by image hash and prompt, avoiding repeated inference
+  drift from the vendor demo's retained chat history
 
-## Whisper Transcription
+A production-quality version should replace the shell-out path with a resident
+RKLLM runtime process.
 
-Whisper is exposed through a local server:
+## Current runtime improvements
+
+- LinkBox background import/image/file work is serialized by
+  `BACKGROUND_QUEUE_CONCURRENCY=1` so a small RK3576 board does not run several
+  AI jobs at once.
+- LinkBox stores background enrichment jobs in SQLite. Jobs left in `running`
+  during a process restart are returned to `queued` on startup, so link
+  extraction, file conversion, image description, and AI summarization are not
+  lost just because the service restarts.
+- Admin users can inspect LinkBox queue counts and the latest failed job through
+  `/api/settings/system`.
+- The adapter exposes `/health` and `/v1/health` with resident demo PID,
+  currently bound image, cache counts, request counters, last latency, and last
+  error.
+- Image answers are cached in SQLite at
+  `/var/lib/rkllm-openai-adapter/cache.sqlite`, so repeated image descriptions
+  survive adapter restarts.
+
+## Backups
+
+Install the backup helper and timer on the board:
 
 ```sh
-WHISPER_SERVER_URL=http://127.0.0.1:8080
+install -m 0755 deploy/taishanpi/linkbox-backup /usr/local/bin/linkbox-backup
+install -m 0644 deploy/taishanpi/linkbox-backup.service /etc/systemd/system/
+install -m 0644 deploy/taishanpi/linkbox-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now linkbox-backup.timer
 ```
 
-Recommended on this 4 GB device:
+Backups are written to `/var/backups/linkbox` and retained for 14 days by
+default.
 
-- Run whisper with low thread count, normally 2 threads.
-- Keep LinkBox background queue concurrency at 1.
-- Avoid running video transcription and long assistant answers at the same time.
+## Runtime checks
 
-Required video dependency:
+Useful checks on the board:
 
 ```sh
-yt-dlp --version
-```
-
-If Bilibili transcription fails with `spawn yt-dlp ENOENT`, install `yt-dlp` on
-the device and restart LinkBox.
-
-## FRP Exposure
-
-The deployed FRP tunnel exposes LinkBox through a public server:
-
-```toml
-[[proxies]]
-name = "r76s-linkbox"
-type = "tcp"
-localIP = "127.0.0.1"
-localPort = 3100
-remotePort = 7130
-```
-
-Service checks:
-
-```sh
-systemctl is-active frpc
-journalctl -u frpc -n 80 --no-pager
-```
-
-Desktop and mobile URLs depend on the public FRP server. For local LAN testing,
-prefer:
-
-```text
-http://192.168.1.50:3100/
-http://192.168.1.50:3100/mobile
-```
-
-SSE streaming is sensitive to mobile network switches, lock screen, and proxy
-timeouts. If LAN is stable but public FRP shows `network error`, investigate the
-FRP path before changing model parameters.
-
-## Runtime Checks
-
-General health:
-
-```sh
-systemctl is-active linkbox rkllm-openai-adapter whisper frpc
-free -h
-swapon --show
-curl -s http://127.0.0.1:8000/v1/health
+systemctl is-active linkbox rkllm-openai-adapter linkbox-backup.timer
 curl -s http://127.0.0.1:3100/api/settings/system
+curl -s http://127.0.0.1:8000/v1/health
+systemctl list-timers linkbox-backup.timer --no-pager
+journalctl -u linkbox -u rkllm-openai-adapter -n 80 --no-pager
 ```
 
-Recent logs:
+## RKLLM/RKNN SDK status
 
-```sh
-journalctl -u linkbox -u rkllm-openai-adapter --since '30 minutes ago' --no-pager
-journalctl -u whisper -u frpc -n 120 --no-pager
-```
-
-Memory-heavy processes:
-
-```sh
-ps -eo pid,ppid,user,stat,pcpu,pmem,rss,args --sort=-rss | head -25
-systemctl show rkllm-openai-adapter -p Environment -p MemoryCurrent -p MemoryPeak --no-pager
-systemctl show linkbox -p Environment -p MemoryCurrent -p MemoryPeak --no-pager
-```
-
-## Expected Behavior
-
-Text chat:
-
-- Short warm requests can answer quickly.
-- The first request after restart or image-mode switching can take 15-40 seconds.
-- Long assistant requests may take longer before the first token.
-
-Assistant:
-
-- Uses local retrieval with at most 2 main sources.
-- Streams once tokens begin.
-- Automatically retries compactly after RKLLM pty errors.
-
-Images:
-
-- Static image understanding works.
-- GIFs should be skipped for vision description.
-- Multiple images should be processed serially through the background queue.
-
-Video:
-
-- `yt-dlp` extracts audio.
-- Whisper server transcribes audio.
-- LinkBox can summarize the resulting transcript, but long transcripts should be
-  chunked or summarized conservatively.
-
-## Known Limits
-
-- 4 GB RAM is enough for this baseline, but not enough for large local context.
-- Do not raise `QWEN_VL_CONTEXT` above 2048 unless you are explicitly testing
-  stability.
-- `3072` context may boot but is more likely to crash under mixed LinkBox load.
-- `4096+` context is not a realistic target on this 4 GB vision-model setup.
-- Local RKLLM demo crashes are surfaced as `Input/output error`; LinkBox can
-  retry, but a browser or FRP disconnect may still show `network error`.
-
-## Recommended Tuning Order
-
-If the system feels slow or unstable, tune in this order:
-
-1. Reduce retrieved context and source count.
-2. Reduce output tokens.
-3. Keep background concurrency at 1.
-4. Keep Qwen thinking mode disabled.
-5. Add or verify zram swap.
-6. Only then experiment with model context.
-
-Avoid making the context larger as a first response. On this device, larger
-context usually makes first-token latency and crash rate worse.
+The deployed model package currently contains the compiled demo and runtime
+libraries, but no headers, C/C++ sources, Python binding, or CMake examples.
+That blocks replacing the vendor demo wrapper with a true RKLLM/RKNN API server
+inside this repo. The next step for that work is obtaining the vendor SDK files
+for `librkllmrt` and `librknnrt` integration.

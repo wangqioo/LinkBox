@@ -174,7 +174,7 @@ LinkBox/
   docker-compose.yml
 ```
 
-开发说明和验证命令见 [docs/development.md](docs/development.md)。Bilibili 视频处理说明见 [docs/bilibili-video-processing.md](docs/bilibili-video-processing.md)。部署细节见 [docs/deployment.md](docs/deployment.md)。
+详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。Bilibili 视频处理说明见 [docs/bilibili-video-processing.md](docs/bilibili-video-processing.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。知识库重构计划见 [docs/markdown-knowledge-base-plan.md](docs/markdown-knowledge-base-plan.md)。
 
 ## 快速开始
 
@@ -295,28 +295,89 @@ openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
 ## 测试与检查
 
 ```bash
-# 后端重点链路
-node --test \
-  server/test/jobQueue.test.mjs \
-  server/test/documentIndex.test.mjs \
-  server/test/imageVisionService.test.mjs \
-  server/test/bilibiliVideoSource.test.mjs \
-  server/test/videoTranscriptExtractor.test.mjs
+# 后端自动化测试
+cd server
+npm test
 
-# Web 端
+# 重点链路测试示例
+node --test test/itemKind.test.mjs test/bilibiliVideoSource.test.mjs test/videoTranscriptExtractor.test.mjs
+
+# Web 端生产构建
 cd client
 npm test
 npm run build
 
-# 移动端
-cd ../mobile
-node --test src/utils/linkAutoProcess.test.mjs src/utils/mobileItemDisplay.test.mjs src/utils/mobileCategoryDisplay.test.mjs
+# 移动端生产构建
+cd mobile
+node --test src/utils/linkAutoProcess.test.mjs src/utils/mobileCategoryDisplay.test.mjs
 npm run build
 ```
 
 当前后端测试覆盖了队列、链接创建、上传处理、AI 动作、导出、Bilibili 视频转写、类型归一、检索排序、Office/XML 解析、表格解析和任务重试等核心路径。
 
-更多测试、E2E、部署和排障命令见 [docs/development.md](docs/development.md)。
+## 常用 API
+
+所有非公开接口都需要：
+
+```http
+Authorization: Bearer <token>
+```
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/auth/register` | 注册 |
+| `POST` | `/api/auth/login` | 登录 |
+| `GET` | `/api/links` | 收藏列表，支持分页、搜索、类型、标签、日期过滤 |
+| `POST` | `/api/links` | 新增链接 |
+| `POST` | `/api/links/text` | 新增文本 |
+| `POST` | `/api/links/image` | 上传图片 |
+| `POST` | `/api/links/audio` | 上传音频 |
+| `POST` | `/api/links/file` | 上传文件 |
+| `GET` | `/api/links/:id` | 收藏详情 |
+| `PUT` | `/api/links/:id` | 更新收藏 |
+| `DELETE` | `/api/links/:id` | 删除收藏 |
+| `POST` | `/api/links/:id/summarize` | 手动生成摘要 |
+| `POST` | `/api/links/:id/extract` | 手动提取正文 |
+| `POST` | `/api/links/:id/learning-note` | 生成 AI 学习笔记 |
+| `GET` | `/api/links/export/all` | 导出全部数据 |
+| `GET` | `/api/links/export/summaries` | 导出摘要 Markdown |
+| `GET` | `/api/tags` | 标签列表 |
+| `POST` | `/api/tags` | 新建标签 |
+| `GET` | `/api/settings/system/status` | 系统与后台任务状态 |
+| `POST` | `/api/settings/system/retry-failed-jobs` | 重试失败任务 |
+| `GET` | `/api/admin/users` | 管理员用户列表 |
+| `GET` | `/api/mobile/files` | 移动端文件列表 |
+
+`/api/links/image-proxy` 是公开图片代理接口，用于加载微信公众号等防盗链图片。
+
+## systemd 示例
+
+```ini
+[Unit]
+Description=LinkBox Server
+After=network.target
+
+[Service]
+Type=simple
+User=linkbox
+WorkingDirectory=/opt/LinkBox
+Environment=PORT=3100
+Environment=DATA_DIR=/var/lib/linkbox
+Environment=DB_PATH=/var/lib/linkbox/linkbox.db
+Environment=UPLOADS_DIR=/var/lib/linkbox/uploads
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now linkbox
+sudo systemctl restart linkbox
+journalctl -u linkbox -f   # 查看日志
+```
 
 ## 许可证
 

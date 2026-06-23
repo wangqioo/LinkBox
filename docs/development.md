@@ -2,233 +2,419 @@
 
 Last updated: 2026-06-21
 
-This is the short current-state guide for continuing LinkBox development. Keep
-historical plans in dedicated docs; keep this file focused on architecture,
-runtime behavior, verification, and common failure modes.
+This document records the current development state so future work can resume
+without rediscovering the architecture, commands, and validation steps.
 
-## Current Architecture
+## Current Checkpoint
 
-LinkBox is split into three deployable surfaces:
-
-- `client/`: React desktop management app.
-- `mobile/`: Vue mobile file assistant.
-- `server/`: Express API, SQLite persistence, background jobs, AI processing,
-  and static hosting for both frontends.
-
-The database still uses `links` as the compatibility item table. Newer code
-normalizes behavior through service modules instead of spreading raw
-`links.type` checks through routes and UI.
-
-## Core Backend Boundaries
-
-| Area | Primary modules |
-| --- | --- |
-| HTTP item routes | `server/utils/itemController.js`, `server/routes/links.js` |
-| Mobile item routes | `server/routes/mobileFiles.js`, `server/utils/mobileFilePresenter.js` |
-| Intake and scheduling | `server/utils/itemIntake.js`, `server/utils/itemEnrichmentPlan.js` |
-| Background queue | `server/utils/jobQueue.js`, `server/utils/enrichmentJobs.js` |
-| Type normalization | `server/utils/itemKind.js` |
-| Presentation contract | `server/utils/itemPresentation.js`, `server/utils/itemProcessingStatus.js` |
-| Content/material reads | `server/utils/itemMaterial.js`, `server/utils/itemContentStore.js`, `server/utils/itemAssetStore.js` |
-| Link/article extraction | `server/utils/extractContent.js`, `server/utils/extractors/*` |
-| Bilibili video | `server/utils/bilibiliVideoSource.js`, `server/utils/videoTranscriptExtractor.js` |
-| Image analysis | `server/utils/imageVisionService.js` |
-| Retrieval/indexing | `server/utils/documentIndex.js`, `server/utils/documentEmbeddings.js`, `server/utils/chunkIndex.js` |
-| Assistant | `server/utils/assistantRetrieval.js`, `server/utils/assistantTurn.js` |
-| Operational health | `server/utils/systemHealth.js`, `server/routes/settings.js` |
-
-Routes should stay thin. New behavior should normally land in `server/utils/*`
-with focused tests.
-
-## Item Kinds
-
-Raw database values are normalized before reaching user-facing behavior:
-
-| Normalized kind | Source |
-| --- | --- |
-| `link` | Generic URL |
-| `article` | WeChat and Zhihu articles |
-| `video` | Bilibili video URLs |
-| `document` | Uploaded files, including historical `file` rows |
-| `image` | Uploaded images |
-| `audio` | Uploaded audio |
-| `text` | Text notes |
-
-Use `itemKindForRow` and `sqlConditionForItemKind` instead of open-coded URL or
-type checks. Desktop equivalents live in `client/src/components/itemDisplay.ts`
-and mobile equivalents in `mobile/src/utils/mobileItemDisplay.js`.
-
-## Auto-Processing Policy
-
-Only these shared-link sources auto-process without confirmation:
-
-- WeChat articles: `mp.weixin.qq.com`, `weixin.qq.com`
-- Zhihu articles: `zhihu.com/p/...`, `zhuanlan.zhihu.com/p/...`
-- Bilibili videos: `bilibili.com/video/BV...`, `m.bilibili.com/video/BV...`, `b23.tv/...`
-
-Mixed text that contains a generic URL is saved as a text note. Shared
-extraction helpers:
-
-- Server: `server/utils/linkAutoProcess.js`
-- Desktop: `client/src/components/sourceKind.ts`
-- Mobile: `mobile/src/utils/linkAutoProcess.js`, `mobile/src/utils/sourceKind.js`
-
-## Background Jobs
-
-Jobs are persisted in SQLite and registered in `server/utils/enrichmentJobs.js`.
-The queue:
-
-- recovers `running` jobs to `queued` on server start,
-- defaults to concurrency `3`,
-- has a default per-job timeout of `180000ms`,
-- records final failures in `jobs.last_error`,
-- updates item processing status through `itemProcessingStatus`.
-
-Important job types:
-
-| Job | Purpose |
-| --- | --- |
-| `link.fetchMetadata` | Fetch title/description/thumbnail |
-| `link.extractMarkdown` | Extract article/page Markdown |
-| `link.summarize` | Summarize extracted link content |
-| `image.describe` | Generate Chinese image description and index it |
-| `file.extractMarkdown` | Convert uploaded file to Markdown |
-| `file.summarize` | Summarize converted file content |
-| `document.embed` | Refresh document embeddings when enabled |
-
-If uploads appear stuck, inspect `jobs` first. A stale long-running job should
-not block image jobs now, but failed jobs should still be retried through admin
-settings or the queue helpers.
-
-## AI Content Flow
-
-Content is indexed in two layers:
-
-- Legacy fallback: `link_chunks`, refreshed by `indexLinkContent`.
-- Canonical documents: `documents` and `document_chunks`, refreshed by
-  `indexDocumentForItem`.
-
-Assistant retrieval prefers canonical document chunks and optional embeddings,
-then falls back to legacy chunks if `ASSISTANT_ENABLE_LEGACY_FALLBACK` allows
-it.
-
-User comments are first-class content:
-
-- Legacy chunks include `我的留言：...`.
-- Canonical Markdown includes `## 我的留言`.
-- Mobile comment saves refresh both legacy and canonical indexes.
-
-Image analysis must produce Chinese output. `imageVisionService` uses all-Chinese
-prompts and versioned cache keys such as `photo.zh-v2` so older English cached
-descriptions are not reused.
-
-## Mobile UX Notes
-
-Current mobile behavior:
-
-- Home refresh scrolls to newest content.
-- Returning from detail restores the previous scroll position.
-- Detail panels with long content scroll internally.
-- Video detail shows the transcript/original text.
-- Comments are edited from the home feed by long-pressing a card.
-- Existing comments render below the card metadata and follow the item into AI
-  retrieval.
-
-Most mobile list logic is in `mobile/src/views/Home.vue`. Shared display helpers
-are in `mobile/src/utils/mobileItemDisplay.js` and category helpers in
-`mobile/src/utils/mobileCategoryDisplay.js`.
-
-## Runtime Requirements
-
-Use Node.js 20+ for production. Node.js 22 LTS is recommended for local server
-tests involving `better-sqlite3`.
-
-Optional system tools unlock specific features:
-
-- `pdftotext`: PDF text extraction.
-- `libreoffice`: old Office conversion.
-- `ffmpeg`: Bilibili audio fallback.
-- `yt-dlp`: Bilibili subtitle/audio extraction.
-- Whisper-compatible service: Bilibili audio transcription fallback.
-
-## Verification
-
-Fast focused checks:
+The current architecture follow-up checkpoint is:
 
 ```bash
-node --test \
-  server/test/jobQueue.test.mjs \
-  server/test/chunkIndex.test.mjs \
-  server/test/documentIndex.test.mjs \
-  server/test/imageVisionService.test.mjs \
-  server/test/itemKind.test.mjs \
-  server/test/bilibiliVideoSource.test.mjs \
-  server/test/videoTranscriptExtractor.test.mjs
+working tree Bilibili video processing, type normalization, and mobile detail polish
+```
 
-cd mobile
-node --test src/utils/linkAutoProcess.test.mjs src/utils/mobileItemDisplay.test.mjs src/utils/mobileCategoryDisplay.test.mjs src/utils/mobileOrganizer.test.mjs
-npm run build
+This includes the earlier 2026-06-15 item intake pass, the follow-up
+architecture slices for assistant retrieval, item presentation, extracted
+content persistence, isolated server smoke coverage, admin health checks,
+shared route JSON error shaping, explicit database migrations, the
+2026-06-16/17 admin observability pass, and the 2026-06-17 processing/status
+and migration-hardening pass. It also includes the 2026-06-21 Bilibili video
+processing pass, normalized item kind pass, and mobile detail/list behavior
+fixes.
 
-cd ../client
+At this checkpoint:
+
+- `server/routes/assistant.js` is a thin HTTP/SSE adapter. Source grouping,
+  public source shaping, prompt construction, context trimming, task
+  normalization, and citation cleanup live in `server/utils/assistantTurn.js`.
+- Desktop and mobile upload flows share `server/utils/uploadedAsset.js` for
+  decoded names, public/disk paths, size metadata, upload type classification,
+  extraction support, HTML detection, and processing payloads.
+- The desktop Markdown renderer delegates inline parsing, citation
+  normalization, and table HTML sanitization to
+  `client/src/components/markdownParser.ts`.
+- Mobile assistant chat reuses a small Markdown/citation utility at
+  `mobile/src/utils/markdownParser.js`, with tests covering unsafe HTML,
+  citation normalization, image proxying, and table sanitization.
+- Backend unit tests, desktop build, mobile build, and `git diff --check` all
+  passed before the item intake pass started.
+- Item acceptance and durable job scheduling live in
+  `server/utils/itemIntake.js`. Desktop item routes and mobile upload/analyze
+  flows delegate accept, import, retry, and reschedule behavior there.
+- Assistant source retrieval has a caller-facing interface at
+  `server/utils/assistantSourceRetrieval.js`. It normalizes canonical document
+  sources and legacy fallback sources before assistant routes build prompts.
+- Desktop item list/detail responses and mobile file responses reuse
+  `server/utils/itemPresentation.js` for display type, status, retry
+  affordance, action capability, and primary asset URL.
+- Manual link extraction and background link/file extraction share
+  `server/utils/extractedContentPersistence.js` for storing extracted content,
+  preserving raw HTML/thumbnails, refreshing indexes, queueing embeddings, and
+  scheduling summaries.
+- A server-side E2E smoke entrypoint exists at
+  `server/scripts/e2e-smoke.mjs` and is exposed as `npm run test:e2e`. It starts
+  the real server with isolated database/uploads paths and covers auth, create,
+  upload, list, update, export, and delete flows.
+- Operational health checks live in `server/utils/systemHealth.js` and are
+  exposed through the admin `GET /api/settings/system` response. They report
+  SQLite, uploads, queue, AI endpoint, `pdftotext`, and LibreOffice status, with
+  core dependency failures marked unhealthy and optional capability gaps marked
+  degraded.
+- Route JSON error shaping has a small shared helper at
+  `server/utils/appError.js`. `itemController` uses it for expected status-code
+  errors and unexpected 500 responses while preserving existing user-facing
+  fallback messages.
+- `server/scripts/e2e-smoke.mjs` now runs with a local mock OpenAI-compatible
+  endpoint and covers admin system health, AI config, failed job retry, and
+  assistant chat in addition to the item CRUD/export flow.
+- Boot-time item-column upgrades now run through
+  `server/utils/dbMigrations.js`, which records applied migrations in
+  `schema_migrations` and is covered against legacy `links` tables.
+- Admin system status now includes a bounded failed-job list. The settings page
+  shows individual failed jobs and supports retrying one failed job or all
+  failed jobs through `POST /api/settings/system/retry-failed-jobs`.
+- Embedding settings are stored separately from chat AI settings in
+  `server/utils/embeddingConfig.js`. Document indexing, assistant retrieval,
+  document maintenance, and background `document.embed` jobs use the same
+  provider/model configuration.
+- Assistant retrieval diagnostics are exposed at
+  `POST /api/assistant/retrieval-diagnostics` and surfaced in the settings UI.
+  The endpoint returns retrieval settings plus source/chunk metadata, scores,
+  retrieval modes, snippets, and rerank information without calling the LLM.
+- Browser E2E coverage now includes assistant retrieval diagnostics and
+  background failed-job retry UI. The Playwright backend wrapper seeds a
+  test-only failed job in its temporary database.
+- A dedicated canonical-only browser E2E gate is available through
+  `cd client && npm run test:e2e:canonical`. It runs assistant retrieval with
+  `ASSISTANT_ENABLE_LEGACY_FALLBACK=0` on isolated ports and verifies the
+  diagnostics UI can retrieve uploaded Markdown through canonical document
+  chunks.
+- Assistant chat responses now expose normalized source metadata so the normal
+  chat UI can show the retrieval path without calling the diagnostics endpoint.
+- Desktop item cards use a reusable processing banner derived from the shared
+  `processing` contract. Mobile home/day views use the same processing labels
+  and last-error text through `mobileProcessingStatus`.
+- Create and update item write paths return the same item presentation contract
+  used by list/detail responses, including tags and processing metadata.
+- The tags route now uses the shared route JSON error helper for expected
+  validation/not-found/conflict failures while preserving response messages.
+- Jobs and canonical document tables are created through explicit migrations
+  recorded in `schema_migrations`.
+- Legacy `link_chunks` fallback can be disabled with
+  `ASSISTANT_ENABLE_LEGACY_FALLBACK=0` while canonical `document_chunks`
+  retrieval remains active.
+- `item_content` is now created by migration `005_item_content_schema` and
+  backfilled from legacy `links.content`, `links.content_md`, `links.summary`,
+  and `links.html_note` rows that contain content.
+- `item_assets` is now created by migration `006_item_assets_schema` and
+  backfilled from owned legacy `/uploads/...` paths in `links.image_path` and
+  `links.thumbnail`; remote thumbnails remain link metadata.
+- `server/utils/itemContentStore.js` now exposes read helpers that prefer
+  `item_content` and fall back to legacy `links` content columns. Item detail
+  reads use those helpers while list reads keep the existing paginated shape.
+- Create, extraction, summary, and learning-note write paths now dual-write
+  canonical content into `item_content` while preserving legacy `links`
+  compatibility columns.
+- Create and extraction write paths now dual-write owned `/uploads/...` assets
+  into `item_assets`; remote thumbnails remain link metadata only.
+- Admin system status now includes a storage consistency report for missing
+  canonical documents, missing `item_content` rows, and missing `item_assets`
+  rows. The settings page surfaces counts and bounded samples before legacy
+  storage paths are retired.
+- The settings route now uses the shared route JSON error helper for expected
+  admin permission and validation failures while preserving existing response
+  messages and `ok: false` test-endpoint shapes.
+- Link auto-processing is now an explicit allowlist. WeChat articles, Zhihu
+  articles, and Bilibili videos can be auto-processed from shared text; generic
+  URLs inside mixed text are saved as text notes instead of being fetched.
+- Bilibili video rows are classified as `video`, fetch metadata/cover, prefer
+  public subtitles, fall back to `yt-dlp` + `ffmpeg` + `WHISPER_SERVER_URL`
+  audio transcription, run LLM punctuation restoration, persist the video
+  transcript in `content_md`, generate summaries, and index the canonical
+  document.
+- Server, desktop, and mobile code now use normalized item kinds for user-facing
+  categories: `article`, `video`, `document`, `link`, `image`, `audio`, and
+  `text`. Backend list queries, admin user stats, Assistant scope filters,
+  document chunk retrieval, and embedding retrieval share the same semantics.
+- Desktop add tabs, filters, cards, and processing labels include video-specific
+  presentation. Mobile cards, category pages, detail pages, search, and
+  organizer hints use the same normalized kinds.
+- Mobile detail pages expose video transcript/original content, allow long
+  content sections to scroll inside fixed panels, preserve list scroll position
+  when navigating back from detail, and scroll to newest content after page
+  refresh.
+
+## Recommended Runtime
+
+Use Node.js 22 LTS for server work.
+
+The project currently depends on `better-sqlite3@11.10.0`. Newer non-LTS Node
+versions can fail because native module ABI support may lag behind Node
+releases. If the system Node is newer than 22, run server tests through a Node 22
+shim:
+
+```bash
+cd server
+npm.cmd exec --yes --package node@22 -- node --test
+```
+
+On Windows PowerShell, prefer `npm.cmd` if script execution policy blocks
+`npm.ps1`.
+
+## Repository Map
+
+```text
+client/                 Desktop React app
+mobile/                 Mobile web app
+server/                 Express API and static frontend host
+server/routes/          Thin route registration layer
+server/utils/           Current domain/service modules
+docs/                   Architecture, deployment, and development docs
+```
+
+Important backend modules:
+
+```text
+server/routes/links.js              Wires HTTP routes to the item controller
+server/routes/assistant.js          Assistant HTTP/SSE adapter
+server/utils/itemController.js      Item HTTP handlers
+server/utils/itemRepository.js      Item lookup/list ownership helpers
+server/utils/itemProcessingStatus.js Derived processing contract
+server/utils/itemPresentation.js Shared item display contract
+server/utils/itemKind.js          Source classification and normalized item kind helpers
+server/utils/itemMaterial.js      Unified content, summary, cover, and asset reads
+server/utils/itemEnrichmentPlan.js Type-aware background processing plan
+server/utils/linkAutoProcess.js   Allowlisted shared-text URL extraction
+server/utils/bilibiliVideoSource.js Bilibili URL parsing and metadata/subtitle source helpers
+server/utils/videoTranscriptExtractor.js Bilibili subtitle/audio transcription pipeline
+server/utils/uploadMiddleware.js    Multer upload setup and file filters
+server/utils/uploadedAsset.js       Upload-derived asset normalization
+server/utils/assistantSourceRetrieval.js Assistant retrieval interface
+server/utils/assistantTurn.js       Assistant prompt/source/citation assembly
+server/utils/itemIntake.js          Item acceptance, import, retry, and reschedule
+server/utils/extractedContentPersistence.js Extraction post-processing path
+server/utils/imageProxyService.js   Proxied image fetching and headers
+server/utils/jobQueue.js            SQLite durable job queue
+server/utils/systemHealth.js        Admin operational health checks
+server/utils/appError.js            Shared route JSON error shaping
+server/utils/dbMigrations.js        Explicit SQLite migration runner
+server/utils/embeddingConfig.js     Document embedding provider/model settings
+```
+
+Important desktop frontend modules:
+
+```text
+client/src/pages/LinksPage.tsx          Links page UI composition
+client/src/pages/useLinksData.ts        Query, polling, and local merge state
+client/src/pages/useLinkActions.ts      Add/update/delete/retry actions
+client/src/pages/useLinkExports.ts      JSON and Markdown export actions
+client/src/pages/linksPageUtils.ts      Small pure helpers
+client/src/context/ToastContext.tsx     Global toast provider
+client/src/components/LinkCard.tsx      Item card composition
+client/src/components/itemDisplay.ts    Desktop normalized item labels/icons
+client/src/components/sourceKind.ts     Desktop allowlisted URL classification
+client/src/components/ProcessingBanner.tsx Shared processing/failure banner
+client/src/components/processingStatus.ts Processing display derivation helper
+client/src/components/markdownParser.ts Markdown block/inline parser and sanitizer
+client/src/components/MarkdownRenderer.tsx React adapter for parsed Markdown
+client/src/pages/EmbeddingSettingsPanel.tsx Admin embedding configuration
+client/src/pages/RetrievalDiagnosticsPanel.tsx Admin retrieval diagnostics
+client/src/pages/BackgroundJobsPanel.tsx Admin queue and failed-job controls
+```
+
+Important mobile frontend modules:
+
+```text
+mobile/src/components/ChatBox.vue       Assistant chat UI adapter
+mobile/src/utils/markdownParser.js      Mobile Markdown/citation utility
+mobile/src/utils/mobileOrganizer.js     Tested local organization helpers
+mobile/src/utils/mobileItemDisplay.js   Mobile normalized item presentation
+mobile/src/utils/mobileCategoryDisplay.js Mobile category labels/icons
+mobile/src/utils/linkAutoProcess.js     Mobile shared-text allowlist extraction
+mobile/src/utils/mobileProcessingStatus.js Mobile processing display helper
+```
+
+## Processing Status Contract
+
+Clients should prefer `item.processing` over directly interpreting
+`links.status`.
+
+Example:
+
+```json
+{
+  "status": "processing",
+  "processing": {
+    "state": "running",
+    "stage": "file.extractMarkdown",
+    "label": "Extracting file content",
+    "canRetry": false,
+    "failedJobId": null,
+    "lastError": "",
+    "updatedAt": "2026-06-10T00:00:00.000Z"
+  }
+}
+```
+
+Current states used by the desktop client:
+
+| State | Meaning | User Action |
+|-------|---------|-------------|
+| `idle` | No active or failed job is attached | None |
+| `queued` | A durable job is waiting to run | Wait |
+| `running` / `processing` | A durable job is active | Wait |
+| `failed` | A durable job failed | Retry when `canRetry` is true |
+
+## Validation Commands
+
+Run these before handing off broad architecture changes:
+
+```bash
+# Desktop tests and production build
+cd client
 npm test
 npm run build
 
+# Mobile focused utility tests and production build
+cd ../mobile
+npm run build
+
 cd ..
-git diff --check
-```
+node --test mobile/src/utils/markdownParser.test.mjs mobile/src/utils/mobileOrganizer.test.mjs
 
-Broader checks:
-
-```bash
+# Server tests
 cd server
 npm test
 npm run test:e2e
 
-cd ../client
-npm run test:e2e
-npm run test:e2e:canonical
+# Whitespace check
+cd ..
+git diff --check
 ```
 
-Known local limitation: `server/test/mobileFilesRoute.test.mjs` starts an HTTP
-listener and may fail with `listen EPERM` in restricted sandboxes. That failure
-is environmental; run it in a normal local shell or CI when route-level coverage
-is required.
+Expected counts at the 2026-06-17 processing/status checkpoint:
+
+- Server: run `npm test` for the current authoritative count.
+- Desktop client: run `npm test` for the current authoritative count.
+- Mobile utility focused tests: include `mobileProcessingStatus.test.mjs`.
+- Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
+  database, uploads directory, and mock OpenAI-compatible endpoint.
+- Desktop browser E2E: `cd client && npm run test:e2e` passes with isolated
+  Playwright services.
+- Focused desktop browser E2E for the latest slice:
+  `cd client && npx playwright test e2e/assistant.spec.ts e2e/background-jobs.spec.ts --project=chromium`
+  passes with 3 tests.
 
 Known warning: direct Node execution of mobile ES modules reports
 `MODULE_TYPELESS_PACKAGE_JSON` because `mobile/package.json` does not declare
-`"type": "module"`. The warning is non-fatal; Vite production builds pass.
+`"type": "module"`. The warning is non-fatal; the mobile production build
+passes.
 
-## Deployment Notes
+## Browser E2E Tests
 
-Docker is the normal deployment path:
-
-```bash
-docker compose up -d --build
-```
-
-Production data paths in the current compose setup:
-
-- Database: `/data/linkbox.db`
-- Uploads: `/data/uploads`
-- Optional Bilibili cookies: `/data/cookies/bilibili.txt`
-
-Home-server deployment currently keeps a git workspace at
-`/home/wq/workspace/LinkBox` and a runtime compose directory at
-`/home/wq/LinkBox`. Sync source from the workspace to the runtime directory
-before rebuilding.
-
-Post-deploy smoke:
+Install dependencies and the Chromium browser bundle:
 
 ```bash
-curl -s -o /tmp/linkbox-root.html -w "root:%{http_code}\n" http://127.0.0.1:3100/
-curl -s -o /tmp/linkbox-mobile.html -w "mobile:%{http_code}\n" http://127.0.0.1:3100/mobile/
+cd client
+npm install
+npx playwright install chromium
 ```
 
-## Related Docs
+Run the browser suite:
 
-- [bilibili-video-processing.md](./bilibili-video-processing.md)
-- [deployment.md](./deployment.md)
-- [architecture-redesign.md](./architecture-redesign.md)
-- [markdown-knowledge-base-plan.md](./markdown-knowledge-base-plan.md)
-- [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md)
-- [mobile-frontend.md](./mobile-frontend.md)
+```bash
+cd client
+npm run test:e2e
+```
+
+The Playwright config starts three isolated local services:
+
+- mock OpenAI-compatible endpoint on `127.0.0.1:3320`
+- backend API on `127.0.0.1:3310` with a temporary SQLite database and uploads directory
+- Vite desktop app on `127.0.0.1:5174` with `/api` proxied to the test backend
+
+The backend wrapper seeds a fixed admin user for admin-only tests, writes AI
+settings to the mock endpoint, and seeds a failed background job for retry UI
+coverage. Browser tests should keep test-only logic in `client/e2e`,
+`client/playwright.config.ts`, or `server/scripts/playwright-*`; production
+routes should not gain test-only endpoints.
+
+## Isolated Smoke Test
+
+Do not casually start the default server when testing architecture changes. The
+server starts the durable queue and can recover or mutate jobs in the default
+database.
+
+Use a temporary database and uploads directory:
+
+```powershell
+$run = "C:\tmp\linkbox-smoke\$(Get-Date -Format yyyyMMdd-HHmmss)"
+New-Item -ItemType Directory -Force -Path $run | Out-Null
+New-Item -ItemType Directory -Force -Path "$run\uploads" | Out-Null
+
+$env:PORT = "3199"
+$env:DATA_DIR = $run
+$env:DB_PATH = "$run\linkbox.db"
+$env:UPLOADS_DIR = "$run\uploads"
+$env:JWT_SECRET = "linkbox-smoke-secret"
+
+cd C:\Users\100448405\LinkBox\server
+npm.cmd exec --yes --package node@22 -- node index.js
+```
+
+Core smoke paths:
+
+- Register a user through `POST /api/auth/register`.
+- Create a tag through `POST /api/tags`.
+- Create a text item through `POST /api/links/text`.
+- Create a link item through `POST /api/links`.
+- List items through `GET /api/links`.
+- Update an item through `PUT /api/links/:id`.
+- Export JSON through `GET /api/links/export/all`.
+- Export Markdown summaries through `GET /api/links/export/summaries`.
+- Delete an item through `DELETE /api/links/:id`.
+
+Stop the smoke server after testing and verify the test port no longer responds.
+
+## Documentation Links
+
+- [architecture-redesign.md](./architecture-redesign.md): target architecture,
+  phases, and success criteria.
+- [deployment.md](./deployment.md): deployment targets, update commands,
+  rollback steps, and verification checks for the home server and RK3576.
+- [markdown-knowledge-base-plan.md](./markdown-knowledge-base-plan.md):
+  Markdown-first knowledge base redesign plan for future AI retrieval work.
+- [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md):
+  staged plan for splitting overloaded `links` rows into item content and asset
+  tables, plus legacy `link_chunks` retirement gates.
+- [taishanpi-deploy.md](./taishanpi-deploy.md): deployment notes for Taishan Pi.
+- [mobile-frontend.md](./mobile-frontend.md): mobile frontend notes.
+
+## Closed 2026-06-17 Follow-Up Items
+
+The previous backlog is closed for this checkpoint:
+
+1. Full desktop browser E2E is the release gate and must be run after broad UI
+   changes.
+2. Assistant chat source metadata is available to explain retrieval paths in
+   the normal chat flow.
+3. Desktop processing UI is extracted into `ProcessingBanner`, with mobile
+   status text aligned through `mobileProcessingStatus`.
+4. Create/update item write paths return presented items with tags and
+   processing metadata. Delete remains the existing `{ ok: true }` command
+   response.
+5. The tags route has been migrated to the shared JSON error helper as the
+   next route-helper slice.
+6. Jobs and document schema initialization moved into explicit migrations.
+7. The future item/content/assets migration plan is documented in
+   [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md).
+8. Legacy `link_chunks` fallback is narrowed behind
+   `ASSISTANT_ENABLE_LEGACY_FALLBACK=0`; removal is deferred until the canonical
+   retrieval gates in the migration plan are met.
+
+## Next Development Plan
+
+Recommended next work after this checkpoint:
+
+1. Continue route JSON error helper migration opportunistically in larger route
+   edits; avoid broad mechanical churn without behavior tests.

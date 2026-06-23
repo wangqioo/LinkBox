@@ -282,13 +282,10 @@ export default function SettingsPage() {
       <AISettingsPanel
         aiConfig={aiConfig}
         selectedProvider={selectedProvider}
-        savingAI={saving}
         testingAI={testingAI}
-        aiSaved={saved}
         aiTestResult={aiTestResult}
         onProviderChange={handleProviderChange}
         onFieldChange={updateAIField}
-        onSaveAI={handleSave}
         onTestAI={handleTestAI}
       />
       <EmbeddingSettingsPanel

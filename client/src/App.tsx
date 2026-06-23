@@ -6,6 +6,7 @@ import LinksPage from './pages/LinksPage';
 import TagsPage from './pages/TagsPage';
 import SettingsPage from './pages/SettingsPage';
 import AssistantPage from './pages/AssistantPage';
+import SocialPage from './pages/SocialPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LinksPage />} />
         <Route path="/assistant" element={<AssistantPage />} />
+        <Route path="/social" element={<SocialPage />} />
         <Route path="/tags" element={<TagsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />

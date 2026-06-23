@@ -89,7 +89,6 @@ export function fixMarkdownImages(markdown) {
 }
 
 const MIN_IMAGE_BYTES = 5000;
-const WEB_IMAGE_VISION_TIMEOUT_MS = Number(process.env.WEB_IMAGE_VISION_TIMEOUT_MS || 30000);
 
 async function fetchImageAsBase64(url, referer) {
   try {
@@ -108,7 +107,6 @@ async function fetchImageAsBase64(url, referer) {
     const contentType = res.headers.get('content-type') || '';
     const mime = contentType.split(';')[0].trim() || 'image/jpeg';
     if (!mime.startsWith('image/')) return null;
-    if (mime === 'image/gif') return null;
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length < MIN_IMAGE_BYTES) return null;
     return { b64: buf.toString('base64'), mime };
@@ -142,7 +140,7 @@ async function describeWebImage(imageUrl, referer) {
         ...(aiConfig.apiKey ? { Authorization: `Bearer ${aiConfig.apiKey}` } : {}),
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(WEB_IMAGE_VISION_TIMEOUT_MS),
+      signal: AbortSignal.timeout(30000),
     });
     if (!resp.ok) return null;
     const data = await resp.json();

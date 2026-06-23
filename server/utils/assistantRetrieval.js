@@ -9,6 +9,46 @@ import { addTimeScopeConditions, normalizeTimeScope, resolveTimeScope } from './
 const DEFAULT_MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
 const DEFAULT_MAX_FALLBACK_SOURCES = Number(process.env.ASSISTANT_MAX_FALLBACK_SOURCES || 2);
 
+function retrieveGroupSources({ db, groupId, question, task = 'ask', scope: rawScope = {}, maxSources = DEFAULT_MAX_SOURCES, maxFallbackSources = DEFAULT_MAX_FALLBACK_SOURCES, now = new Date() } = {}) {
+  const scope = normalizeScope({
+    ...rawScope,
+    ...resolveTimeScope({ question, scope: rawScope, now }),
+  });
+  const params = [groupId];
+  const scopedConditions = scopeWhere(scope, params);
+  const rows = db.prepare(`
+    SELECT l.id, l.type, l.url, l.title, l.description, l.comment, l.content, l.content_md, l.summary, l.imported_at
+    FROM links l
+    JOIN group_links gl ON gl.link_id = l.id
+    WHERE gl.group_id = ?
+      AND (
+        COALESCE(l.content_md, '') != ''
+        OR COALESCE(l.summary, '') != ''
+        OR COALESCE(l.content, '') != ''
+        OR COALESCE(l.title, '') != ''
+      )
+      ${scopedConditions.length ? `AND ${scopedConditions.join(' AND ')}` : ''}
+    ORDER BY l.imported_at DESC
+    LIMIT 1000
+  `).all(...params);
+
+  if (task === 'recent') {
+    return rows.slice(0, maxSources).map((item, index) => ({ ...item, source_index: index + 1 }));
+  }
+
+  const tokens = tokenize(question);
+  const ranked = rows
+    .map(item => ({ ...item, score: scoreItem(item, tokens) }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
+    .slice(0, maxSources)
+    .map((item, index) => ({ ...item, source_index: index + 1 }));
+
+  if (ranked.length) return ranked;
+  if (!shouldUseFallbackSources(task, question)) return [];
+  return rows.slice(0, maxFallbackSources).map((item, index) => ({ ...item, source_index: index + 1 }));
+}
+
 function legacyChunkFallbackEnabled(includeLegacyFallback) {
   if (includeLegacyFallback !== undefined) return includeLegacyFallback !== false;
   return process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK !== '0';
@@ -99,6 +139,7 @@ function mergeRetrievalCandidates(keywordRows, embeddingRows, limit) {
 export function retrieveSources({
   db = defaultDb,
   userId,
+  groupId,
   question,
   task = 'ask',
   scope: rawScope = {},
@@ -109,6 +150,9 @@ export function retrieveSources({
   includeLegacyFallback,
   now = new Date(),
 } = {}) {
+  if (groupId) {
+    return retrieveGroupSources({ db, groupId, question, task, scope: rawScope, maxSources, maxFallbackSources, now });
+  }
   indexAllMissingDocuments(db);
   const scope = normalizeScope({
     ...rawScope,
@@ -175,6 +219,7 @@ export function retrieveSources({
 export async function retrieveSourcesAsync({
   db = defaultDb,
   userId,
+  groupId,
   question,
   task = 'ask',
   scope: rawScope = {},
@@ -186,6 +231,9 @@ export async function retrieveSourcesAsync({
   now = new Date(),
   embeddingOptions = {},
 } = {}) {
+  if (groupId) {
+    return retrieveGroupSources({ db, groupId, question, task, scope: rawScope, maxSources, maxFallbackSources, now });
+  }
   indexAllMissingDocuments(db);
   const scope = normalizeScope({
     ...rawScope,

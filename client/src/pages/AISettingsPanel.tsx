@@ -1,29 +1,23 @@
-import { PlugZap, Save } from 'lucide-react';
+import { PlugZap } from 'lucide-react';
 import type { AIConfig, AIProvider } from '../api/client';
 
 interface Props {
   aiConfig: AIConfig;
   selectedProvider?: AIProvider;
-  savingAI: boolean;
   testingAI: boolean;
-  aiSaved: boolean;
   aiTestResult: string;
   onProviderChange: (providerId: string) => void;
   onFieldChange: <K extends keyof AIConfig>(key: K, value: AIConfig[K]) => void;
-  onSaveAI: () => void;
   onTestAI: () => void;
 }
 
 export default function AISettingsPanel({
   aiConfig,
   selectedProvider,
-  savingAI,
   testingAI,
-  aiSaved,
   aiTestResult,
   onProviderChange,
   onFieldChange,
-  onSaveAI,
   onTestAI,
 }: Props) {
   return (
@@ -119,15 +113,6 @@ export default function AISettingsPanel({
       </label>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={onSaveAI}
-          disabled={savingAI}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Save className="w-4 h-4" />
-          {savingAI ? '保存中…' : aiSaved ? '已保存 ✓' : '保存 AI 配置'}
-        </button>
         <button
           type="button"
           onClick={onTestAI}
