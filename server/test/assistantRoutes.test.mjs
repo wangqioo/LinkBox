@@ -31,7 +31,7 @@ async function withAssistantApp(fn) {
 
     const app = express();
     app.use(express.json());
-    app.use('/api/assistant', assistantModule.default);
+    app.use('/api/assistant', assistantModule.createAssistantRouter(db));
 
     server = await new Promise((resolve, reject) => {
       const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
@@ -87,4 +87,76 @@ Durable queue retry metadata.`);
   assert.equal(body.sources[0].heading_path, 'Queue Notes > Durable Jobs');
   assert.equal(body.sources[0].retrieval_modes.includes('keyword'), true);
   assert.match(body.sources[0].snippet, /Durable queue retry metadata/);
+}));
+
+test('assistant conversation endpoints create, list, read, and delete personal history', async () => withAssistantApp(async ({ db, baseUrl, headers }) => {
+  const create = await fetch(`${baseUrl}/api/assistant/conversations`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ title: 'Launch research' }),
+  });
+  const created = await create.json();
+  assert.equal(create.status, 201);
+  assert.equal(created.conversation.title, 'Launch research');
+  assert.equal(created.conversation.scope_type, 'personal');
+  assert.equal(created.conversation.group_id, null);
+
+  db.prepare(`
+    INSERT INTO assistant_messages (conversation_id, role, content, task, sources_json)
+    VALUES (?, 'user', 'What changed?', 'ask', '[]')
+  `).run(created.conversation.id);
+  db.prepare(`
+    INSERT INTO assistant_messages (conversation_id, role, content, task, sources_json)
+    VALUES (?, 'assistant', 'The group agent changed.', 'ask', ?)
+  `).run(created.conversation.id, JSON.stringify([{ id: 1, title: 'Source' }]));
+
+  const list = await fetch(`${baseUrl}/api/assistant/conversations`, { headers });
+  const listed = await list.json();
+  assert.equal(list.status, 200);
+  assert.equal(listed.conversations.length, 1);
+  assert.equal(listed.conversations[0].message_count, 2);
+
+  const messages = await fetch(`${baseUrl}/api/assistant/conversations/${created.conversation.id}/messages`, { headers });
+  const history = await messages.json();
+  assert.equal(messages.status, 200);
+  assert.equal(history.messages.length, 2);
+  assert.equal(history.messages[1].role, 'assistant');
+  assert.deepEqual(history.messages[1].sources, [{ id: 1, title: 'Source' }]);
+
+  const deleted = await fetch(`${baseUrl}/api/assistant/conversations/${created.conversation.id}`, {
+    method: 'DELETE',
+    headers,
+  });
+  assert.equal(deleted.status, 200);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM assistant_conversations').get().count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM assistant_messages').get().count, 0);
+}));
+
+test('assistant conversations are separated by personal and group scope', async () => withAssistantApp(async ({ db, baseUrl, headers }) => {
+  db.prepare("INSERT INTO users (id, username, password_hash) VALUES (2, 'member', 'hash')").run();
+  db.prepare("INSERT INTO groups (id, name, owner_id) VALUES (10, 'Launch', 1)").run();
+  db.prepare("INSERT INTO group_members (group_id, user_id, role) VALUES (10, 1, 'owner')").run();
+
+  const personal = await fetch(`${baseUrl}/api/assistant/conversations`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ title: 'Personal' }),
+  }).then(response => response.json());
+  const group = await fetch(`${baseUrl}/api/assistant/conversations?groupId=10`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ title: 'Group' }),
+  }).then(response => response.json());
+
+  assert.equal(personal.conversation.scope_type, 'personal');
+  assert.equal(group.conversation.scope_type, 'group');
+  assert.equal(group.conversation.group_id, 10);
+
+  const personalList = await fetch(`${baseUrl}/api/assistant/conversations`, { headers }).then(response => response.json());
+  const groupList = await fetch(`${baseUrl}/api/assistant/conversations?groupId=10`, { headers }).then(response => response.json());
+  assert.deepEqual(personalList.conversations.map(item => item.title), ['Personal']);
+  assert.deepEqual(groupList.conversations.map(item => item.title), ['Group']);
+
+  const wrongScope = await fetch(`${baseUrl}/api/assistant/conversations/${group.conversation.id}/messages`, { headers });
+  assert.equal(wrongScope.status, 404);
 }));

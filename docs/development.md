@@ -91,6 +91,9 @@ At this checkpoint:
   chunks.
 - Assistant chat responses now expose normalized source metadata so the normal
   chat UI can show the retrieval path without calling the diagnostics endpoint.
+- Assistant chat history is persisted in `assistant_conversations` and
+  `assistant_messages`. Personal and group conversations are separate, and
+  saved history is used for UI restoration rather than prompt context.
 - Desktop item cards use a reusable processing banner derived from the shared
   `processing` contract. Mobile home/day views use the same processing labels
   and last-error text through `mobileProcessingStatus`.
@@ -209,6 +212,7 @@ server/utils/uploadedAsset.js       Upload-derived asset normalization
 server/utils/assistantSourceRetrieval.js Assistant retrieval interface
 server/utils/assistantTurn.js       Assistant prompt/source/citation assembly
 server/utils/assistantRetrieval.js  Personal and group Assistant source retrieval
+server/utils/assistantConversations.js Assistant conversation persistence
 server/utils/itemIntake.js          Item acceptance, import, retry, and reschedule
 server/utils/extractedContentPersistence.js Extraction post-processing path
 server/utils/imageProxyService.js   Proxied image fetching and headers
@@ -327,6 +331,7 @@ Focused checks for the current social/mobile checkpoint:
 ```bash
 node --test \
   server/test/socialGroup.test.mjs \
+  server/test/assistantConversations.test.mjs \
   server/test/socialDirectMessages.test.mjs \
   server/test/assistantTurn.test.mjs
 
@@ -345,7 +350,8 @@ Expected counts at the 2026-06-24 social/mobile checkpoint:
   `imageBatchGallery.test.mjs`, `groupChatDisplay.test.mjs`, and
   `socialConversations.test.mjs`.
 - Social backend focused tests: `socialGroup.test.mjs`,
-  `socialDirectMessages.test.mjs`, and `assistantTurn.test.mjs`.
+  `socialDirectMessages.test.mjs`, `assistantConversations.test.mjs`, and
+  `assistantTurn.test.mjs`.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
   database, uploads directory, and mock OpenAI-compatible endpoint.
 - Desktop browser E2E: `cd client && npm run test:e2e` passes with isolated

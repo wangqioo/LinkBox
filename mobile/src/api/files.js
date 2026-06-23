@@ -109,7 +109,13 @@ export async function streamAssistant(question, task = 'ask', handlers = {}, sco
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ question, task, scope, groupId: options.groupId }),
+    body: JSON.stringify({
+      question,
+      task,
+      scope,
+      groupId: options.groupId,
+      conversation_id: options.conversationId,
+    }),
   })
 
   if (!response.ok || !response.body) {
@@ -128,6 +134,7 @@ export async function streamAssistant(question, task = 'ask', handlers = {}, sco
     if (!dataLine) return
     const data = JSON.parse(dataLine.slice(5).trim())
 
+    if (event === 'conversation') handlers.onConversation?.(data.conversation || null)
     if (event === 'sources') handlers.onSources?.(data.sources || [])
     if (event === 'delta') handlers.onDelta?.(data.text || '')
     if (event === 'done') handlers.onDone?.()
@@ -144,6 +151,34 @@ export async function streamAssistant(question, task = 'ask', handlers = {}, sco
   }
 
   if (buffer.trim()) handleEvent(buffer)
+}
+
+export async function getAssistantConversations(options = {}) {
+  const params = {}
+  if (options.groupId) params.groupId = options.groupId
+  const { data } = await api.get('/assistant/conversations', { params })
+  return data.conversations || []
+}
+
+export async function createAssistantConversation(options = {}) {
+  const params = {}
+  if (options.groupId) params.groupId = options.groupId
+  const { data } = await api.post('/assistant/conversations', { title: options.title || '' }, { params })
+  return data.conversation
+}
+
+export async function getAssistantConversationMessages(id, options = {}) {
+  const params = {}
+  if (options.groupId) params.groupId = options.groupId
+  const { data } = await api.get(`/assistant/conversations/${id}/messages`, { params })
+  return data
+}
+
+export async function deleteAssistantConversation(id, options = {}) {
+  const params = {}
+  if (options.groupId) params.groupId = options.groupId
+  const { data } = await api.delete(`/assistant/conversations/${id}`, { params })
+  return data
 }
 
 export async function getStats() {

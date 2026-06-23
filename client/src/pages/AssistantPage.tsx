@@ -1,6 +1,6 @@
-import { FormEvent, useRef, useState } from 'react';
-import { api, type AssistantSource } from '../api/client';
-import { Bot, CalendarDays, CheckSquare, ChevronDown, FileText, Loader2, Search, Send, Tags, UserRound } from 'lucide-react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { api, type AssistantConversation, type AssistantSource } from '../api/client';
+import { Bot, CalendarDays, CheckSquare, ChevronDown, FileText, Loader2, Plus, Search, Send, Tags, Trash2, UserRound } from 'lucide-react';
 import AutoGrowTextarea from '../components/AutoGrowTextarea';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 
@@ -119,11 +119,22 @@ function RetrievalInfo({ retrieval }: { retrieval?: AssistantSource['retrieval']
 
 export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] = useState<AssistantConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [question, setQuestion] = useState('');
   const [task, setTask] = useState('ask');
   const [loading, setLoading] = useState(false);
   const idRef = useRef(1);
   const activeTask = TASKS.find(item => item.key === task) || TASKS[0];
+
+  const loadConversations = async () => {
+    const data = await api.getAssistantConversations();
+    setConversations(data.conversations);
+  };
+
+  useEffect(() => {
+    loadConversations().catch(() => setConversations([]));
+  }, []);
 
   const ask = async (text: string, selectedTask = task) => {
     const q = text.trim();
@@ -138,6 +149,11 @@ export default function AssistantPage() {
 
     try {
       await api.streamAssistant(q, selectedTask, {
+        conversationId: activeConversationId,
+        onConversation: conversation => {
+          setActiveConversationId(conversation.id);
+          loadConversations().catch(() => undefined);
+        },
         onSources: sources => {
           setMessages(prev => prev.map(message =>
             message.id === assistantId ? { ...message, sources } : message
@@ -164,12 +180,44 @@ export default function AssistantPage() {
         message.id === assistantId ? { ...message, done: true } : message
       ));
       setLoading(false);
+      loadConversations().catch(() => undefined);
     }
   };
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     ask(question);
+  };
+
+  const startNewConversation = () => {
+    setActiveConversationId(null);
+    setMessages([]);
+    setQuestion('');
+    idRef.current = 1;
+  };
+
+  const openConversation = async (id: number) => {
+    if (!id) {
+      startNewConversation();
+      return;
+    }
+    const data = await api.getAssistantConversationMessages(id);
+    setActiveConversationId(id);
+    setMessages(data.messages.map(message => ({
+      id: message.id,
+      role: message.role,
+      content: message.error || message.content,
+      sources: message.sources,
+      done: true,
+    })));
+    idRef.current = Math.max(1, ...data.messages.map(message => message.id)) + 1;
+  };
+
+  const deleteConversation = async () => {
+    if (!activeConversationId || loading) return;
+    await api.deleteAssistantConversation(activeConversationId);
+    startNewConversation();
+    await loadConversations();
   };
 
   return (
@@ -180,6 +228,25 @@ export default function AssistantPage() {
       </div>
 
       <div className="card flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="border-b p-3 flex items-center gap-2">
+          <button type="button" onClick={startNewConversation} className="btn-secondary shrink-0">
+            <Plus className="w-4 h-4" />
+            新对话
+          </button>
+          <select
+            className="input min-w-0"
+            value={activeConversationId || ''}
+            onChange={event => openConversation(Number(event.target.value)).catch(() => startNewConversation())}
+          >
+            <option value="">当前新对话</option>
+            {conversations.map(conversation => (
+              <option key={conversation.id} value={conversation.id}>{conversation.title}</option>
+            ))}
+          </select>
+          <button type="button" onClick={deleteConversation} className="btn-secondary shrink-0" disabled={!activeConversationId || loading}>
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
         <div className="border-b p-3 flex gap-2 overflow-x-auto">
           {TASKS.map(item => (
             <button key={item.key} type="button" onClick={() => setTask(item.key)}

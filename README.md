@@ -109,6 +109,8 @@ LinkBox 会把标题、摘要、正文切分为 `link_chunks`，用于 Assistant
 
 个人 Assistant 只检索用户自己的个人资料。群聊里的群 Assistant 使用独立检索范围，只读取当前群共享过的资料、群内上传的 `chat` scope 资料、群资料说明、资料留言和群文字消息，不会混用个人资料库或其他群的内容。
 
+Assistant 对话按会话保存历史。个人会话和群会话分开存储，支持新建对话、打开历史、删除对话，并保存每轮问答的引用 sources。当前历史记录用于恢复聊天界面；不会自动注入下一轮 prompt，避免影响检索范围和群/个人隔离。
+
 ### 好友、私聊和群聊
 
 LinkBox 支持轻量协作：
@@ -360,6 +362,11 @@ Authorization: Bearer <token>
 | `POST` | `/api/links/:id/summarize` | 手动生成摘要 |
 | `POST` | `/api/links/:id/extract` | 手动提取正文 |
 | `POST` | `/api/links/:id/learning-note` | 生成 AI 学习笔记 |
+| `GET` | `/api/assistant/conversations` | 个人 Assistant 会话列表 |
+| `POST` | `/api/assistant/conversations` | 新建个人 Assistant 会话 |
+| `GET` | `/api/assistant/conversations/:id/messages` | 读取 Assistant 会话消息 |
+| `DELETE` | `/api/assistant/conversations/:id` | 删除 Assistant 会话 |
+| `POST` | `/api/assistant/chat/stream` | 流式 Assistant 问答，可带 `conversation_id` 和 `groupId` |
 | `GET` | `/api/links/export/all` | 导出全部数据 |
 | `GET` | `/api/links/export/summaries` | 导出摘要 Markdown |
 | `GET` | `/api/tags` | 标签列表 |

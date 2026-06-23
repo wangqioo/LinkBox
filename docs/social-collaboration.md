@@ -15,6 +15,8 @@ private chats, group chats, shared materials, and group-scoped AI assistants.
 | `group_members` | Group membership and member role |
 | `group_messages` | Group text messages |
 | `group_links` | Materials shared into a group, with per-group note |
+| `assistant_conversations` | Personal and group Assistant conversation headers |
+| `assistant_messages` | Saved user/assistant turns and source metadata |
 | `links.scope` | Item visibility scope, usually `personal` or `chat` |
 
 Personal library items use `scope = 'personal'`. Materials uploaded directly
@@ -108,6 +110,8 @@ Group Assistant:
 The backend implementation lives mainly in:
 
 - `server/routes/social.js`
+- `server/routes/assistant.js`
+- `server/utils/assistantConversations.js`
 - `server/utils/assistantRetrieval.js`
 - `server/utils/assistantTurn.js`
 - `server/db.js`
@@ -117,6 +121,7 @@ Key tests:
 ```bash
 node --test \
   server/test/socialGroup.test.mjs \
+  server/test/assistantConversations.test.mjs \
   server/test/socialDirectMessages.test.mjs \
   server/test/assistantTurn.test.mjs
 ```
@@ -148,3 +153,6 @@ Desktop web:
 - Long text inputs auto-grow. Short identity/search/title/date inputs stay
   single-line.
 - Text content should remain selectable for native copy.
+- Assistant history is session-based: users can create, reopen, and delete
+  conversations. Group Assistant history is scoped to the group; personal
+  Assistant history is scoped to the user.

@@ -1,5 +1,22 @@
 <template>
   <div class="chat-wrap">
+    <div class="history-strip">
+      <button class="history-new" type="button" @click="startNewConversation">新对话</button>
+      <select class="history-select" :value="activeConversationId || ''" @change="selectConversation($event.target.value)">
+        <option value="">当前新对话</option>
+        <option v-for="conversation in conversations" :key="conversation.id" :value="conversation.id">
+          {{ conversation.title }}
+        </option>
+      </select>
+      <button
+        class="history-delete"
+        type="button"
+        :disabled="!activeConversationId"
+        @click="removeConversation"
+      >
+        删除
+      </button>
+    </div>
     <div class="task-strip">
       <button
         v-for="item in TASKS"
@@ -95,8 +112,13 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { streamAssistant } from '../api/files'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import {
+  deleteAssistantConversation,
+  getAssistantConversationMessages,
+  getAssistantConversations,
+  streamAssistant,
+} from '../api/files'
 import AutoGrowTextarea from './AutoGrowTextarea.vue'
 import { normalizeCitations } from '../utils/markdownParser'
 
@@ -138,6 +160,8 @@ const groupExamples = [
 
 const input = ref('')
 const messages = ref([])
+const conversations = ref([])
+const activeConversationId = ref(null)
 const loading = ref(false)
 const msgEl = ref(null)
 const task = ref('ask')
@@ -154,10 +178,16 @@ const activeTask = computed(() => TASKS.value.find(item => item.key === task.val
 
 onMounted(() => {
   if (props.date) task.value = 'recent'
+  loadConversations()
   if (props.initialQ) {
     input.value = String(props.initialQ)
     send()
   }
+})
+
+watch(() => props.groupId, () => {
+  startNewConversation()
+  loadConversations()
 })
 
 function assistantScope() {
@@ -181,6 +211,10 @@ async function ask(text, selectedTask = task.value) {
 
   try {
     await streamAssistant(q, selectedTask, {
+      onConversation: conversation => {
+        if (conversation?.id) activeConversationId.value = conversation.id
+        loadConversations()
+      },
       onSources: sources => {
         messages.value = messages.value.map(message =>
           message.id === assistantId ? { ...message, sources } : message
@@ -197,7 +231,10 @@ async function ask(text, selectedTask = task.value) {
           message.id === assistantId ? { ...message, done: true } : message
         )
       },
-    }, assistantScope(), { groupId: props.groupId || undefined })
+    }, assistantScope(), {
+      groupId: props.groupId || undefined,
+      conversationId: activeConversationId.value || undefined,
+    })
   } catch (e) {
     messages.value = messages.value.map(message =>
       message.id === assistantId
@@ -209,6 +246,7 @@ async function ask(text, selectedTask = task.value) {
       message.id === assistantId ? { ...message, done: true } : message
     )
     loading.value = false
+    loadConversations()
     await scrollBottom()
   }
 }
@@ -227,6 +265,52 @@ function sourceOpenId(source) {
 function openSource(source) {
   const id = sourceOpenId(source)
   if (id) emit('open-file', id)
+}
+
+async function loadConversations() {
+  try {
+    conversations.value = await getAssistantConversations({ groupId: props.groupId || undefined })
+  } catch {
+    conversations.value = []
+  }
+}
+
+async function selectConversation(value) {
+  const id = Number(value)
+  if (!id) {
+    startNewConversation()
+    return
+  }
+  try {
+    const data = await getAssistantConversationMessages(id, { groupId: props.groupId || undefined })
+    activeConversationId.value = id
+    messages.value = data.messages.map(message => ({
+      id: message.id,
+      role: message.role,
+      content: message.error || message.content,
+      sources: message.sources || [],
+      done: true,
+    }))
+    nextId = Math.max(1, ...messages.value.map(message => Number(message.id) || 0)) + 1
+    await scrollBottom()
+  } catch {
+    startNewConversation()
+  }
+}
+
+function startNewConversation() {
+  activeConversationId.value = null
+  messages.value = []
+  input.value = ''
+  nextId = 1
+}
+
+async function removeConversation() {
+  if (!activeConversationId.value || loading.value) return
+  const id = activeConversationId.value
+  await deleteAssistantConversation(id, { groupId: props.groupId || undefined })
+  startNewConversation()
+  await loadConversations()
 }
 
 async function scrollBottom() {
@@ -309,6 +393,38 @@ function renderMarkdown(md, sources = []) {
 
 <style scoped>
 .chat-wrap { display: flex; flex-direction: column; height: 100%; background: var(--bg); }
+
+.history-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 7px;
+  padding: 10px 14px 0;
+  background: var(--bg-blur);
+  flex-shrink: 0;
+}
+.history-new,
+.history-delete,
+.history-select {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--s2);
+  color: var(--text2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+.history-new,
+.history-delete {
+  padding: 0 10px;
+}
+.history-select {
+  min-width: 0;
+  padding: 0 8px;
+}
+.history-delete:disabled {
+  opacity: .45;
+}
 
 .task-strip {
   display: flex; gap: 7px; overflow-x: auto;

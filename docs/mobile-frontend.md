@@ -116,6 +116,21 @@ Group assistant behavior:
 - Group text-message sources are displayed as references but are not opened as
   file details.
 
+## Assistant History
+
+`ChatBox.vue` keeps Assistant history in backend conversations:
+
+- The history bar can start a new conversation, open an existing conversation,
+  or delete the active conversation.
+- Personal Assistant conversations are stored separately from group Assistant
+  conversations.
+- The first question becomes the default conversation title.
+- Saved messages include user turns, assistant turns, errors, and citation
+  sources.
+- Loading a conversation restores the visible messages and source cards.
+- Saved history is not currently injected into the next prompt; retrieval still
+  depends on the current question and selected personal/group scope.
+
 ## Auto-Growing Textareas
 
 Mobile long-text inputs use `mobile/src/components/AutoGrowTextarea.vue`.

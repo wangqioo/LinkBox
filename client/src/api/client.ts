@@ -217,6 +217,28 @@ export interface AssistantAnswer {
   sources: AssistantSource[];
 }
 
+export interface AssistantConversation {
+  id: number;
+  user_id: number;
+  scope_type: 'personal' | 'group';
+  group_id: number | null;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+export interface AssistantMessage {
+  id: number;
+  conversation_id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  task: string;
+  sources: AssistantSource[];
+  error?: string;
+  created_at: string;
+}
+
 export interface RetrievalDiagnosticsRequest {
   question: string;
   task?: string;
@@ -374,6 +396,8 @@ export interface AdminUserDetail {
 
 export interface AssistantStreamHandlers {
   groupId?: number;
+  conversationId?: number | null;
+  onConversation?: (conversation: AssistantConversation) => void;
   onSources?: (sources: AssistantSource[]) => void;
   onDelta?: (text: string) => void;
   onDone?: () => void;
@@ -531,6 +555,17 @@ export const api = {
     request('/assistant/chat', { method: 'POST', body: JSON.stringify({ question, task }) }),
   getRetrievalDiagnostics: (data: RetrievalDiagnosticsRequest): Promise<RetrievalDiagnosticsResponse> =>
     request('/assistant/retrieval-diagnostics', { method: 'POST', body: JSON.stringify(data) }),
+  getAssistantConversations: (groupId?: number): Promise<{ conversations: AssistantConversation[] }> =>
+    request(`/assistant/conversations${groupId ? `?groupId=${groupId}` : ''}`),
+  createAssistantConversation: (data: { title?: string; groupId?: number } = {}): Promise<{ conversation: AssistantConversation }> =>
+    request(`/assistant/conversations${data.groupId ? `?groupId=${data.groupId}` : ''}`, {
+      method: 'POST',
+      body: JSON.stringify({ title: data.title || '' }),
+    }),
+  getAssistantConversationMessages: (id: number, groupId?: number): Promise<{ conversation: AssistantConversation; messages: AssistantMessage[] }> =>
+    request(`/assistant/conversations/${id}/messages${groupId ? `?groupId=${groupId}` : ''}`),
+  deleteAssistantConversation: (id: number, groupId?: number): Promise<{ ok: boolean }> =>
+    request(`/assistant/conversations/${id}${groupId ? `?groupId=${groupId}` : ''}`, { method: 'DELETE' }),
   streamAssistant: async (question: string, task = 'ask', handlers: AssistantStreamHandlers = {}) => {
     const token = localStorage.getItem('linkbox_token');
     const res = await fetch(`${BASE}/assistant/chat/stream`, {
@@ -539,7 +574,7 @@ export const api = {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ question, task, groupId: handlers.groupId }),
+      body: JSON.stringify({ question, task, groupId: handlers.groupId, conversation_id: handlers.conversationId }),
     });
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
@@ -557,6 +592,7 @@ export const api = {
       if (!dataLine) return;
       const data = JSON.parse(dataLine.slice(5).trim());
 
+      if (event === 'conversation') handlers.onConversation?.(data.conversation);
       if (event === 'sources') handlers.onSources?.(data.sources || []);
       if (event === 'delta') handlers.onDelta?.(data.text || '');
       if (event === 'done') handlers.onDone?.();

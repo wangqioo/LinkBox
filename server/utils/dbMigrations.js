@@ -2,6 +2,7 @@ import { initJobSchema } from './jobQueue.js';
 import { initDocumentSchema } from './documentIndex.js';
 import { backfillItemContent } from './itemContentStore.js';
 import { backfillItemAssets } from './itemAssetStore.js';
+import { initAssistantConversationSchema } from './assistantConversations.js';
 
 const MIGRATIONS = [
   {
@@ -71,6 +72,12 @@ const MIGRATIONS = [
     up(db) {
       addColumnIfMissing(db, 'links', 'scope', "TEXT DEFAULT 'personal'");
       db.exec('CREATE INDEX IF NOT EXISTS idx_links_user_scope ON links(user_id, scope, imported_at)');
+    },
+  },
+  {
+    name: '009_assistant_conversations',
+    up(db) {
+      initAssistantConversationSchema(db);
     },
   },
 ];

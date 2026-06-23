@@ -15,6 +15,7 @@ const EXPECTED_MIGRATIONS = [
   '006_item_assets_schema',
   '007_direct_messages_schema',
   '008_link_scope',
+  '009_assistant_conversations',
 ];
 
 function withDb(fn) {
@@ -144,6 +145,36 @@ test('runMigrations creates direct message table and indexes for legacy database
     'created_at',
   ]);
   assert.equal(indexNames(db, 'direct_messages').includes('idx_direct_messages_pair'), true);
+}));
+
+test('runMigrations creates assistant conversation history tables', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.equal(result.names.includes('009_assistant_conversations'), true);
+  assert.deepEqual(columnNames(db, 'assistant_conversations'), [
+    'id',
+    'user_id',
+    'scope_type',
+    'group_id',
+    'title',
+    'created_at',
+    'updated_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'assistant_messages'), [
+    'id',
+    'conversation_id',
+    'role',
+    'content',
+    'task',
+    'sources_json',
+    'error',
+    'created_at',
+  ]);
+  assert.equal(indexNames(db, 'assistant_conversations').includes('idx_assistant_conversations_user'), true);
+  assert.equal(indexNames(db, 'assistant_conversations').includes('idx_assistant_conversations_group'), true);
+  assert.equal(indexNames(db, 'assistant_messages').includes('idx_assistant_messages_conversation'), true);
 }));
 
 test('runMigrations creates document tables and indexes for legacy databases', () => withDb((db) => {
