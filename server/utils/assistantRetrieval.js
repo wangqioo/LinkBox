@@ -14,10 +14,12 @@ function retrieveGroupSources({ db, groupId, question, task = 'ask', scope: rawS
     ...rawScope,
     ...resolveTimeScope({ question, scope: rawScope, now }),
   });
+  scope.personalOnly = false;
   const params = [groupId];
   const scopedConditions = scopeWhere(scope, params);
   const rows = db.prepare(`
-    SELECT l.id, l.type, l.url, l.title, l.description, l.comment, l.content, l.content_md, l.summary, l.imported_at
+    SELECT l.id, l.type, l.url, l.title, l.description, l.comment, l.content, l.content_md, l.summary, l.imported_at,
+      gl.note AS group_note
     FROM links l
     JOIN group_links gl ON gl.link_id = l.id
     WHERE gl.group_id = ?
@@ -26,18 +28,49 @@ function retrieveGroupSources({ db, groupId, question, task = 'ask', scope: rawS
         OR COALESCE(l.summary, '') != ''
         OR COALESCE(l.content, '') != ''
         OR COALESCE(l.title, '') != ''
+        OR COALESCE(l.comment, '') != ''
+        OR COALESCE(gl.note, '') != ''
       )
       ${scopedConditions.length ? `AND ${scopedConditions.join(' AND ')}` : ''}
     ORDER BY l.imported_at DESC
     LIMIT 1000
   `).all(...params);
+  const messageParams = [groupId];
+  const messageTimeConditions = addTimeScopeConditions(scope, messageParams, 'm.created_at');
+  const messageRows = db.prepare(`
+    SELECT m.id, m.body, m.created_at, u.username
+    FROM group_messages m
+    JOIN users u ON u.id = m.user_id
+    WHERE m.group_id = ?
+      AND m.message_type = 'text'
+      AND COALESCE(m.body, '') != ''
+      ${messageTimeConditions.length ? `AND ${messageTimeConditions.join(' AND ')}` : ''}
+    ORDER BY m.created_at DESC, m.id DESC
+    LIMIT 1000
+  `).all(...messageParams).map(row => ({
+    id: `group-message:${row.id}`,
+    type: 'group_message',
+    url: '',
+    title: `${row.username || '成员'} 的群消息`,
+    description: '',
+    comment: '',
+    content: row.body,
+    content_md: row.body,
+    summary: row.body,
+    imported_at: row.created_at,
+    source_kind: 'group_message',
+  }));
+  const candidates = [...rows, ...messageRows];
 
   if (task === 'recent') {
-    return rows.slice(0, maxSources).map((item, index) => ({ ...item, source_index: index + 1 }));
+    return candidates
+      .sort((a, b) => String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
+      .slice(0, maxSources)
+      .map((item, index) => ({ ...item, source_index: index + 1 }));
   }
 
   const tokens = tokenize(question);
-  const ranked = rows
+  const ranked = candidates
     .map(item => ({ ...item, score: scoreItem(item, tokens) }))
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score || String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
@@ -46,7 +79,10 @@ function retrieveGroupSources({ db, groupId, question, task = 'ask', scope: rawS
 
   if (ranked.length) return ranked;
   if (!shouldUseFallbackSources(task, question)) return [];
-  return rows.slice(0, maxFallbackSources).map((item, index) => ({ ...item, source_index: index + 1 }));
+  return candidates
+    .sort((a, b) => String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
+    .slice(0, maxFallbackSources)
+    .map((item, index) => ({ ...item, source_index: index + 1 }));
 }
 
 function legacyChunkFallbackEnabled(includeLegacyFallback) {
@@ -63,6 +99,7 @@ function scoreItem(item, tokens) {
     title: 8,
     summary: 5,
     comment: 4,
+    group_note: 4,
     url: 3,
     content_md: 1,
     content: 1,
@@ -70,6 +107,7 @@ function scoreItem(item, tokens) {
 
   if (item.summary) score += 1;
   if (item.content_md) score += 1;
+  if (item.group_note) score += 1;
   return score;
 }
 
@@ -89,6 +127,7 @@ function normalizeScope(scope = {}) {
 
 function scopeWhere(scope, params) {
   const conditions = addTimeScopeConditions(scope, params, 'l.imported_at');
+  if (scope.personalOnly !== false && scope.hasScopeColumn !== false) conditions.unshift("COALESCE(l.scope, 'personal') = 'personal'");
   if (scope.type) {
     const condition = sqlConditionForItemKind(scope.type, 'l');
     conditions.push(condition.sql);
@@ -153,11 +192,13 @@ export function retrieveSources({
   if (groupId) {
     return retrieveGroupSources({ db, groupId, question, task, scope: rawScope, maxSources, maxFallbackSources, now });
   }
+  const hasScopeColumn = db.prepare('PRAGMA table_info(links)').all().some(column => column.name === 'scope');
   indexAllMissingDocuments(db);
   const scope = normalizeScope({
     ...rawScope,
     ...resolveTimeScope({ question, scope: rawScope, now }),
   });
+  scope.hasScopeColumn = hasScopeColumn;
   const documentChunks = searchDocumentChunks({ db, userId, query: question, task, limit: maxSources, scope });
   const embeddingChunks = enableEmbeddings
     ? searchEmbeddedDocumentChunks({ db, userId, query: question, limit: maxSources, scope })

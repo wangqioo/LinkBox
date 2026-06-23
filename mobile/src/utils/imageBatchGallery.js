@@ -24,6 +24,8 @@ export function groupImageBatches(files = []) {
       kind: 'image-batch',
       id: `batch:${file.batch_id}`,
       batchId: file.batch_id,
+      batchImageIds: images.map(image => image.id),
+      comment: images.find(image => String(image.comment || '').trim())?.comment || '',
       activeIndex: 0,
       images,
       created_at: images[0]?.created_at || file.created_at,

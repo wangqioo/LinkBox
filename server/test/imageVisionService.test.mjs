@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   inferImagePromptType,
   isLocalVisionConfig,
+  normalizeImageDescription,
   promptCacheType,
   promptForImageType,
 } from '../utils/imageVisionService.js';
@@ -36,6 +37,7 @@ test('promptForImageType returns conservative instructions', () => {
   for (const type of ['screenshot', 'document', 'photo']) {
     const prompt = promptForImageType(type);
     assert.match(prompt, /只能使用中文/);
+    assert.match(prompt, /不要使用 Markdown/);
     assert.doesNotMatch(prompt, /Return concise Chinese|Analyze this image/);
   }
   assert.match(promptForImageType('screenshot'), /界面结构/);
@@ -44,5 +46,17 @@ test('promptForImageType returns conservative instructions', () => {
 });
 
 test('promptCacheType versions cached image descriptions when prompt language changes', () => {
-  assert.equal(promptCacheType('photo'), 'photo.zh-v2');
+  assert.equal(promptCacheType('photo'), 'photo.zh-v3');
+});
+
+test('normalizeImageDescription converts markdown-like model output to plain text', () => {
+  assert.equal(
+    normalizeImageDescription(`
+## 图片简介
+- **主体**：一张手机截图
+1. 可见按钮：保存
+> 文字清晰
+`),
+    '图片简介 主体：一张手机截图 可见按钮：保存 文字清晰',
+  );
 });

@@ -6,6 +6,17 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { runMigrations } from '../utils/dbMigrations.js';
 
+const EXPECTED_MIGRATIONS = [
+  '001_links_item_columns',
+  '002_links_batch_columns',
+  '003_jobs_schema',
+  '004_document_schema',
+  '005_item_content_schema',
+  '006_item_assets_schema',
+  '007_direct_messages_schema',
+  '008_link_scope',
+];
+
 function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-db-migrations-test-'));
   const db = new Database(join(dir, 'test.db'));
@@ -46,15 +57,8 @@ test('runMigrations adds missing item columns to legacy links tables', () => wit
 
   const result = runMigrations(db);
 
-  assert.equal(result.applied, 6);
-  assert.deepEqual(result.names, [
-    '001_links_item_columns',
-    '002_links_batch_columns',
-    '003_jobs_schema',
-    '004_document_schema',
-    '005_item_content_schema',
-    '006_item_assets_schema',
-  ]);
+  assert.equal(result.applied, EXPECTED_MIGRATIONS.length);
+  assert.deepEqual(result.names, EXPECTED_MIGRATIONS);
   assert.deepEqual(columnNames(db, 'links'), [
     'id',
     'user_id',
@@ -74,6 +78,7 @@ test('runMigrations adds missing item columns to legacy links tables', () => wit
     'status',
     'batch_id',
     'batch_index',
+    'scope',
   ]);
   const row = db.prepare(`
     SELECT name FROM schema_migrations WHERE name = '001_links_item_columns'
@@ -87,10 +92,10 @@ test('runMigrations is idempotent once migrations are recorded', () => withDb((d
   const first = runMigrations(db);
   const second = runMigrations(db);
 
-  assert.equal(first.applied, 6);
+  assert.equal(first.applied, EXPECTED_MIGRATIONS.length);
   assert.equal(second.applied, 0);
   assert.deepEqual(second.names, []);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 6);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, EXPECTED_MIGRATIONS.length);
 }));
 
 test('runMigrations creates jobs table and indexes for legacy databases', () => withDb((db) => {
@@ -98,14 +103,7 @@ test('runMigrations creates jobs table and indexes for legacy databases', () => 
 
   const result = runMigrations(db);
 
-  assert.deepEqual(result.names, [
-    '001_links_item_columns',
-    '002_links_batch_columns',
-    '003_jobs_schema',
-    '004_document_schema',
-    '005_item_content_schema',
-    '006_item_assets_schema',
-  ]);
+  assert.deepEqual(result.names, EXPECTED_MIGRATIONS);
   assert.deepEqual(columnNames(db, 'jobs'), [
     'id',
     'type',
@@ -131,19 +129,29 @@ test('runMigrations creates jobs table and indexes for legacy databases', () => 
   );
 }));
 
+test('runMigrations creates direct message table and indexes for legacy databases', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.equal(result.names.includes('007_direct_messages_schema'), true);
+  assert.deepEqual(columnNames(db, 'direct_messages'), [
+    'id',
+    'sender_id',
+    'recipient_id',
+    'body',
+    'message_type',
+    'created_at',
+  ]);
+  assert.equal(indexNames(db, 'direct_messages').includes('idx_direct_messages_pair'), true);
+}));
+
 test('runMigrations creates document tables and indexes for legacy databases', () => withDb((db) => {
   createLegacyLinksTable(db);
 
   const result = runMigrations(db);
 
-  assert.deepEqual(result.names, [
-    '001_links_item_columns',
-    '002_links_batch_columns',
-    '003_jobs_schema',
-    '004_document_schema',
-    '005_item_content_schema',
-    '006_item_assets_schema',
-  ]);
+  assert.deepEqual(result.names, EXPECTED_MIGRATIONS);
   assert.deepEqual(columnNames(db, 'documents'), [
     'id',
     'item_id',
@@ -229,14 +237,7 @@ test('runMigrations creates item_content and backfills content-bearing legacy ro
 
   const result = runMigrations(db);
 
-  assert.deepEqual(result.names, [
-    '001_links_item_columns',
-    '002_links_batch_columns',
-    '003_jobs_schema',
-    '004_document_schema',
-    '005_item_content_schema',
-    '006_item_assets_schema',
-  ]);
+  assert.deepEqual(result.names, EXPECTED_MIGRATIONS);
   assert.deepEqual(columnNames(db, 'item_content'), [
     'item_id',
     'user_id',
@@ -314,14 +315,7 @@ test('runMigrations creates item_assets and backfills owned upload paths', () =>
 
   const result = runMigrations(db);
 
-  assert.deepEqual(result.names, [
-    '001_links_item_columns',
-    '002_links_batch_columns',
-    '003_jobs_schema',
-    '004_document_schema',
-    '005_item_content_schema',
-    '006_item_assets_schema',
-  ]);
+  assert.deepEqual(result.names, EXPECTED_MIGRATIONS);
   assert.deepEqual(columnNames(db, 'item_assets'), [
     'id',
     'item_id',

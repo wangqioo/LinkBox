@@ -25,6 +25,7 @@ function setupDb() {
       content_md TEXT DEFAULT '',
       summary TEXT DEFAULT '',
       imported_at TEXT DEFAULT (datetime('now')),
+      scope TEXT DEFAULT 'personal',
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE TABLE link_chunks (
@@ -123,9 +124,12 @@ test('accepted friends can be grouped, message, and share scoped materials', () 
     VALUES
       (100, 1, 'text', 'Launch Plan', 'roadmap beta launch', 'roadmap beta launch', 'Shared launch summary', '2026-06-01'),
       (101, 1, 'text', 'Private Payroll', 'salary private payroll', 'salary private payroll', 'Private summary', '2026-06-02'),
-      (102, 3, 'text', 'Cara Private', 'competitor secret', 'competitor secret', 'Secret summary', '2026-06-03')
+      (102, 3, 'text', 'Cara Private', 'competitor secret', 'competitor secret', 'Secret summary', '2026-06-03'),
+      (103, 2, 'text', 'Chat Upload', 'standup blocker detail', 'standup blocker detail', 'Chat scoped summary', '2026-06-04')
   `).run();
   db.prepare("INSERT INTO group_links (group_id, link_id, shared_by, note) VALUES (10, 100, 1, 'for team')").run();
+  db.prepare("UPDATE links SET scope = 'chat' WHERE id = 103").run();
+  db.prepare("INSERT INTO group_links (group_id, link_id, shared_by, note) VALUES (10, 103, 2, 'from chat')").run();
 
   const messages = db.prepare('SELECT body FROM group_messages WHERE group_id = ?').all(10);
   assert.deepEqual(messages.map(row => row.body), ['Please review the launch note']);
@@ -140,8 +144,52 @@ test('accepted friends can be grouped, message, and share scoped materials', () 
     enableRerank: false,
   });
 
-  assert.equal(sources.length, 1);
-  assert.equal(sources[0].id, 100);
-  assert.equal(sources[0].title, 'Launch Plan');
+  assert.ok(sources.some(source => source.id === 100 && source.title === 'Launch Plan'));
   assert.ok(!sources.some(source => source.id === 101 || source.id === 102));
+
+  const chatSources = retrieveSources({
+    db,
+    userId: 1,
+    groupId: 10,
+    question: 'standup blocker',
+    task: 'ask',
+    enableEmbeddings: false,
+    enableRerank: false,
+  });
+  assert.ok(chatSources.some(source => source.id === 103));
+  assert.ok(!chatSources.some(source => source.id === 101 || source.id === 102));
+
+  const groupMessageSources = retrieveSources({
+    db,
+    userId: 1,
+    groupId: 10,
+    question: 'Please review launch note',
+    task: 'ask',
+    enableEmbeddings: false,
+    enableRerank: false,
+  });
+  assert.ok(groupMessageSources.some(source => source.id === 'group-message:1' && source.type === 'group_message'));
+
+  db.prepare("UPDATE links SET comment = 'risk owner is alice' WHERE id = 100").run();
+  const commentSources = retrieveSources({
+    db,
+    userId: 2,
+    groupId: 10,
+    question: 'risk owner alice',
+    task: 'ask',
+    enableEmbeddings: false,
+    enableRerank: false,
+  });
+  assert.ok(commentSources.some(source => source.id === 100));
+
+  const noteSources = retrieveSources({
+    db,
+    userId: 2,
+    groupId: 10,
+    question: 'for team',
+    task: 'ask',
+    enableEmbeddings: false,
+    enableRerank: false,
+  });
+  assert.ok(noteSources.some(source => source.id === 100));
 });

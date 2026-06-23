@@ -15,7 +15,21 @@ test('groupImageBatches groups same-batch images into one gallery item ordered b
   assert.equal(result[0].kind, 'image-batch')
   assert.equal(result[0].id, 'batch:b1')
   assert.deepEqual(result[0].images.map(image => image.id), ['1', '2', '3'])
+  assert.deepEqual(result[0].batchImageIds, ['1', '2', '3'])
+  assert.equal(result[0].comment, '')
   assert.equal(result[0].activeIndex, 0)
+})
+
+test('groupImageBatches exposes the first non-empty image comment as the batch comment preview', () => {
+  const rows = [
+    { id: '1', type: 'image', batch_id: 'b1', batch_index: 0, comment: '' },
+    { id: '2', type: 'image', batch_id: 'b1', batch_index: 1, comment: 'shared note' },
+    { id: '3', type: 'image', batch_id: 'b1', batch_index: 2, comment: 'other note' },
+  ]
+
+  const result = groupImageBatches(rows)
+
+  assert.equal(result[0].comment, 'shared note')
 })
 
 test('groupImageBatches leaves single images and non-images as normal items', () => {

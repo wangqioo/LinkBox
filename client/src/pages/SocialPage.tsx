@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { api, type Friendship, type GroupMaterial, type GroupMessage, type LinkBoxGroup, type SocialUser } from '../api/client';
+import { api, type Friendship, type GroupMaterial, type GroupMessage, type LinkBoxGroup } from '../api/client';
 import { Bot, Check, FilePlus2, Loader2, MessageSquare, Plus, Search, Send, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import AutoGrowTextarea from '../components/AutoGrowTextarea';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 
 interface LinkOption {
@@ -9,6 +10,14 @@ interface LinkOption {
   title: string;
   url: string;
   type: string;
+}
+
+function normalizeRows(value: any): any[] {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.results)) return value.results;
+  return [];
 }
 
 export default function SocialPage() {
@@ -45,9 +54,9 @@ export default function SocialPage() {
     ]);
     setFriends(friendRows);
     setGroups(groupRows);
-    setLinks((linkRows.items || linkRows || []).map((item: any) => ({
+    setLinks(normalizeRows(linkRows).map((item: any) => ({
       id: item.id,
-      title: item.title || item.url || `×ÊÁÏ ${item.id}`,
+      title: item.title || item.url || `èµ„æ–™ ${item.id}`,
       url: item.url || '',
       type: item.type || 'link',
     })));
@@ -65,12 +74,12 @@ export default function SocialPage() {
 
   useEffect(() => {
     setLoading(true);
-    loadSocial().catch(e => setError(e.message || '¼ÓÔØĞ­×÷Êı¾İÊ§°Ü')).finally(() => setLoading(false));
+    loadSocial().catch(e => setError(e.message || 'åŠ è½½ç¤¾äº¤æ•°æ®å¤±è´¥')).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     if (!activeGroupId) return;
-    loadGroup(activeGroupId).catch(e => setError(e.message || '¼ÓÔØÈºÊı¾İÊ§°Ü'));
+    loadGroup(activeGroupId).catch(e => setError(e.message || 'åŠ è½½ç¾¤èŠå¤±è´¥'));
   }, [activeGroupId]);
 
   const addFriend = async (e: FormEvent) => {
@@ -87,7 +96,7 @@ export default function SocialPage() {
     const result = await api.createGroup({
       name: groupName,
       description: groupDescription,
-      agent_name: 'Èº×ÊÁÏÖúÀí',
+      agent_name: 'ç¾¤èµ„æ–™åŠ©æ‰‹',
       member_ids: selectedMemberIds,
     });
     setGroupName('');
@@ -127,7 +136,7 @@ export default function SocialPage() {
       });
       setAssistantText('');
     } catch (err) {
-      setAssistantAnswer(err instanceof Error ? err.message : 'Èº×ÊÁÏÖúÀíÔİÊ±ÎŞ·¨»Ø´ğ¡£');
+      setAssistantAnswer(err instanceof Error ? err.message : 'ç¾¤èµ„æ–™åŠ©æ‰‹æš‚æ—¶æ— æ³•å›ç­”');
     } finally {
       setAssistantLoading(false);
     }
@@ -141,10 +150,10 @@ export default function SocialPage() {
     <div className="space-y-5">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">ºÃÓÑÓëÈº×é</h1>
-          <p className="text-sm text-gray-500">ºÍºÃÓÑ½¨Èº¡¢·¢ÈºÏûÏ¢¡¢¹²ÏíÖØÒª×ÊÁÏ£¬Ã¿¸öÈº¶¼ÓĞ¶ÀÁ¢×ÊÁÏÖúÀí¡£</p>
+          <h1 className="text-xl font-bold">å¥½å‹ä¸ç¾¤èŠ</h1>
+          <p className="text-sm text-gray-500">å’Œå¥½å‹å»ºç¾¤ã€å‘é€ç¾¤æ¶ˆæ¯ã€å…±äº«é‡è¦èµ„æ–™ï¼Œæ¯ä¸ªç¾¤éƒ½æœ‰ç‹¬ç«‹èµ„æ–™åŠ©æ‰‹ã€‚</p>
         </div>
-        {loading && <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" />¼ÓÔØÖĞ</div>}
+        {loading && <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" />åŠ è½½ä¸­</div>}
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
@@ -154,27 +163,27 @@ export default function SocialPage() {
           <section className="card p-4">
             <div className="flex items-center gap-2 mb-3">
               <Users className="w-4 h-4 text-indigo-600" />
-              <h2 className="font-semibold">ÎÒµÄÈº</h2>
+              <h2 className="font-semibold">æˆ‘çš„ç¾¤èŠ</h2>
             </div>
             <div className="space-y-2">
               {groups.map(group => (
                 <button key={group.id} type="button" onClick={() => setActiveGroupId(group.id)}
                   className={`w-full text-left rounded-lg border px-3 py-2 ${activeGroup?.id === group.id ? 'border-indigo-300 bg-indigo-50 dark:bg-indigo-950/40' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
                   <div className="font-medium truncate">{group.name}</div>
-                  <div className="text-xs text-gray-500 mt-1">{group.member_count} ÈË ¡¤ {group.material_count} Ìõ×ÊÁÏ</div>
+                  <div className="text-xs text-gray-500 mt-1">{group.member_count || 1} äºº Â· {group.material_count || 0} æ¡èµ„æ–™</div>
                 </button>
               ))}
-              {!groups.length && <div className="text-sm text-gray-500">»¹Ã»ÓĞÈº£¬ÏÈÑûÇëºÃÓÑ´´½¨Ò»¸ö¡£</div>}
+              {!groups.length && <div className="text-sm text-gray-500">è¿˜æ²¡æœ‰ç¾¤èŠï¼Œå…ˆå’Œå¥½å‹åˆ›å»ºä¸€ä¸ªã€‚</div>}
             </div>
           </section>
 
           <section className="card p-4">
             <div className="flex items-center gap-2 mb-3">
               <UserPlus className="w-4 h-4 text-indigo-600" />
-              <h2 className="font-semibold">¼ÓºÃÓÑ</h2>
+              <h2 className="font-semibold">åŠ å¥½å‹</h2>
             </div>
             <form onSubmit={addFriend} className="flex gap-2">
-              <input value={friendName} onChange={e => setFriendName(e.target.value)} className="input flex-1" placeholder="ÊäÈëÓÃ»§Ãû" />
+              <input value={friendName} onChange={e => setFriendName(e.target.value)} className="input flex-1" placeholder="è¾“å…¥ç”¨æˆ·å" />
               <button className="btn-primary px-3" type="submit"><Plus className="w-4 h-4" /></button>
             </form>
             {!!incomingFriends.length && (
@@ -187,17 +196,17 @@ export default function SocialPage() {
                 ))}
               </div>
             )}
-            {!!outgoingFriends.length && <div className="mt-3 text-xs text-gray-500">´ıÍ¨¹ı£º{outgoingFriends.map(friend => friend.user.username).join('¡¢')}</div>}
+            {!!outgoingFriends.length && <div className="mt-3 text-xs text-gray-500">å¾…é€šè¿‡ï¼š{outgoingFriends.map(friend => friend.user.username).join('ã€')}</div>}
           </section>
 
           <section className="card p-4">
             <div className="flex items-center gap-2 mb-3">
               <Plus className="w-4 h-4 text-indigo-600" />
-              <h2 className="font-semibold">À­Èº</h2>
+              <h2 className="font-semibold">å»ºç¾¤èŠ</h2>
             </div>
             <form onSubmit={createGroup} className="space-y-3">
-              <input value={groupName} onChange={e => setGroupName(e.target.value)} className="input w-full" placeholder="ÈºÃû³Æ" />
-              <textarea value={groupDescription} onChange={e => setGroupDescription(e.target.value)} className="input w-full min-h-[72px]" placeholder="ÈºËµÃ÷" />
+              <input value={groupName} onChange={e => setGroupName(e.target.value)} className="input w-full" placeholder="ç¾¤åç§°" />
+              <AutoGrowTextarea value={groupDescription} onChange={e => setGroupDescription(e.target.value)} className="input w-full min-h-[42px]" placeholder="ç¾¤è¯´æ˜" maxHeight={160} />
               <div className="space-y-1.5 max-h-36 overflow-auto">
                 {acceptedFriends.map(friend => (
                   <label key={friend.user.id} className="flex items-center gap-2 text-sm">
@@ -207,7 +216,7 @@ export default function SocialPage() {
                 ))}
               </div>
               <button type="submit" className="btn-primary w-full justify-center" disabled={!groupName.trim()}>
-                ´´½¨Èº
+                åˆ›å»ºç¾¤èŠ
               </button>
             </form>
           </section>
@@ -220,71 +229,78 @@ export default function SocialPage() {
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-semibold">{activeGroup.name}</h2>
-                    <p className="text-sm text-gray-500">{activeGroup.description || 'Õâ¸öÈº»¹Ã»ÓĞËµÃ÷¡£'}</p>
+                    <p className="text-sm text-gray-500">{activeGroup.description || 'è¿™ä¸ªç¾¤è¿˜æ²¡æœ‰è¯´æ˜ã€‚'}</p>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400">
-                    <Bot className="w-4 h-4" />{activeGroup.agent_name || 'Èº×ÊÁÏÖúÀí'}
+                    <Bot className="w-4 h-4" />{activeGroup.agent_name || 'ç¾¤èµ„æ–™åŠ©æ‰‹'}
                   </div>
                 </div>
               </section>
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 <section className="card p-4 min-h-[420px] flex flex-col">
-                  <div className="flex items-center gap-2 mb-3"><MessageSquare className="w-4 h-4 text-indigo-600" /><h3 className="font-semibold">ÈºÏûÏ¢</h3></div>
+                  <div className="flex items-center gap-2 mb-3"><MessageSquare className="w-4 h-4 text-indigo-600" /><h3 className="font-semibold">ç¾¤æ¶ˆæ¯</h3></div>
                   <div className="flex-1 overflow-auto space-y-3 pr-1">
                     {messages.map(message => (
                       <div key={message.id} className={`flex ${message.user_id === user?.id ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[82%] rounded-lg px-3 py-2 ${message.user_id === user?.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>
                           <div className="text-[11px] opacity-75 mb-1">{message.user.username}</div>
-                          <div className="text-sm whitespace-pre-wrap break-words">{message.body}</div>
+                          {message.message_type === 'material' ? (
+                            <div className="text-sm">
+                              <div className="font-medium">{message.material?.title || message.body}</div>
+                              <div className="text-xs opacity-75 mt-1">{message.material?.summary || message.material?.url || 'ç¾¤èµ„æ–™'}</div>
+                            </div>
+                          ) : (
+                            <div className="text-sm whitespace-pre-wrap break-words">{message.body}</div>
+                          )}
                         </div>
                       </div>
                     ))}
-                    {!messages.length && <div className="text-sm text-gray-500">»¹Ã»ÓĞÈºÏûÏ¢¡£</div>}
+                    {!messages.length && <div className="text-sm text-gray-500">è¿˜æ²¡æœ‰ç¾¤æ¶ˆæ¯ã€‚</div>}
                   </div>
                   <form onSubmit={sendMessage} className="mt-3 flex gap-2">
-                    <input value={messageText} onChange={e => setMessageText(e.target.value)} className="input flex-1" placeholder="·¢Ò»ÌõÈºÏûÏ¢" />
+                    <AutoGrowTextarea value={messageText} onChange={e => setMessageText(e.target.value)} className="input flex-1 min-h-10" placeholder="å‘ä¸€æ¡ç¾¤æ¶ˆæ¯" maxHeight={140} />
                     <button className="btn-primary px-3" type="submit"><Send className="w-4 h-4" /></button>
                   </form>
                 </section>
 
                 <section className="card p-4 min-h-[420px] flex flex-col">
-                  <div className="flex items-center gap-2 mb-3"><Bot className="w-4 h-4 text-indigo-600" /><h3 className="font-semibold">Èº×ÊÁÏÖúÀí</h3></div>
+                  <div className="flex items-center gap-2 mb-3"><Bot className="w-4 h-4 text-indigo-600" /><h3 className="font-semibold">ç¾¤èµ„æ–™åŠ©æ‰‹</h3></div>
                   <form onSubmit={askGroupAgent} className="flex gap-2 mb-3">
-                    <input value={assistantText} onChange={e => setAssistantText(e.target.value)} className="input flex-1" placeholder="ÎÊÕâ¸öÈº¹²Ïí×ÊÁÏÀïµÄÎÊÌâ" />
+                    <AutoGrowTextarea value={assistantText} onChange={e => setAssistantText(e.target.value)} className="input flex-1 min-h-10" placeholder="å‘è¿™ä¸ªç¾¤çš„èµ„æ–™åŠ©æ‰‹æé—®" maxHeight={140} />
                     <button className="btn-primary px-3" type="submit" disabled={assistantLoading}>{assistantLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}</button>
                   </form>
                   <div className="flex-1 overflow-auto rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3 text-sm">
-                    {assistantAnswer ? <MarkdownRenderer content={assistantAnswer} /> : <span className="text-gray-500">ÈºÖúÀíÖ»¼ìË÷Õâ¸öÈºÀï¹²Ïí¹ıµÄ×ÊÁÏ¡£</span>}
+                    {assistantAnswer ? <MarkdownRenderer content={assistantAnswer} /> : <span className="text-gray-500">ç¾¤åŠ©æ‰‹åªä¼šè¯»å–è¿™ä¸ªç¾¤é‡Œå…±äº«è¿‡çš„èµ„æ–™ã€‚</span>}
                   </div>
                 </section>
               </div>
 
               <section className="card p-4">
-                <div className="flex items-center gap-2 mb-3"><FilePlus2 className="w-4 h-4 text-indigo-600" /><h3 className="font-semibold">Èº×ÊÁÏ</h3></div>
+                <div className="flex items-center gap-2 mb-3"><FilePlus2 className="w-4 h-4 text-indigo-600" /><h3 className="font-semibold">ç¾¤èµ„æ–™</h3></div>
                 <form onSubmit={shareMaterial} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2 mb-4">
                   <select value={shareLinkId} onChange={e => setShareLinkId(e.target.value)} className="input">
-                    <option value="">Ñ¡ÔñÎÒµÄ×ÊÁÏ</option>
+                    <option value="">é€‰æ‹©æˆ‘çš„èµ„æ–™</option>
                     {links.map(link => <option key={link.id} value={link.id}>{link.title}</option>)}
                   </select>
-                  <input value={shareNote} onChange={e => setShareNote(e.target.value)} className="input" placeholder="·ÖÏíËµÃ÷" />
-                  <button type="submit" className="btn-primary justify-center" disabled={!shareLinkId}>¹²Ïíµ½Èº</button>
+                  <AutoGrowTextarea value={shareNote} onChange={e => setShareNote(e.target.value)} className="input min-h-10" placeholder="è¡¥å……è¯´æ˜" maxHeight={140} />
+                  <button type="submit" className="btn-primary justify-center" disabled={!shareLinkId}>å‘é€åˆ°ç¾¤</button>
                 </form>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {materials.map(material => (
                     <article key={material.link_id} className="rounded-lg border px-3 py-2 bg-white dark:bg-gray-900">
-                      <div className="text-sm font-medium truncate">{material.title || material.url || `×ÊÁÏ ${material.link_id}`}</div>
-                      <div className="text-xs text-gray-500 mt-1">ÓÉ {material.shared_by_user.username} ¹²Ïí ¡¤ {material.type}</div>
+                      <div className="text-sm font-medium truncate">{material.title || material.url || `èµ„æ–™ ${material.link_id}`}</div>
+                      <div className="text-xs text-gray-500 mt-1">ç”± {material.shared_by_user.username} å…±äº« Â· {material.type}</div>
                       {material.note && <div className="text-xs text-gray-600 dark:text-gray-300 mt-2">{material.note}</div>}
                       {material.summary && <div className="text-xs text-gray-500 mt-2 line-clamp-2">{material.summary}</div>}
                     </article>
                   ))}
-                  {!materials.length && <div className="text-sm text-gray-500">»¹Ã»ÓĞ¹²Ïí×ÊÁÏ¡£</div>}
+                  {!materials.length && <div className="text-sm text-gray-500">è¿˜æ²¡æœ‰å…±äº«èµ„æ–™ã€‚</div>}
                 </div>
               </section>
             </>
           ) : (
-            <section className="card p-8 text-center text-gray-500">´´½¨»ò¼ÓÈëÒ»¸öÈººó£¬¾Í¿ÉÒÔ·¢ÈºÏûÏ¢ºÍÕûÀíÈº×ÊÁÏ¡£</section>
+            <section className="card p-8 text-center text-gray-500">æ·»åŠ å¥½å‹å¹¶åˆ›å»ºä¸€ä¸ªç¾¤åï¼Œå°±å¯ä»¥å‘ç¾¤æ¶ˆæ¯å’Œå…±äº«ç¾¤èµ„æ–™ã€‚</section>
           )}
         </main>
       </div>

@@ -14,7 +14,7 @@ function addTypeCondition({ conditions, params, type }) {
 
 export function buildMobileFilesListQuery({ userId, query = {} }) {
   const params = [userId];
-  const conditions = ['user_id = ?'];
+  const conditions = ["user_id = ?", "COALESCE(scope, 'personal') = 'personal'"];
 
   if (query.date) {
     conditions.push('substr(imported_at, 1, 10) = ?');
@@ -39,7 +39,7 @@ export function buildMobileFilesListQuery({ userId, query = {} }) {
 export function buildMobileFilesSearchQuery({ userId, query = {} }) {
   const q = String(query.q || '').trim();
   const params = [userId];
-  const conditions = ['user_id = ?'];
+  const conditions = ["user_id = ?", "COALESCE(scope, 'personal') = 'personal'"];
 
   if (query.date) {
     conditions.push('substr(imported_at, 1, 10) = ?');

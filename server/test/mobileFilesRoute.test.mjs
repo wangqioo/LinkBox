@@ -8,23 +8,30 @@ import { generateToken } from '../middleware/auth.js';
 import { createJobQueue } from '../utils/jobQueue.js';
 import { setRuntimeQueue } from '../utils/runtimeQueue.js';
 
-async function withMobileFilesApp(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'linkbox-mobile-files-route-test-'));
-  const oldDbPath = process.env.DB_PATH;
-  const oldDataDir = process.env.DATA_DIR;
-  const oldUploadsDir = process.env.UPLOADS_DIR;
-  process.env.DB_PATH = join(dir, 'test.db');
-  process.env.DATA_DIR = dir;
-  process.env.UPLOADS_DIR = join(dir, 'uploads');
+const TEST_DIR = mkdtempSync(join(tmpdir(), 'linkbox-mobile-files-route-test-'));
+process.env.DB_PATH = join(TEST_DIR, 'test.db');
+process.env.DATA_DIR = TEST_DIR;
+process.env.UPLOADS_DIR = join(TEST_DIR, 'uploads');
+process.on('exit', () => {
+  rmSync(TEST_DIR, { recursive: true, force: true });
+});
 
+async function withMobileFilesApp(fn) {
   let db;
   let server;
   try {
-    const token = `${Date.now()}-${Math.random()}`;
-    const dbModule = await import(`../db.js?mobile-files-db=${token}`);
+    const dbModule = await import('../db.js');
     db = dbModule.default;
+    db.exec(`
+      DELETE FROM jobs;
+      DELETE FROM link_chunks;
+      DELETE FROM document_chunks;
+      DELETE FROM documents;
+      DELETE FROM links;
+      DELETE FROM users;
+    `);
     setRuntimeQueue(createJobQueue({ db, autoStart: false }));
-    const mobileFilesModule = await import(`../routes/mobileFiles.js?mobile-files-route-test=${token}`);
+    const mobileFilesModule = await import('../routes/mobileFiles.js');
 
     db.prepare(`
       INSERT INTO users (id, username, password_hash)
@@ -33,6 +40,7 @@ async function withMobileFilesApp(fn) {
     `).run();
 
     const app = express();
+    app.use(express.json());
     app.use('/api/mobile/files', mobileFilesModule.default);
 
     server = await new Promise((resolve, reject) => {
@@ -50,11 +58,6 @@ async function withMobileFilesApp(fn) {
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     setRuntimeQueue(null);
-    db?.close();
-    process.env.DB_PATH = oldDbPath;
-    process.env.DATA_DIR = oldDataDir;
-    process.env.UPLOADS_DIR = oldUploadsDir;
-    rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -86,7 +89,7 @@ test('mobile upload guards generic URLs and queues allowed Bilibili share links'
   const job = db.prepare('SELECT type, link_id, payload FROM jobs').get();
 
   assert.equal(shareResponse.status, 200);
-  assert.equal(shareBody.type, 'link');
+  assert.equal(shareBody.type, 'video');
   assert.equal(shareBody.url, 'https://www.bilibili.com/video/BV1ZBjB6UEbt/?share_source=copy_web');
   assert.equal(job.type, 'link.fetchMetadata');
   assert.deepEqual(JSON.parse(job.payload), {
@@ -119,4 +122,49 @@ test('mobile comment updates refresh AI indexes for the item', async () => withM
 
   const document = db.prepare('SELECT markdown FROM documents WHERE item_id = 30').get();
   assert.match(document.markdown, /## 我的留言\n\n这张图后续要重点分析左上角按钮/);
+}));
+
+test('mobile personal list hides chat scoped items', async () => withMobileFilesApp(async ({ db, baseUrl, authHeaders }) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, content, imported_at, scope)
+    VALUES
+      (40, 7, 'text', '个人资料', 'personal note', '2026-06-21T00:00:00.000Z', 'personal'),
+      (41, 7, 'text', '群聊资料', 'chat note', '2026-06-22T00:00:00.000Z', 'chat')
+  `).run();
+
+  const response = await fetch(`${baseUrl}/api/mobile/files`, { headers: authHeaders });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.map(item => Number(item.id)), [40]);
+}));
+
+test('mobile detail can read group shared materials without adding them to the personal list', async () => withMobileFilesApp(async ({ db, baseUrl, authHeaders }) => {
+  db.prepare(`
+    INSERT INTO users (id, username, password_hash)
+    VALUES (8, 'owner-user', 'hash')
+    ON CONFLICT(id) DO NOTHING
+  `).run();
+  db.prepare("INSERT INTO groups (id, owner_id, name) VALUES (70, 8, '资料群')").run();
+  db.prepare(`
+    INSERT INTO group_members (group_id, user_id, role)
+    VALUES
+      (70, 7, 'member'),
+      (70, 8, 'owner')
+  `).run();
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, content, imported_at, scope)
+    VALUES (50, 8, 'text', '别人发的群资料', 'shared launch note', '2026-06-23T00:00:00.000Z', 'chat')
+  `).run();
+  db.prepare("INSERT INTO group_links (group_id, link_id, shared_by, note) VALUES (70, 50, 8, 'for group')").run();
+
+  const detailResponse = await fetch(`${baseUrl}/api/mobile/files/50`, { headers: authHeaders });
+  const detail = await detailResponse.json();
+  assert.equal(detailResponse.status, 200);
+  assert.equal(detail.filename, '别人发的群资料');
+
+  const listResponse = await fetch(`${baseUrl}/api/mobile/files`, { headers: authHeaders });
+  const list = await listResponse.json();
+  assert.equal(listResponse.status, 200);
+  assert.deepEqual(list.map(item => Number(item.id)), []);
 }));

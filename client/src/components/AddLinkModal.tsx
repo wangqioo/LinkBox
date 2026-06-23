@@ -4,6 +4,7 @@ import VoiceInput, { speechSupported } from './VoiceInput';
 import AudioRecorder from './AudioRecorder';
 import type { UploadProgress } from '../api/client';
 import AddLinkTabs from './AddLinkTabs';
+import AutoGrowTextarea from './AutoGrowTextarea';
 import UploadProgressBar from './UploadProgressBar';
 import type { AddLinkModalProps, ContentType } from './addLinkModalTypes';
 import { formatSize, getAutoProcessLinkUrl, isBilibiliVideoUrl, isUrl, nowLocal, titleFromUploadName } from './addLinkModalUtils';
@@ -254,7 +255,7 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
                     <VoiceInput onResult={text => setTextContent(prev => prev + text)} />
                   )}
                 </label>
-                <textarea className="input" rows={5} placeholder="写下你的想法...（支持语音输入）"
+                <AutoGrowTextarea className="input min-h-[120px]" rows={5} maxHeight={280} placeholder="写下你的想法...（支持语音输入）"
                   value={textContent} onChange={e => setTextContent(e.target.value)} />
               </div>
             </>
@@ -322,7 +323,7 @@ export default function AddLinkModal({ open, tags, onClose, onAddLink, onAddText
                 <VoiceInput onResult={text => setComment(prev => prev + text)} />
               )}
             </label>
-            <textarea ref={commentRef} className="input" rows={2} placeholder="记录你的想法...（支持语音输入）"
+            <AutoGrowTextarea ref={commentRef} className="input min-h-[48px]" rows={2} maxHeight={180} placeholder="记录你的想法...（支持语音输入）"
               value={comment} onChange={e => setComment(e.target.value)} />
           </div>
 

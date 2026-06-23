@@ -9,6 +9,10 @@ const TARGET_CHARS = 1200;
 const OVERLAP_CHARS = 180;
 const MAX_CHUNKS_PER_LINK = 80;
 
+function hasLinksScopeColumn(database) {
+  return database.prepare('PRAGMA table_info(links)').all().some(column => column.name === 'scope');
+}
+
 function normalizeText(text) {
   return String(text || '')
     .replace(/\r\n/g, '\n')
@@ -77,11 +81,13 @@ export function removeLinkContentIndex(linkId) {
 }
 
 export function indexAllMissingChunks(database = db) {
+  const scopeCondition = hasLinksScopeColumn(database) ? "AND COALESCE(l.scope, 'personal') = 'personal'" : '';
   const rows = database.prepare(`
     SELECT l.id
     FROM links l
     LEFT JOIN link_chunks c ON c.link_id = l.id
     WHERE c.id IS NULL
+      ${scopeCondition}
       AND (COALESCE(l.content_md, '') != '' OR COALESCE(l.content, '') != '' OR COALESCE(l.summary, '') != '')
     ORDER BY l.imported_at DESC
     LIMIT 200
@@ -167,6 +173,7 @@ function normalizeScope(scope = {}) {
 
 function scopeWhere(scope, params) {
   const conditions = addTimeScopeConditions(scope, params, 'l.imported_at');
+  if (scope.hasScopeColumn !== false) conditions.unshift("COALESCE(l.scope, 'personal') = 'personal'");
   if (scope.type) {
     const condition = sqlConditionForItemKind(scope.type, 'l');
     conditions.push(condition.sql);
@@ -176,7 +183,7 @@ function scopeWhere(scope, params) {
 }
 
 export function searchRelevantChunks({ db: database = db, userId, query, task = 'ask', limit = 12, scope: rawScope = {} }) {
-  const scope = normalizeScope(rawScope);
+  const scope = { ...normalizeScope(rawScope), hasScopeColumn: hasLinksScopeColumn(database) };
 
   if (task === 'recent') {
     const params = [userId];

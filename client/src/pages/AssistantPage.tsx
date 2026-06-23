@@ -1,6 +1,7 @@
 import { FormEvent, useRef, useState } from 'react';
 import { api, type AssistantSource } from '../api/client';
 import { Bot, CalendarDays, CheckSquare, ChevronDown, FileText, Loader2, Search, Send, Tags, UserRound } from 'lucide-react';
+import AutoGrowTextarea from '../components/AutoGrowTextarea';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 
 interface Message {
@@ -248,9 +249,9 @@ export default function AssistantPage() {
 
         </div>
 
-        <form onSubmit={onSubmit} className="border-t p-3 flex gap-2">
-          <input className="input" value={question} onChange={e => setQuestion(e.target.value)}
-            placeholder={activeTask.placeholder} disabled={loading} />
+        <form onSubmit={onSubmit} className="border-t p-3 flex items-end gap-2">
+          <AutoGrowTextarea className="input min-h-10" value={question} onChange={e => setQuestion(e.target.value)}
+            placeholder={activeTask.placeholder} disabled={loading} maxHeight={160} />
           <button className="btn-primary shrink-0" disabled={loading || !question.trim()}>
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             发送

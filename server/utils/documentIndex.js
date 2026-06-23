@@ -11,6 +11,10 @@ function isoNow() {
   return new Date().toISOString();
 }
 
+function hasLinksScopeColumn(db) {
+  return db.prepare('PRAGMA table_info(links)').all().some(column => column.name === 'scope');
+}
+
 function hashText(text) {
   return createHash('sha256').update(String(text || '')).digest('hex');
 }
@@ -336,11 +340,13 @@ export function rechunkDocument(db, documentId) {
 export function indexAllMissingDocuments(db, { limit = 200 } = {}) {
   if (!db) throw new Error('indexAllMissingDocuments requires a database');
   initDocumentSchema(db);
+  const scopeCondition = hasLinksScopeColumn(db) ? "AND COALESCE(l.scope, 'personal') = 'personal'" : '';
   const rows = db.prepare(`
     SELECT l.id
     FROM links l
     LEFT JOIN documents d ON d.item_id = l.id AND d.parser_version = ?
     WHERE d.id IS NULL
+      ${scopeCondition}
       AND (
         COALESCE(l.content_md, '') != ''
         OR COALESCE(l.content, '') != ''
@@ -373,6 +379,7 @@ export function searchDocumentChunks({ db, userId, query, limit = 12, scope = {}
   const tokens = tokenizeQuery(query);
   const params = [userId];
   const conditions = ['d.user_id = ?'];
+  if (hasLinksScopeColumn(db)) conditions.push("COALESCE(l.scope, 'personal') = 'personal'");
 
   conditions.push(...addTimeScopeConditions(scope, params, 'l.imported_at'));
   if (scope.type) {

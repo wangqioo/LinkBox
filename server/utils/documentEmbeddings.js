@@ -256,8 +256,16 @@ export async function indexMissingDocumentEmbeddingsAsync(
   return { indexed: rows.length, provider: embedded.provider, model: embedded.model, ...(error ? { error } : {}) };
 }
 
-function scopeConditions(scope, params) {
+function linksHasScopeColumn(db) {
+  return db.prepare('PRAGMA table_info(links)').all().some(column => column.name === 'scope');
+}
+
+function scopeConditions({ db, scope, params }) {
   const conditions = ['d.user_id = ?'];
+  const hasScopeColumn = scope.hasScopeColumn !== undefined
+    ? scope.hasScopeColumn
+    : linksHasScopeColumn(db);
+  if (hasScopeColumn !== false) conditions.push("COALESCE(l.scope, 'personal') = 'personal'");
   conditions.push(...addTimeScopeConditions(scope, params, 'l.imported_at'));
   if (scope.type) {
     const condition = sqlConditionForItemKind(scope.type, 'l');
@@ -321,7 +329,7 @@ function rankEmbeddedRows(rows, queryVector, query, limit) {
 
 function embeddedRowsForSearch({ db, userId, scope, provider, model }) {
   const params = [userId, provider, model];
-  const conditions = scopeConditions(scope, params);
+  const conditions = scopeConditions({ db, scope, params });
   return db.prepare(`
     SELECT
       c.id AS chunk_id,

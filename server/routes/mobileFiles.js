@@ -50,8 +50,36 @@ function mobileAuth(req, res, next) {
 
 router.use(mobileAuth);
 
-function getLinkForUser(id, userId) {
+function getOwnedLinkForUser(id, userId) {
   return db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(id, userId);
+}
+
+function canReadSharedLink(id, userId) {
+  const groupShare = db.prepare(`
+    SELECT 1
+    FROM group_links gl
+    JOIN group_members gm ON gm.group_id = gl.group_id
+    WHERE gl.link_id = ? AND gm.user_id = ?
+    LIMIT 1
+  `).get(id, userId);
+  if (groupShare) return true;
+
+  const directShare = db.prepare(`
+    SELECT 1
+    FROM direct_messages
+    WHERE message_type = 'material'
+      AND body = ?
+      AND (sender_id = ? OR recipient_id = ?)
+    LIMIT 1
+  `).get(String(id), userId, userId);
+  return Boolean(directShare);
+}
+
+function getReadableLinkForUser(id, userId) {
+  const owned = getOwnedLinkForUser(id, userId);
+  if (owned) return owned;
+  if (!canReadSharedLink(id, userId)) return null;
+  return db.prepare('SELECT * FROM links WHERE id = ?').get(id);
 }
 
 function attachMobileProcessing(linkOrLinks) {
@@ -62,8 +90,8 @@ function rowsToMobileFiles(rows) {
   return attachMobileProcessing(rows).map(toMobileFile);
 }
 
-function getMobileFileForUser(id, userId) {
-  const link = getLinkForUser(id, userId);
+function getMobileFileForUser(id, userId, { readable = false } = {}) {
+  const link = readable ? getReadableLinkForUser(id, userId) : getOwnedLinkForUser(id, userId);
   return link ? toMobileFile(attachMobileProcessing(link)) : null;
 }
 
@@ -197,15 +225,26 @@ router.get('/search', (req, res) => {
 router.get('/by-date/:date', (req, res) => {
   const rows = db.prepare(`
     SELECT * FROM links
-    WHERE user_id = ? AND substr(imported_at, 1, 10) = ?
+    WHERE user_id = ? AND COALESCE(scope, 'personal') = 'personal' AND substr(imported_at, 1, 10) = ?
     ORDER BY id DESC
   `).all(req.userId, req.params.date);
   res.json(rowsToMobileFiles(rows));
 });
 
+router.get('/batch/:batchId', (req, res) => {
+  const batchId = String(req.params.batchId || '').trim();
+  if (!batchId) return res.status(400).json({ error: 'Batch is required' });
+  const rows = db.prepare(`
+    SELECT * FROM links
+    WHERE user_id = ? AND COALESCE(scope, 'personal') = 'personal' AND type = 'image' AND batch_id = ?
+    ORDER BY COALESCE(batch_index, 0) ASC, id ASC
+  `).all(req.userId, batchId);
+  res.json(rowsToMobileFiles(rows));
+});
+
 router.get('/stats', (req, res) => {
   const rows = rowsToMobileFiles(
-    db.prepare('SELECT * FROM links WHERE user_id = ? ORDER BY imported_at DESC').all(req.userId),
+    db.prepare("SELECT * FROM links WHERE user_id = ? AND COALESCE(scope, 'personal') = 'personal' ORDER BY imported_at DESC").all(req.userId),
   );
   const byType = {};
   const byStatus = {};
@@ -231,14 +270,14 @@ router.get('/favicon', (req, res) => {
 });
 
 router.get('/:id/download', (req, res) => {
-  const link = getLinkForUser(req.params.id, req.userId);
+  const link = getReadableLinkForUser(req.params.id, req.userId);
   if (!link || !link.image_path) return res.status(404).json({ error: 'File not found' });
   const filename = link.image_path.split('/').pop();
   return res.download(join(UPLOADS_DIR, filename), link.title || filename);
 });
 
 router.get('/:id/extract', async (req, res) => {
-  const link = getLinkForUser(req.params.id, req.userId);
+  const link = getOwnedLinkForUser(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Not found' });
   if (link.type !== 'link' || !link.url) return res.status(400).json({ error: 'Only link items can be extracted' });
   try {
@@ -252,9 +291,33 @@ router.get('/:id/extract', async (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  const file = getMobileFileForUser(req.params.id, req.userId);
+  const file = getMobileFileForUser(req.params.id, req.userId, { readable: true });
   if (!file) return res.status(404).json({ error: 'Not found' });
   res.json(file);
+});
+
+router.put('/batch/:batchId/comment', (req, res) => {
+  const batchId = String(req.params.batchId || '').trim();
+  if (!batchId) return res.status(400).json({ error: 'Batch is required' });
+  const comment = String(req.body?.comment || '').slice(0, 2000);
+  const rows = db.prepare(`
+    SELECT id FROM links
+    WHERE user_id = ? AND type = 'image' AND batch_id = ?
+    ORDER BY COALESCE(batch_index, 0) ASC, id ASC
+  `).all(req.userId, batchId);
+  if (!rows.length) return res.status(404).json({ error: 'Batch not found' });
+  const update = db.prepare('UPDATE links SET comment = ? WHERE id = ? AND user_id = ?');
+  const tx = db.transaction(() => {
+    for (const row of rows) update.run(comment, row.id, req.userId);
+  });
+  tx();
+  for (const row of rows) refreshItemAiIndexes(row.id);
+  const updated = db.prepare(`
+    SELECT * FROM links
+    WHERE user_id = ? AND type = 'image' AND batch_id = ?
+    ORDER BY COALESCE(batch_index, 0) ASC, id ASC
+  `).all(req.userId, batchId);
+  res.json(rowsToMobileFiles(updated));
 });
 
 router.put('/:id/comment', (req, res) => {
@@ -274,7 +337,7 @@ router.delete('/:id', (req, res) => {
 });
 
 router.post('/:id/analyze', async (req, res) => {
-  const link = getLinkForUser(req.params.id, req.userId);
+  const link = getOwnedLinkForUser(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Not found' });
 
   const current = getMobileFileForUser(link.id, req.userId);

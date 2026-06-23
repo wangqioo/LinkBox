@@ -2,7 +2,7 @@
   <div class="page">
     <div class="detail-bg"></div>
     <header class="app-hdr">
-      <button class="app-back" @click="$router.back()">‹</button>
+      <button class="app-back" @click="goBack">‹</button>
       <span class="app-hdr-ttl">文件详情</span>
       <button class="app-hdr-act" @click="confirmDelete" title="删除">🗑</button>
     </header>
@@ -17,13 +17,22 @@
           <div class="hero-glow"></div>
           <!-- Image preview -->
           <template v-if="file.type === 'image'">
-            <div class="hero-img-wrap">
+            <div
+              class="hero-img-wrap"
+              @touchstart.passive="onBatchTouchStart"
+              @touchend.passive="onBatchTouchEnd"
+            >
               <img
                 :src="downloadUrl(file.id)"
                 class="hero-img-el"
                 loading="lazy"
                 @error="e => e.target.closest('.hero-img-wrap').innerHTML = '<span style=\'font-size:52px\'>🖼</span>'"
               />
+              <template v-if="batchImages.length > 1">
+                <button class="batch-nav prev" @click.stop="moveBatch(-1)" :disabled="batchIndex <= 0">‹</button>
+                <button class="batch-nav next" @click.stop="moveBatch(1)" :disabled="batchIndex >= batchImages.length - 1">›</button>
+                <div class="batch-counter">{{ batchIndex + 1 }} / {{ batchImages.length }}</div>
+              </template>
             </div>
           </template>
           <!-- Link cover image -->
@@ -44,6 +53,21 @@
             <span class="status-chip" :class="file.status">{{ statusLabel }}</span>
           </div>
           <div class="hero-time">{{ timeStr }}</div>
+        </div>
+
+        <div v-if="file.type === 'image'" class="info-card gc">
+          <div class="card-label">{{ batchImages.length > 1 ? '单张留言' : '留言' }}</div>
+          <AutoGrowTextarea
+            v-model="commentDraft"
+            class="detail-comment-input"
+            :min-rows="3"
+            :max-height="220"
+            maxlength="2000"
+            placeholder="给当前照片写留言"
+          />
+          <button class="btn-secondary comment-save-btn" @click="saveImageComment" :disabled="savingComment">
+            {{ savingComment ? '保存中...' : '保存留言' }}
+          </button>
         </div>
 
         <!-- AI Summary -->
@@ -139,7 +163,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getFile, analyzeFile, deleteFile, extractContent, imgUrl, downloadUrl } from '../api/files'
+import { getFile, getImageBatch, analyzeFile, deleteFile, extractContent, imgUrl, downloadUrl, updateComment } from '../api/files'
+import AutoGrowTextarea from '../components/AutoGrowTextarea.vue'
 import { fileIcon, fileLabel, isLinkLikeType } from '../utils/mobileItemDisplay'
 
 const route = useRoute()
@@ -151,6 +176,11 @@ const articleMd = ref('')
 const articleMeta = ref(null)
 const extracting = ref(false)
 const showArticle = ref(false)
+const batchImages = ref([])
+const batchIndex = ref(0)
+const commentDraft = ref('')
+const savingComment = ref(false)
+let touchStartX = 0
 
 const isLinkLike = computed(() => {
   return isLinkLikeType(file.value?.type)
@@ -324,8 +354,63 @@ async function load() {
   loading.value = true
   try {
     file.value = await getFile(route.params.id)
+    commentDraft.value = file.value?.comment || ''
+    await loadBatchIfNeeded()
   }
   finally { loading.value = false }
+}
+
+async function loadBatchIfNeeded() {
+  const batchId = String(route.query.batchId || file.value?.batch_id || '').trim()
+  if (!batchId || file.value?.type !== 'image') {
+    batchImages.value = []
+    batchIndex.value = 0
+    return
+  }
+  const rows = await getImageBatch(batchId)
+  batchImages.value = rows
+  batchIndex.value = Math.max(0, rows.findIndex(row => Number(row.id) === Number(file.value.id)))
+}
+
+function moveBatch(delta) {
+  if (!batchImages.value.length) return
+  const nextIndex = Math.max(0, Math.min(batchImages.value.length - 1, batchIndex.value + delta))
+  const next = batchImages.value[nextIndex]
+  if (!next) return
+  batchIndex.value = nextIndex
+  file.value = next
+  commentDraft.value = next.comment || ''
+  router.replace({
+    path: `/file/${next.id}`,
+    query: {
+      batchId: next.batch_id,
+      ...(route.query.returnTo ? { returnTo: route.query.returnTo } : {}),
+    },
+  })
+}
+
+function onBatchTouchStart(event) {
+  touchStartX = event.touches[0].clientX
+}
+
+function onBatchTouchEnd(event) {
+  if (batchImages.value.length < 2) return
+  const dx = event.changedTouches[0].clientX - touchStartX
+  if (Math.abs(dx) < 42) return
+  moveBatch(dx < 0 ? 1 : -1)
+}
+
+async function saveImageComment() {
+  if (!file.value?.id) return
+  savingComment.value = true
+  try {
+    const updated = await updateComment(file.value.id, commentDraft.value)
+    file.value = updated
+    batchImages.value = batchImages.value.map(row => Number(row.id) === Number(updated.id) ? updated : row)
+    commentDraft.value = updated.comment || ''
+  } finally {
+    savingComment.value = false
+  }
 }
 
 async function triggerAnalyze() {
@@ -345,6 +430,14 @@ async function handlePendingAction() {
 async function confirmDelete() {
   if (!confirm(`删除「${file.value?.original_filename}」？`)) return
   await deleteFile(file.value.id)
+  goBack()
+}
+
+function goBack() {
+  if (route.query.returnTo === 'social-chat') {
+    router.replace({ path: '/friends', query: { restoreChat: '1' } })
+    return
+  }
   router.back()
 }
 
@@ -424,10 +517,42 @@ onMounted(load)
 }
 .hero-icon { font-size: 52px; margin-bottom: 10px; }
 .hero-img-wrap {
+  position: relative;
   width: 100%; max-height: 260px;
   overflow: hidden; border-radius: var(--radius) var(--radius) 0 0;
   background: var(--s3);
   display: flex; align-items: center; justify-content: center;
+}
+.batch-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 44px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(0,0,0,.36);
+  color: #fff;
+  font-size: 28px;
+  backdrop-filter: blur(10px);
+}
+.batch-nav.prev { left: 8px; }
+.batch-nav.next { right: 8px; }
+.batch-nav:disabled { opacity: .28; }
+.batch-counter {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  height: 24px;
+  border-radius: 12px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  background: rgba(0,0,0,.46);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
 }
 .hero-img-el {
   width: 100%; height: 100%; object-fit: cover; display: block;
@@ -543,6 +668,38 @@ onMounted(load)
   overscroll-behavior-y: contain;
   touch-action: pan-y;
   font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.5;
+}
+.hero-name,
+.summary-text,
+.desc-text,
+.state-detail,
+.link-url,
+.highlight-list li,
+.md-content,
+.article-title,
+.article-byline {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.detail-comment-input {
+  width: 100%;
+  min-height: 88px;
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  background: var(--s1);
+  color: var(--text);
+  outline: none;
+  resize: none;
+  padding: 10px 11px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.comment-save-btn {
+  margin-top: 10px;
+  flex-shrink: 0;
 }
 .desc-text {
   min-height: 0;

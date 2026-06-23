@@ -17,8 +17,8 @@
     <div class="msgs" ref="msgEl">
       <div v-if="!messages.length" class="chat-empty">
         <div class="ai-av">🤖</div>
-        <strong>问你的资料库</strong>
-        <p>它会检索你的链接、文件、图片描述和文本笔记，再用 AI 生成带引用的回答。</p>
+        <strong>{{ emptyTitle }}</strong>
+        <p>{{ emptyDescription }}</p>
         <button v-for="example in examples" :key="example" class="example-btn" @click="ask(example, 'ask')">
           {{ example }}
         </button>
@@ -46,7 +46,8 @@
                 <button
                   class="source-open"
                   type="button"
-                  @click="$emit('open-file', source.link_id || source.id)"
+                  :disabled="!sourceOpenId(source)"
+                  @click="openSource(source)"
                 >
                   <span class="source-index">[{{ index + 1 }}]</span>
                   <span class="source-main">
@@ -75,11 +76,13 @@
     </div>
 
     <form class="chat-bar" @submit.prevent="send">
-      <input
+      <AutoGrowTextarea
         v-model="input"
         class="chat-inp"
         :placeholder="activeTask.placeholder"
         :disabled="loading"
+        :max-height="120"
+        @keydown.enter.exact.prevent="send"
       />
       <button class="send-btn" type="submit" :disabled="!input.trim() || loading">
         <svg v-if="!loading" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -94,16 +97,18 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { streamAssistant } from '../api/files'
+import AutoGrowTextarea from './AutoGrowTextarea.vue'
 import { normalizeCitations } from '../utils/markdownParser'
 
 const props = defineProps({
   date: { type: String, default: '' },
   fileType: { type: String, default: '' },
   initialQ: { type: String, default: '' },
+  groupId: { type: [String, Number], default: '' },
 })
-defineEmits(['open-file'])
+const emit = defineEmits(['open-file'])
 
-const TASKS = [
+const PERSONAL_TASKS = [
   { key: 'ask', label: '问资料', icon: '🔎', placeholder: '问一个和资料库有关的问题...' },
   { key: 'recent', label: '总结最近', icon: '🗓', placeholder: '例如：总结最近一周收藏的重点' },
   { key: 'report', label: '生成报告', icon: '📄', placeholder: '例如：根据资料生成项目分析报告' },
@@ -111,10 +116,24 @@ const TASKS = [
   { key: 'todos', label: '提取待办', icon: '✅', placeholder: '例如：从资料里提取下一步待办' },
 ]
 
-const examples = [
+const GROUP_TASKS = [
+  { key: 'ask', label: '问群资料', icon: '🔎', placeholder: '问一个和这个群资料有关的问题...' },
+  { key: 'recent', label: '总结群内最近', icon: '🗓', placeholder: '例如：总结这个群最近共享的重点资料' },
+  { key: 'report', label: '生成群报告', icon: '📄', placeholder: '例如：根据群资料生成项目讨论报告' },
+  { key: 'organize', label: '整理群资料', icon: '🏷', placeholder: '例如：帮这个群的资料分类并建议主题' },
+  { key: 'todos', label: '提取群待办', icon: '✅', placeholder: '例如：从群资料里提取下一步待办' },
+]
+
+const personalExamples = [
   '我最近收藏的内容里，哪些值得继续研究？',
   '帮我总结一下资料库里关于本地大模型部署的内容。',
   '根据我的资料，给我整理一个项目推进计划。',
+]
+
+const groupExamples = [
+  '总结一下这个群里最近共享的重点资料。',
+  '这个群的文件和链接里，有哪些需要继续跟进？',
+  '根据群资料整理一个讨论结论和下一步行动。',
 ]
 
 const input = ref('')
@@ -124,7 +143,14 @@ const msgEl = ref(null)
 const task = ref('ask')
 let nextId = 1
 
-const activeTask = computed(() => TASKS.find(item => item.key === task.value) || TASKS[0])
+const isGroupAssistant = computed(() => Boolean(props.groupId))
+const TASKS = computed(() => isGroupAssistant.value ? GROUP_TASKS : PERSONAL_TASKS)
+const examples = computed(() => isGroupAssistant.value ? groupExamples : personalExamples)
+const emptyTitle = computed(() => isGroupAssistant.value ? '问这个群的资料' : '问你的资料库')
+const emptyDescription = computed(() => isGroupAssistant.value
+  ? '它只会检索这个群里共享的文件、链接、图片描述和群资料，不会混用你的个人资料库。'
+  : '它会检索你的链接、文件、图片描述和文本笔记，再用 AI 生成带引用的回答。')
+const activeTask = computed(() => TASKS.value.find(item => item.key === task.value) || TASKS.value[0])
 
 onMounted(() => {
   if (props.date) task.value = 'recent'
@@ -171,7 +197,7 @@ async function ask(text, selectedTask = task.value) {
           message.id === assistantId ? { ...message, done: true } : message
         )
       },
-    }, assistantScope())
+    }, assistantScope(), { groupId: props.groupId || undefined })
   } catch (e) {
     messages.value = messages.value.map(message =>
       message.id === assistantId
@@ -189,6 +215,18 @@ async function ask(text, selectedTask = task.value) {
 
 function send() {
   ask(input.value, task.value)
+}
+
+function sourceOpenId(source) {
+  const id = source?.link_id ?? source?.id
+  if (id === null || id === undefined || id === '') return ''
+  if (String(id).startsWith('group-message:')) return ''
+  return id
+}
+
+function openSource(source) {
+  const id = sourceOpenId(source)
+  if (id) emit('open-file', id)
 }
 
 async function scrollBottom() {
@@ -482,17 +520,19 @@ function renderMarkdown(md, sources = []) {
 }
 
 .chat-bar {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: flex-end; gap: 8px;
   padding: 10px 14px 16px;
   background: var(--bg-blur); backdrop-filter: blur(20px);
   border-top: 1px solid var(--border);
 }
 
 .chat-inp {
-  flex: 1; height: 40px;
+  flex: 1; min-height: 40px;
   background: var(--s2); border: 1px solid var(--border);
-  border-radius: 20px; padding: 0 16px;
+  border-radius: 20px; padding: 10px 16px;
   color: var(--text); font-size: 13px; font-family: inherit;
+  line-height: 20px;
+  resize: none;
   outline: none; transition: border-color .2s;
 }
 .chat-inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-s); }

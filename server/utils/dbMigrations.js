@@ -48,6 +48,31 @@ const MIGRATIONS = [
       backfillItemAssets(db);
     },
   },
+  {
+    name: '007_direct_messages_schema',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS direct_messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sender_id INTEGER NOT NULL,
+          recipient_id INTEGER NOT NULL,
+          body TEXT NOT NULL,
+          message_type TEXT NOT NULL DEFAULT 'text',
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_direct_messages_pair ON direct_messages(sender_id, recipient_id, created_at);
+      `);
+    },
+  },
+  {
+    name: '008_link_scope',
+    up(db) {
+      addColumnIfMissing(db, 'links', 'scope', "TEXT DEFAULT 'personal'");
+      db.exec('CREATE INDEX IF NOT EXISTS idx_links_user_scope ON links(user_id, scope, imported_at)');
+    },
+  },
 ];
 
 function initMigrationSchema(db) {
@@ -79,7 +104,7 @@ export function runMigrations(db) {
 
   const applied = appliedMigrations(db);
   const names = [];
-  const insert = db.prepare('INSERT INTO schema_migrations (name) VALUES (?)');
+  const insert = db.prepare('INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)');
   const tx = db.transaction(() => {
     for (const migration of MIGRATIONS) {
       if (applied.has(migration.name)) continue;

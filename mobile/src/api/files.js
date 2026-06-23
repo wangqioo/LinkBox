@@ -63,6 +63,11 @@ export async function getFile(id) {
   return data
 }
 
+export async function getImageBatch(batchId) {
+  const { data } = await api.get(`/mobile/files/batch/${encodeURIComponent(batchId)}`)
+  return data
+}
+
 export async function deleteFile(id) {
   const { data } = await api.delete(`/mobile/files/${id}`)
   return data
@@ -75,6 +80,11 @@ export async function analyzeFile(id) {
 
 export async function updateComment(id, comment) {
   const { data } = await api.put(`/mobile/files/${id}/comment`, { comment })
+  return data
+}
+
+export async function updateBatchComment(batchId, comment) {
+  const { data } = await api.put(`/mobile/files/batch/${encodeURIComponent(batchId)}/comment`, { comment })
   return data
 }
 
@@ -91,7 +101,7 @@ export async function searchFiles(q, date = '', type = '') {
   return data
 }
 
-export async function streamAssistant(question, task = 'ask', handlers = {}, scope = {}) {
+export async function streamAssistant(question, task = 'ask', handlers = {}, scope = {}, options = {}) {
   const token = localStorage.getItem('linkbox_token')
   const response = await fetch('/api/assistant/chat/stream', {
     method: 'POST',
@@ -99,7 +109,7 @@ export async function streamAssistant(question, task = 'ask', handlers = {}, sco
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ question, task, scope, groupId: handlers.groupId }),
+    body: JSON.stringify({ question, task, scope, groupId: options.groupId }),
   })
 
   if (!response.ok || !response.body) {
@@ -206,6 +216,42 @@ export async function sendGroupMessage(groupId, body) {
   return data
 }
 
+export async function getDirectMessages(userId) {
+  const { data } = await api.get(`/social/friends/${userId}/messages`)
+  return data
+}
+
+export async function sendDirectMessage(userId, body) {
+  const { data } = await api.post(`/social/friends/${userId}/messages`, { body })
+  return data
+}
+
+export async function shareLinkToFriend(userId, linkId) {
+  const { data } = await api.post(`/social/friends/${userId}/materials`, { link_id: linkId })
+  return data
+}
+
+export async function uploadDirectChatItem(userId, payload = {}) {
+  const form = new FormData()
+  if (payload.file) form.append('file', payload.file)
+  if (payload.text) form.append('text', payload.text)
+  if (payload.url) form.append('url', payload.url)
+  if (payload.batchId) form.append('batch_id', payload.batchId)
+  if (payload.batchIndex !== undefined) form.append('batch_index', String(payload.batchIndex))
+  const { data } = await api.post(`/social/friends/${userId}/uploads`, form)
+  return data
+}
+
+export async function updateDirectMaterialComment(userId, linkId, comment) {
+  const { data } = await api.put(`/social/friends/${userId}/materials/${linkId}/comment`, { comment })
+  return data
+}
+
+export async function deleteDirectMessage(userId, messageId) {
+  const { data } = await api.delete(`/social/friends/${userId}/messages/${messageId}`)
+  return data
+}
+
 export async function getGroupMaterials(groupId) {
   const { data } = await api.get(`/social/groups/${groupId}/materials`)
   return data
@@ -213,5 +259,32 @@ export async function getGroupMaterials(groupId) {
 
 export async function shareLinkToGroup(groupId, linkId, note = '') {
   const { data } = await api.post(`/social/groups/${groupId}/materials`, { link_id: linkId, note })
+  return data
+}
+
+export async function uploadGroupChatItem(groupId, payload = {}) {
+  const form = new FormData()
+  if (payload.file) form.append('file', payload.file)
+  if (payload.text) form.append('text', payload.text)
+  if (payload.url) form.append('url', payload.url)
+  if (payload.note) form.append('note', payload.note)
+  if (payload.batchId) form.append('batch_id', payload.batchId)
+  if (payload.batchIndex !== undefined) form.append('batch_index', String(payload.batchIndex))
+  const { data } = await api.post(`/social/groups/${groupId}/uploads`, form)
+  return data
+}
+
+export async function updateGroupMaterialComment(groupId, linkId, comment) {
+  const { data } = await api.put(`/social/groups/${groupId}/materials/${linkId}/comment`, { comment })
+  return data
+}
+
+export async function deleteGroupMessage(groupId, messageId) {
+  const { data } = await api.delete(`/social/groups/${groupId}/messages/${messageId}`)
+  return data
+}
+
+export async function deleteGroupMaterial(groupId, linkId) {
+  const { data } = await api.delete(`/social/groups/${groupId}/materials/${linkId}`)
   return data
 }

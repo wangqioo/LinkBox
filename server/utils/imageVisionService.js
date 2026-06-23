@@ -88,6 +88,7 @@ export function inferImagePromptType({ originalName = '', filePath = '' } = {}) 
 }
 
 export function promptForImageType(promptType = 'photo') {
+  const plainTextInstruction = '不要使用 Markdown、标题、列表、编号、加粗、代码块或项目符号，只输出普通纯文本句子。';
   if (promptType === 'screenshot') {
     return [
       '请为 LinkBox 分析这张截图。',
@@ -95,6 +96,7 @@ export function promptForImageType(promptType = 'photo') {
       '优先提取可见文字、界面结构、关键数字、按钮、错误信息和用户意图。',
       '不要编造看不见的内容。',
       '用 1 到 3 句简短中文概括。',
+      plainTextInstruction,
     ].join(' ');
   }
   if (promptType === 'document') {
@@ -104,6 +106,7 @@ export function promptForImageType(promptType = 'photo') {
       '提取可见标题、字段、日期、金额、姓名和重要文字。',
       '如果文字看不清，请直接说明“文字看不清”，不要猜测。',
       '用 1 到 3 句简短中文概括。',
+      plainTextInstruction,
     ].join(' ');
   }
   return [
@@ -112,11 +115,33 @@ export function promptForImageType(promptType = 'photo') {
     '描述主体、场景、可见文字和有用细节。',
     '不要编造看不见的细节。',
     '用 1 到 3 句简短中文概括。',
+    plainTextInstruction,
   ].join(' ');
 }
 
 export function promptCacheType(promptType = 'photo') {
-  return `${promptType || 'photo'}.zh-v2`;
+  return `${promptType || 'photo'}.zh-v3`;
+}
+
+export function normalizeImageDescription(text = '') {
+  return String(text || '')
+    .replace(/^```(?:markdown|text)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .split(/\r?\n/)
+    .map(line => line
+      .trim()
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^>\s*/, '')
+      .replace(/^[-*+]\s+/, '')
+      .replace(/^\d+[.)、]\s+/, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function getCachedDescription({ imageHash, promptType, model }, database) {
@@ -274,7 +299,7 @@ export async function describeImage(localPath, {
     }
 
     const data = await response.json();
-    const description = data?.choices?.[0]?.message?.content?.trim() || '';
+    const description = normalizeImageDescription(data?.choices?.[0]?.message?.content || '');
     if (useLocalOptimizations) {
       saveCachedDescription({
         imageHash,

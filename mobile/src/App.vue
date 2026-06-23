@@ -232,6 +232,19 @@ body {
     0 20px 40px rgba(0,0,0,.5);
   transition: background .3s;
 }
+.phone .selectable-text,
+.phone .msg-body,
+.phone .md-content,
+.phone .summary-text,
+.phone .desc-text,
+.phone .hero-name,
+.phone .link-url,
+.phone .fm-comment-preview,
+.phone .fm-row-comment,
+.phone .text-bubble-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
 
 [data-theme="light"] .phone {
   box-shadow:

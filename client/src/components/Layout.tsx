@@ -22,7 +22,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const navItems = [
     { to: '/', icon: Bookmark, label: '我的链接' },
     { to: '/assistant', icon: Bot, label: '资料助理' },
-    { to: '/social', icon: Users, label: '?????' },
+    { to: '/social', icon: Users, label: '好友与群聊' },
     { to: '/tags', icon: Tags, label: '标签管理' },
     ...(user?.id === 1 ? [{ to: '/admin/users', icon: Users, label: '用户管理' }] : []),
     ...(user?.id === 1 ? [{ to: '/settings', icon: Settings, label: '系统设置' }] : []),

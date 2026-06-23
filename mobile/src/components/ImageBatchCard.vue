@@ -24,15 +24,6 @@
             loading="lazy"
             @error="event => { event.target.style.visibility = 'hidden' }"
           />
-          <button class="batch-delete" @click.stop="emitDelete" aria-label="删除当前图片">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-              <path d="M10 11v6"/>
-              <path d="M14 11v6"/>
-              <path d="M9 6V4h6v2"/>
-            </svg>
-          </button>
           <div class="batch-count">{{ activeIndex + 1 }} / {{ images.length }}</div>
           <span class="batch-status-dot" :class="activeImage?.status"></span>
         </div>
@@ -49,7 +40,7 @@ const props = defineProps({
   images: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['open', 'active-change', 'delete-active'])
+const emit = defineEmits(['open', 'active-change'])
 
 const activeIndex = ref(0)
 const activeImage = computed(() => props.images[activeIndex.value] || props.images[0] || null)
@@ -116,9 +107,6 @@ function openActive() {
   emit('open', activeImage.value)
 }
 
-function emitDelete() {
-  if (activeImage.value) emit('delete-active', activeImage.value)
-}
 </script>
 
 <style scoped>
@@ -187,25 +175,11 @@ function emitDelete() {
   object-fit: cover;
   display: block;
 }
-.batch-delete,
 .batch-count {
   position: absolute;
   color: #fff;
   backdrop-filter: blur(12px);
 }
-.batch-delete {
-  top: 8px;
-  right: 8px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.2);
-  background: rgba(0,0,0,.34);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.batch-delete:active { background: rgba(255,60,60,.84); }
 .batch-count {
   right: 24px;
   bottom: 8px;

@@ -4,6 +4,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import LearningNoteModal from './LearningNoteModal';
 import DocumentInspectorModal from './DocumentInspectorModal';
 import { LazyHtmlModal, MarkdownModal } from './LinkContentModals';
+import AutoGrowTextarea from './AutoGrowTextarea';
 import ProcessingBanner from './ProcessingBanner';
 import type { LinkCardProps } from './linkCardTypes';
 import { formatLinkDate, getItemTypeLabel, getLinkDomain, isLinkLikeItemType, proxyImage } from './linkCardUtils';
@@ -80,14 +81,14 @@ export default function LinkCard({ link, allTags, onUpdate, onDelete, onSummariz
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">内容</label>
-            <textarea aria-label="编辑内容" className="input text-sm" rows={4} value={editContent}
+            <AutoGrowTextarea aria-label="编辑内容" className="input text-sm min-h-[96px]" rows={4} maxHeight={260} value={editContent}
               onChange={e => setEditContent(e.target.value)} />
           </div>
         </>
       )}
       <div>
         <label className="text-xs text-gray-500 mb-1 block">我的评论</label>
-        <textarea className="input text-sm" rows={2} placeholder="写点什么..."
+        <AutoGrowTextarea className="input text-sm min-h-[48px]" rows={2} maxHeight={180} placeholder="写点什么..."
           value={comment} onChange={e => setComment(e.target.value)} />
       </div>
       <div>

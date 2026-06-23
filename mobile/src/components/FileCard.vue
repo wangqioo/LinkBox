@@ -1,9 +1,8 @@
 <template>
-  <div class="fm-card-wrap" @touchstart.passive="onTS" @touchmove.passive="onTM" @touchend.passive="onTE">
+  <div class="fm-card-wrap">
     <div
       class="fm-file-card gc"
       :class="{ 'no-pad': isLinkLike && file.og_image }"
-      :style="{ transform: `translateX(${swipeX}px)` }"
       @click="handleClick"
     >
       <!-- Link card with OG image banner -->
@@ -40,21 +39,15 @@
         </div>
       </template>
     </div>
-    <!-- Delete action revealed on swipe-left -->
-    <button class="delete-action" :class="{ visible: swipeX < -20 }" @click.stop="$emit('delete', file)">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-      </svg>
-    </button>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { fileIcon, fileLabel, iconBackgroundClass, isLinkLikeType } from '../utils/mobileItemDisplay'
 
 const props = defineProps({ file: Object })
-const emit = defineEmits(['click', 'delete'])
+const emit = defineEmits(['click'])
 
 const typeIcon = computed(() => fileIcon(props.file.type))
 const typeLabel = computed(() => fileLabel(props.file.type))
@@ -66,29 +59,9 @@ const timeStr = computed(() => {
   return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
 })
 
-// Swipe-left to reveal delete
-const swipeX = ref(0)
-let tsX = 0, tsY = 0, swiping = false
-
-function onTS(e) { tsX = e.touches[0].clientX; tsY = e.touches[0].clientY; swiping = false }
-function onTM(e) {
-  const dx = e.touches[0].clientX - tsX
-  const dy = e.touches[0].clientY - tsY
-  if (!swiping && Math.abs(dx) > Math.abs(dy) + 5) swiping = true
-  if (!swiping) return
-  swipeX.value = Math.max(-72, Math.min(0, dx))
-}
-function onTE() {
-  if (swipeX.value < -36) swipeX.value = -64
-  else swipeX.value = 0
-  swiping = false
-}
 function handleClick() {
-  if (swipeX.value < -10) { swipeX.value = 0; return }
   emit('click', props.file)
 }
-
-// Reset swipe when clicking outside (global touch)
 </script>
 
 <style scoped>
@@ -106,25 +79,10 @@ function handleClick() {
   align-items: center;
   cursor: pointer;
   border-radius: 16px;
-  transition: transform .3s cubic-bezier(.32,.72,0,1), background .15s, box-shadow .2s;
+  transition: background .15s, box-shadow .2s;
   position: relative; z-index: 1;
-  /* card swipe handled by inline style */
 }
 .fm-file-card:active { background: var(--s3); transform: scale(.97); }
-
-/* Delete button behind card */
-.delete-action {
-  position: absolute; right: 0; top: 0; bottom: 0;
-  width: 64px;
-  background: rgba(255,60,60,.85);
-  border: none; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; border-radius: 0 16px 16px 0;
-  opacity: 0; transition: opacity .18s;
-  z-index: 0;
-}
-.delete-action.visible { opacity: 1; }
-.delete-action:active { background: var(--red); }
 
 .fm-file-ico {
   width: 44px; height: 44px;
@@ -145,11 +103,15 @@ function handleClick() {
   font-size: 14px; font-weight: 600; color: var(--text);
   margin-bottom: 4px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .fm-file-meta {
   display: flex; align-items: center; gap: 6px;
   font-size: 11px; color: var(--text3);
+  -webkit-user-select: text;
+  user-select: text;
 }
 .meta-time { color: var(--text3); }
 
@@ -207,5 +169,7 @@ function handleClick() {
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.5;
+  -webkit-user-select: text;
+  user-select: text;
 }
 </style>

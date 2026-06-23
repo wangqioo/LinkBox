@@ -109,6 +109,7 @@ test('createLink saves the item and enqueues background processing', () => withD
     options: {
       linkId: res.jsonBody.id,
       payload: { url: 'https://example.com', title: '' },
+      maxAttempts: 3,
     },
   }]);
 }));
@@ -165,6 +166,7 @@ test('importLinks saves imported items and enqueues background processing', () =
       options: {
         linkId: 1,
         payload: { url: 'https://a.example', title: '' },
+        maxAttempts: 3,
       },
     },
     {
@@ -172,6 +174,7 @@ test('importLinks saves imported items and enqueues background processing', () =
       options: {
         linkId: 2,
         payload: { url: 'https://b.example', title: 'B' },
+        maxAttempts: 3,
       },
     },
   ]);

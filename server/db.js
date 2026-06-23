@@ -157,6 +157,19 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_group_links_group ON group_links(group_id);
   CREATE INDEX IF NOT EXISTS idx_group_links_link ON group_links(link_id);
+
+  CREATE TABLE IF NOT EXISTS direct_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL,
+    recipient_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    message_type TEXT NOT NULL DEFAULT 'text',
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_direct_messages_pair ON direct_messages(sender_id, recipient_id, created_at);
 `);
 
 // Uploads directory is created above so multer/static serving can use a Docker volume.

@@ -28,6 +28,8 @@ function textForItem(item) {
   return [
     item.title ? `标题：${item.title}` : '',
     item.url ? `链接：${item.url}` : '',
+    item.group_note ? `群资料说明：${item.group_note}` : '',
+    item.comment ? `留言：${item.comment}` : '',
     item.summary ? `摘要：${item.summary}` : '',
     item.chunk_text ? `相关片段：\n${item.chunk_text}` : (
       item.content_md ? `正文 Markdown：\n${item.content_md}` : (item.content ? `内容：\n${item.content}` : '')
@@ -79,6 +81,10 @@ function normalizeTitleKey(title) {
 }
 
 function sourceDedupeKey(item) {
+  if (item.source_kind === 'group_message' || item.type === 'group_message') {
+    const id = String(item.id || '');
+    return id.startsWith('group-message:') ? id : `group-message:${id}`;
+  }
   const url = normalizeUrlKey(item.url);
   const title = normalizeTitleKey(item.title);
   if (title && (url.includes('mp.weixin.qq.com') || title.length >= 8)) return `title:${title}`;
@@ -114,9 +120,10 @@ function trimContext(sources, {
 }
 
 export function publicSource(item) {
+  const isGroupMessage = item.source_kind === 'group_message' || item.type === 'group_message';
   return {
     id: item.id,
-    link_id: item.id,
+    link_id: isGroupMessage ? null : item.id,
     type: item.type,
     title: item.chunk_index !== undefined
       ? `${item.title || item.url || `资料 ${item.id}`} · 片段 ${item.chunk_index + 1}`
@@ -130,9 +137,9 @@ export function publicSource(item) {
 export function publicSources(items) {
   return groupSources(items).map(item => ({
     id: item.id,
-    link_id: item.id,
+    link_id: item.source_kind === 'group_message' || item.type === 'group_message' ? null : item.id,
     type: item.type,
-    title: item.title || item.url || `璧勬枡 ${item.id}`,
+    title: item.title || item.url || `资料 ${item.id}`,
     url: item.url || '',
     summary: item.summary || '',
     imported_at: item.imported_at,

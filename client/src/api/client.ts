@@ -373,9 +373,62 @@ export interface AdminUserDetail {
 }
 
 export interface AssistantStreamHandlers {
+  groupId?: number;
   onSources?: (sources: AssistantSource[]) => void;
   onDelta?: (text: string) => void;
   onDone?: () => void;
+}
+
+export interface SocialUser {
+  id: number;
+  username: string;
+}
+
+export interface Friendship {
+  id: number;
+  status: 'pending' | 'accepted' | string;
+  direction: 'incoming' | 'outgoing' | string;
+  user: SocialUser;
+}
+
+export interface LinkBoxGroup {
+  id: number;
+  name: string;
+  description?: string;
+  owner_id?: number;
+  agent_name?: string;
+  member_count?: number;
+  material_count?: number;
+}
+
+export interface GroupMaterial {
+  group_id: number;
+  link_id: number;
+  shared_by: number;
+  note?: string;
+  shared_at?: string;
+  type?: string;
+  url?: string;
+  title?: string;
+  summary?: string;
+  shared_by_user: SocialUser;
+}
+
+export interface GroupMessage {
+  id: number | string;
+  group_id: number;
+  user_id: number;
+  body: string;
+  message_type?: 'text' | 'material' | string;
+  created_at: string;
+  user: SocialUser;
+  material?: {
+    link_id: number;
+    title: string;
+    summary?: string;
+    type?: string;
+    url?: string;
+  };
 }
 
 function uploadWithProgress(
@@ -486,7 +539,7 @@ export const api = {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ question, task }),
+      body: JSON.stringify({ question, task, groupId: handlers.groupId }),
     });
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
@@ -559,4 +612,24 @@ export const api = {
     request(`/tags/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTag: (id: number) =>
     request(`/tags/${id}`, { method: 'DELETE' }),
+
+  // Social
+  getFriends: (): Promise<Friendship[]> => request('/social/friends'),
+  addFriend: (username: string) =>
+    request('/social/friends', { method: 'POST', body: JSON.stringify({ username }) }),
+  acceptFriend: (id: number) =>
+    request(`/social/friends/${id}/accept`, { method: 'POST' }),
+  getGroups: (): Promise<LinkBoxGroup[]> => request('/social/groups'),
+  createGroup: (data: { name: string; description?: string; agent_name?: string; member_ids?: number[] }) =>
+    request('/social/groups', { method: 'POST', body: JSON.stringify(data) }),
+  getGroupMessages: async (groupId: number): Promise<GroupMessage[]> => {
+    const data = await request(`/social/groups/${groupId}/messages`);
+    return Array.isArray(data) ? data : data.messages || [];
+  },
+  sendGroupMessage: (groupId: number, body: string): Promise<GroupMessage> =>
+    request(`/social/groups/${groupId}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
+  getGroupMaterials: (groupId: number): Promise<GroupMaterial[]> =>
+    request(`/social/groups/${groupId}/materials`),
+  shareLinkToGroup: (groupId: number, linkId: number, note = '') =>
+    request(`/social/groups/${groupId}/materials`, { method: 'POST', body: JSON.stringify({ link_id: linkId, note }) }),
 };

@@ -26,6 +26,27 @@ export function getLinkWithTags(db, linkId) {
   return link ? presentItem(attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) })) : null;
 }
 
+function hasLinksScopeColumn(db) {
+  return db.prepare('PRAGMA table_info(links)').all().some(column => column.name === 'scope');
+}
+
+function insertLinkRow(db, values) {
+  const entries = Object.entries(values).filter(([, value]) => value !== undefined);
+  const columns = entries.map(([key]) => key);
+  const params = entries.map(([, value]) => value);
+  if (!hasLinksScopeColumn(db)) {
+    const index = columns.indexOf('scope');
+    if (index >= 0) {
+      columns.splice(index, 1);
+      params.splice(index, 1);
+    }
+  }
+  return db.prepare(`
+    INSERT INTO links (${columns.join(', ')})
+    VALUES (${columns.map(() => '?').join(', ')})
+  `).run(...params);
+}
+
 export function createLinkItem(db, {
   userId,
   url,
@@ -33,11 +54,20 @@ export function createLinkItem(db, {
   comment = '',
   tagIds = [],
   importedAt = new Date().toISOString(),
+  scope = 'personal',
 }) {
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, description, thumbnail, comment, imported_at, status)
-    VALUES (?, 'link', ?, ?, '', '', ?, ?, 'processing')
-  `).run(userId, url, title || url, comment || '', importedAt);
+  const result = insertLinkRow(db, {
+    user_id: userId,
+    type: 'link',
+    url,
+    title: title || url,
+    description: '',
+    thumbnail: '',
+    comment: comment || '',
+    imported_at: importedAt,
+    status: 'processing',
+    scope,
+  });
 
   setTags(db, result.lastInsertRowid, tagIds);
   const link = getLinkWithTags(db, result.lastInsertRowid);
@@ -60,11 +90,18 @@ export function createTextItem(db, {
   tagIds = [],
   importedAt = new Date().toISOString(),
   indexLink = () => {},
+  scope = 'personal',
 }) {
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, content, comment, imported_at)
-    VALUES (?, 'text', '', ?, ?, ?, ?)
-  `).run(userId, title || '', content || '', comment || '', importedAt);
+  const result = insertLinkRow(db, {
+    user_id: userId,
+    type: 'text',
+    url: '',
+    title: title || '',
+    content: content || '',
+    comment: comment || '',
+    imported_at: importedAt,
+    scope,
+  });
 
   setTags(db, result.lastInsertRowid, tagIds);
   upsertItemContent(db, result.lastInsertRowid, { text_content: content || '' });
@@ -116,11 +153,22 @@ export function createImageItem(db, {
   importedAt = new Date().toISOString(),
   batchId = '',
   batchIndex = 0,
+  scope = 'personal',
 }) {
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, image_path, thumbnail, comment, imported_at, status, batch_id, batch_index)
-    VALUES (?, 'image', '', ?, ?, ?, ?, ?, 'processing', ?, ?)
-  `).run(userId, title || originalName, imagePath, imagePath, comment || '', importedAt, batchId || '', Number(batchIndex) || 0);
+  const result = insertLinkRow(db, {
+    user_id: userId,
+    type: 'image',
+    url: '',
+    title: title || originalName,
+    image_path: imagePath,
+    thumbnail: imagePath,
+    comment: comment || '',
+    imported_at: importedAt,
+    status: 'processing',
+    batch_id: batchId || '',
+    batch_index: Number(batchIndex) || 0,
+    scope,
+  });
 
   setTags(db, result.lastInsertRowid, tagIds);
   upsertItemAsset(db, result.lastInsertRowid, {
@@ -148,11 +196,18 @@ export function createAudioItem(db, {
   comment = '',
   tagIds = [],
   importedAt = new Date().toISOString(),
+  scope = 'personal',
 }) {
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, image_path, comment, imported_at)
-    VALUES (?, 'audio', '', ?, ?, ?, ?)
-  `).run(userId, title || '录音', audioPath, comment || '', importedAt);
+  const result = insertLinkRow(db, {
+    user_id: userId,
+    type: 'audio',
+    url: '',
+    title: title || '录音',
+    image_path: audioPath,
+    comment: comment || '',
+    imported_at: importedAt,
+    scope,
+  });
 
   setTags(db, result.lastInsertRowid, tagIds);
   upsertItemAsset(db, result.lastInsertRowid, {
@@ -177,13 +232,22 @@ export function createFileItem(db, {
   comment = '',
   tagIds = [],
   importedAt = new Date().toISOString(),
+  scope = 'personal',
 }) {
   const description = describeUploadedFile(originalName, sizeBytes);
   const status = initialFileStatus(originalName);
-  const result = db.prepare(`
-    INSERT INTO links (user_id, type, url, title, description, image_path, comment, imported_at, status)
-    VALUES (?, 'file', '', ?, ?, ?, ?, ?, ?)
-  `).run(userId, title || originalName, description, filePath, comment || '', importedAt, status);
+  const result = insertLinkRow(db, {
+    user_id: userId,
+    type: 'file',
+    url: '',
+    title: title || originalName,
+    description,
+    image_path: filePath,
+    comment: comment || '',
+    imported_at: importedAt,
+    status,
+    scope,
+  });
 
   setTags(db, result.lastInsertRowid, tagIds);
   upsertItemAsset(db, result.lastInsertRowid, {
