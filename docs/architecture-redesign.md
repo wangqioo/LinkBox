@@ -1,11 +1,11 @@
 # LinkBox Architecture Redesign
 
-Date: 2026-06-17
+Date: 2026-06-24
 
 ## Current Status
 
 Implementation has reached the committed checkpoint
-`HEAD Add admin embedding diagnostics and E2E coverage`.
+`e1952e5 Polish mobile chat and group agent retrieval`.
 
 Completed:
 
@@ -63,6 +63,16 @@ Completed:
 - Browser E2E coverage now includes assistant retrieval diagnostics and
   background failed-job retry UI, with test-only data seeded by the Playwright
   backend wrapper.
+- Social collaboration now exists inside the modular monolith. The social route
+  owns friend requests, direct chats, group chats, group materials,
+  chat-scoped uploads, material comments, and message deletion rules.
+- Group Assistant retrieval is isolated from personal Assistant retrieval. It
+  reads only the active group's shared materials, chat uploads, group material
+  notes, material comments, and group text messages.
+- Mobile chat and material rendering were aligned around shared presentation
+  concepts: current-user message alignment, stacked multi-image batches,
+  personal-feed-style material cards, selectable text, three-dot action menus,
+  and auto-growing long text inputs.
 
 Developer handoff details are in `docs/development.md`.
 
@@ -126,6 +136,7 @@ server/
       retriever.js
       assistantTurn.js
       assistantService.js
+    social/
     admin/
     tags/
   routes/
@@ -147,6 +158,7 @@ client/src/
       types.ts
     settings/
     assistant/
+    social/
     admin/
   components/
   context/
@@ -258,6 +270,8 @@ Remaining Phase 2 focus:
 - Add admin-visible indexing and retrieval diagnostics. The first pass is
   complete for embedding settings, document maintenance stats, backfill, and
   retrieval diagnostics.
+- Keep personal and group retrieval scopes isolated. Group retrieval should
+  never silently fall back to the caller's personal library.
 
 ### Phase 5: Operations
 

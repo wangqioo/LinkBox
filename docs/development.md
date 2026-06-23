@@ -1,6 +1,6 @@
 # LinkBox Development Guide
 
-Last updated: 2026-06-21
+Last updated: 2026-06-24
 
 This document records the current development state so future work can resume
 without rediscovering the architecture, commands, and validation steps.
@@ -10,7 +10,7 @@ without rediscovering the architecture, commands, and validation steps.
 The current architecture follow-up checkpoint is:
 
 ```bash
-working tree Bilibili video processing, type normalization, and mobile detail polish
+main e1952e5 Polish mobile chat and group agent retrieval
 ```
 
 This includes the earlier 2026-06-15 item intake pass, the follow-up
@@ -19,8 +19,8 @@ content persistence, isolated server smoke coverage, admin health checks,
 shared route JSON error shaping, explicit database migrations, the
 2026-06-16/17 admin observability pass, and the 2026-06-17 processing/status
 and migration-hardening pass. It also includes the 2026-06-21 Bilibili video
-processing pass, normalized item kind pass, and mobile detail/list behavior
-fixes.
+processing pass, normalized item kind pass, mobile detail/list behavior fixes,
+and the 2026-06-24 social collaboration/mobile chat polish pass.
 
 At this checkpoint:
 
@@ -143,6 +143,22 @@ At this checkpoint:
   content sections to scroll inside fixed panels, preserve list scroll position
   when navigating back from detail, and scroll to newest content after page
   refresh.
+- Social collaboration is available through `server/routes/social.js`,
+  including friend requests, direct chats, group chats, group materials,
+  chat-scoped uploads, material comments, and message deletion rules.
+- Group Assistant retrieval is isolated from personal Assistant retrieval.
+  Group mode reads only the active group's shared materials, chat-scoped group
+  uploads, group material notes, material comments, and group text messages.
+- Mobile Friends/Groups UI is centered in `mobile/src/views/Friends.vue`.
+  Contacts open direct chats, the top-right `+` owns friend/group creation,
+  the chat bottom-left `+` only uploads files or sends existing materials, and
+  group tools live in the top-right chat menu.
+- Mobile and desktop long-text inputs use auto-growing textareas. Mobile uses
+  `mobile/src/components/AutoGrowTextarea.vue`; desktop uses
+  `client/src/components/AutoGrowTextarea.tsx`. Short inputs remain single-line.
+- Mobile multi-image uploads are grouped as stacked cards. Home-feed batch
+  comments update all images in the batch; detail carousel comments remain
+  per-image.
 
 ## Recommended Runtime
 
@@ -177,6 +193,7 @@ Important backend modules:
 ```text
 server/routes/links.js              Wires HTTP routes to the item controller
 server/routes/assistant.js          Assistant HTTP/SSE adapter
+server/routes/social.js             Friends, direct chats, groups, and group materials
 server/utils/itemController.js      Item HTTP handlers
 server/utils/itemRepository.js      Item lookup/list ownership helpers
 server/utils/itemProcessingStatus.js Derived processing contract
@@ -191,6 +208,7 @@ server/utils/uploadMiddleware.js    Multer upload setup and file filters
 server/utils/uploadedAsset.js       Upload-derived asset normalization
 server/utils/assistantSourceRetrieval.js Assistant retrieval interface
 server/utils/assistantTurn.js       Assistant prompt/source/citation assembly
+server/utils/assistantRetrieval.js  Personal and group Assistant source retrieval
 server/utils/itemIntake.js          Item acceptance, import, retry, and reschedule
 server/utils/extractedContentPersistence.js Extraction post-processing path
 server/utils/imageProxyService.js   Proxied image fetching and headers
@@ -217,6 +235,8 @@ client/src/components/ProcessingBanner.tsx Shared processing/failure banner
 client/src/components/processingStatus.ts Processing display derivation helper
 client/src/components/markdownParser.ts Markdown block/inline parser and sanitizer
 client/src/components/MarkdownRenderer.tsx React adapter for parsed Markdown
+client/src/components/AutoGrowTextarea.tsx Auto-growing long text input
+client/src/pages/SocialPage.tsx        Desktop friends/groups page
 client/src/pages/EmbeddingSettingsPanel.tsx Admin embedding configuration
 client/src/pages/RetrievalDiagnosticsPanel.tsx Admin retrieval diagnostics
 client/src/pages/BackgroundJobsPanel.tsx Admin queue and failed-job controls
@@ -226,7 +246,12 @@ Important mobile frontend modules:
 
 ```text
 mobile/src/components/ChatBox.vue       Assistant chat UI adapter
+mobile/src/components/AutoGrowTextarea.vue Auto-growing long text input
+mobile/src/components/ImageBatchCard.vue Mobile stacked image batch card
 mobile/src/utils/markdownParser.js      Mobile Markdown/citation utility
+mobile/src/utils/imageBatchGallery.js   Image batch grouping and gallery view models
+mobile/src/utils/groupChatDisplay.js    Current-user message alignment helpers
+mobile/src/utils/socialConversations.js Friends/groups conversation list helpers
 mobile/src/utils/mobileOrganizer.js     Tested local organization helpers
 mobile/src/utils/mobileItemDisplay.js   Mobile normalized item presentation
 mobile/src/utils/mobileCategoryDisplay.js Mobile category labels/icons
@@ -280,7 +305,12 @@ cd ../mobile
 npm run build
 
 cd ..
-node --test mobile/src/utils/markdownParser.test.mjs mobile/src/utils/mobileOrganizer.test.mjs
+node --test \
+  mobile/src/utils/markdownParser.test.mjs \
+  mobile/src/utils/mobileOrganizer.test.mjs \
+  mobile/src/utils/imageBatchGallery.test.mjs \
+  mobile/src/utils/groupChatDisplay.test.mjs \
+  mobile/src/utils/socialConversations.test.mjs
 
 # Server tests
 cd server
@@ -292,11 +322,30 @@ cd ..
 git diff --check
 ```
 
-Expected counts at the 2026-06-17 processing/status checkpoint:
+Focused checks for the current social/mobile checkpoint:
+
+```bash
+node --test \
+  server/test/socialGroup.test.mjs \
+  server/test/socialDirectMessages.test.mjs \
+  server/test/assistantTurn.test.mjs
+
+cd mobile
+npm run build
+
+cd ../client
+npm run build
+```
+
+Expected counts at the 2026-06-24 social/mobile checkpoint:
 
 - Server: run `npm test` for the current authoritative count.
 - Desktop client: run `npm test` for the current authoritative count.
-- Mobile utility focused tests: include `mobileProcessingStatus.test.mjs`.
+- Mobile utility focused tests: include `mobileProcessingStatus.test.mjs`,
+  `imageBatchGallery.test.mjs`, `groupChatDisplay.test.mjs`, and
+  `socialConversations.test.mjs`.
+- Social backend focused tests: `socialGroup.test.mjs`,
+  `socialDirectMessages.test.mjs`, and `assistantTurn.test.mjs`.
 - Server E2E smoke: `npm run test:e2e` passes with an isolated temporary
   database, uploads directory, and mock OpenAI-compatible endpoint.
 - Desktop browser E2E: `cd client && npm run test:e2e` passes with isolated
@@ -380,15 +429,18 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 - [architecture-redesign.md](./architecture-redesign.md): target architecture,
   phases, and success criteria.
-- [deployment.md](./deployment.md): deployment targets, update commands,
-  rollback steps, and verification checks for the home server and RK3576.
+- [deployment.md](./deployment.md): current home-server update commands,
+  rollback steps, and verification checks.
+- [social-collaboration.md](./social-collaboration.md): friends, direct chats,
+  groups, group materials, and group Assistant scope rules.
 - [markdown-knowledge-base-plan.md](./markdown-knowledge-base-plan.md):
   Markdown-first knowledge base redesign plan for future AI retrieval work.
 - [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md):
   staged plan for splitting overloaded `links` rows into item content and asset
   tables, plus legacy `link_chunks` retirement gates.
 - [taishanpi-deploy.md](./taishanpi-deploy.md): deployment notes for Taishan Pi.
-- [mobile-frontend.md](./mobile-frontend.md): mobile frontend notes.
+- [mobile-frontend.md](./mobile-frontend.md): mobile frontend screens, chat
+  behavior, image batches, and validation commands.
 
 ## Closed 2026-06-17 Follow-Up Items
 

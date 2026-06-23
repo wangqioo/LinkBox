@@ -1,11 +1,11 @@
 # LinkBox
 
-LinkBox 是一个面向个人知识管理的收藏与文件系统。它把网页链接、文字笔记、图片、录音、Office/PDF/HTML 文件统一收进一个本地优先的知识库，并通过 OpenAI 兼容模型完成正文提取、摘要、学习笔记和问答检索。
+LinkBox 是一个面向个人知识管理和小范围协作的收藏与文件系统。它把网页链接、文字笔记、图片、录音、Office/PDF/HTML 文件统一收进一个本地优先的知识库，并通过 OpenAI 兼容模型完成正文提取、摘要、学习笔记和问答检索。
 
 项目包含三部分：
 
-- `client/`：React Web 管理端，用于收藏、搜索、标签、AI 设置、后台任务和用户管理。
-- `mobile/`：Vue 移动端文件助手，用于移动设备上的文件浏览、上传、聊天和分类视图。
+- `client/`：React Web 管理端，用于收藏、搜索、标签、AI 设置、后台任务、好友群聊和用户管理。
+- `mobile/`：Vue 移动端文件助手，用于移动设备上的文件浏览、上传、聊天、群聊和分类视图。
 - `server/`：Express + SQLite 后端，提供鉴权、文件处理、AI 调用、持久化后台任务和静态托管。
 
 ## 核心功能
@@ -107,16 +107,35 @@ LinkBox 会把标题、摘要、正文切分为 `link_chunks`，用于 Assistant
 
 新的 canonical document 索引会把正文 Markdown 写入 `documents` / `document_chunks`，并可选写入 `document_embeddings`。Assistant 检索优先使用 canonical 文档块和 embedding 候选，legacy `link_chunks` 作为兼容 fallback。`video`、`article`、`document` 等 scope 过滤会走统一类型条件，保证列表、搜索和问答看到的是同一类内容。
 
+个人 Assistant 只检索用户自己的个人资料。群聊里的群 Assistant 使用独立检索范围，只读取当前群共享过的资料、群内上传的 `chat` scope 资料、群资料说明、资料留言和群文字消息，不会混用个人资料库或其他群的内容。
+
+### 好友、私聊和群聊
+
+LinkBox 支持轻量协作：
+
+- 通过用户名添加好友，好友通过后可以私聊。
+- 私聊和群聊都支持发送文字、上传文件、上传多张图片、发送已有资料、给资料留言和删除自己发出的消息。
+- 群主可以创建群聊、邀请已通过好友，并管理群内消息。
+- 群聊资料写入 `group_links`，群文字消息写入 `group_messages`，私聊消息写入 `direct_messages`。
+- 聊天中上传的资料标记为 `scope = 'chat'`，不会混入个人主页资料列表，但可以在对应私聊或群聊中被打开、留言和被群 Assistant 检索。
+- 群聊和私聊的消息方向按当前登录用户判断：自己发出的消息在右侧，其他成员消息在左侧。
+
 ### 移动端体验
 
 移动端文件助手支持：
 
 - 粘贴微信、知乎、Bilibili 分享文本后自动识别白名单链接
+- 主页输入框显式发送，不会在输入或粘贴时自动发送
+- 所有长文本输入框自动按内容增高，并限制最大高度
+- 文件、链接、图片、聊天资料卡右上角使用三点菜单执行留言和删除等二级操作
+- 文本消息、留言、摘要、文件名、链接等可长按选择复制
+- 多张图片一次上传时以叠放相册展示；主页相册留言会作用于这一批图片，详情页可逐张切换并保存单张留言
 - Bilibili 视频详情页展示“视频原文”
 - 详情页内长内容区域可独立滚动
 - 从详情页返回首页时保留原滚动位置
 - 刷新首页后滚动到最新上传内容
 - 分类页按归一类型展示 `video`、`article`、`document` 等内容
+- 好友与群聊页支持私聊、群聊、文件上传、发送已有资料、多图叠放卡片、资料留言和群 Assistant
 
 ### 管理能力
 
@@ -149,6 +168,7 @@ LinkBox/
       auth.js              登录/注册
       links.js             收藏 API、上传、图片代理、导出
       assistant.js         AI 问答
+      social.js            好友、私聊、群聊、群资料
       settings.js          系统和 AI 设置
       admin.js             管理员用户管理
       mobileFiles.js       移动端文件 API
@@ -160,6 +180,7 @@ LinkBox/
       itemPresentation.js  统一列表/详情展示契约
       itemMaterial.js      统一正文、摘要、封面和资产读取
       itemEnrichmentPlan.js 后台处理计划
+      assistantRetrieval.js 个人/群 Assistant 检索
       videoTranscriptExtractor.js Bilibili 字幕/音频转写
       chunkIndex.js        内容切块、索引、检索排序
       fileToMarkdown.js    文件转 Markdown 入口
@@ -174,7 +195,7 @@ LinkBox/
   docker-compose.yml
 ```
 
-详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。Bilibili 视频处理说明见 [docs/bilibili-video-processing.md](docs/bilibili-video-processing.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。知识库重构计划见 [docs/markdown-knowledge-base-plan.md](docs/markdown-knowledge-base-plan.md)。
+详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。移动端说明见 [docs/mobile-frontend.md](docs/mobile-frontend.md)。好友、私聊、群聊和群 Assistant 说明见 [docs/social-collaboration.md](docs/social-collaboration.md)。部署流程见 [docs/deployment.md](docs/deployment.md)。Bilibili 视频处理说明见 [docs/bilibili-video-processing.md](docs/bilibili-video-processing.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。知识库重构计划见 [docs/markdown-knowledge-base-plan.md](docs/markdown-knowledge-base-plan.md)。
 
 ## 快速开始
 
@@ -347,6 +368,19 @@ Authorization: Bearer <token>
 | `POST` | `/api/settings/system/retry-failed-jobs` | 重试失败任务 |
 | `GET` | `/api/admin/users` | 管理员用户列表 |
 | `GET` | `/api/mobile/files` | 移动端文件列表 |
+| `GET` | `/api/social/friends` | 好友列表和请求 |
+| `POST` | `/api/social/friends` | 添加好友 |
+| `GET` | `/api/social/friends/:userId/messages` | 私聊消息 |
+| `POST` | `/api/social/friends/:userId/messages` | 发送私聊文字 |
+| `POST` | `/api/social/friends/:userId/materials` | 发送已有资料到私聊 |
+| `POST` | `/api/social/friends/:userId/uploads` | 上传文件到私聊 |
+| `GET` | `/api/social/groups` | 当前用户群聊 |
+| `POST` | `/api/social/groups` | 创建群聊 |
+| `GET` | `/api/social/groups/:groupId/messages` | 群消息 |
+| `POST` | `/api/social/groups/:groupId/messages` | 发送群文字 |
+| `GET` | `/api/social/groups/:groupId/materials` | 群资料 |
+| `POST` | `/api/social/groups/:groupId/materials` | 发送已有资料到群 |
+| `POST` | `/api/social/groups/:groupId/uploads` | 上传文件到群 |
 
 `/api/links/image-proxy` 是公开图片代理接口，用于加载微信公众号等防盗链图片。
 

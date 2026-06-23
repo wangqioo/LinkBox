@@ -1,127 +1,188 @@
 # LinkBox Deployment Runbook
 
-Last verified: 2026-06-11
+Last verified: 2026-06-24
 
-This runbook records the two active LinkBox deployments and the exact update
-flow used from the Windows development machine. Do not commit passwords or
-private keys to this repository.
+This runbook records the current home-server deployment flow. Do not commit
+passwords, private keys, FRP tokens, or production `.env` files.
 
-## Targets
+## Current Production Target
 
-| Target | Host | SSH user | Runtime | App path | Data path |
-|--------|------|----------|---------|----------|-----------|
-| Home server | `5.tcp.cpolar.cn:10281` | `wq` | Docker Compose | `/home/wq/LinkBox` | `/home/wq/linkbox-data` |
-| RK3576 / TaishanPi | `150.158.146.192:6277` | `lckfb` | native systemd | `/opt/linkbox` | `/var/lib/linkbox` |
+| Item | Value |
+| --- | --- |
+| Server | `150.158.146.192` |
+| SSH | `ssh -p 6004 wq@150.158.146.192` |
+| App path | `/home/wq/LinkBox` |
+| Runtime | Docker Compose service `linkbox` |
+| Container port | `3100` |
+| Public URL | `http://150.158.146.192:6057/` |
+| Mobile URL | `http://150.158.146.192:6057/mobile/` |
+| Rollback symlink | `/home/wq/LinkBox-prev` |
 
-Known SSH host key fingerprints:
+The existing FRP tunnel is preserved during normal application updates. The
+application deployment does not edit FRP configuration.
 
-```text
-home server: ssh-ed25519 255 SHA256:usrCN0O7t/Gd56zxNDQMBG7g+rch7VOw2XYJrSr7TPg
-RK3576:      ssh-ed25519 255 SHA256:/PLBOTxtyNmCJsf3mK7by9dvG4Lg6RNbdxSQRVb/Vzc
+## Local Verification Before Deploy
+
+Run from the repository root:
+
+```bash
+git diff --check
+
+cd mobile
+npm run build
+
+cd ../client
+npm run build
+
+cd ..
+node --test \
+  mobile/src/utils/imageBatchGallery.test.mjs \
+  mobile/src/utils/groupChatDisplay.test.mjs \
+  mobile/src/utils/socialConversations.test.mjs
+
+node --test \
+  server/test/socialGroup.test.mjs \
+  server/test/assistantTurn.test.mjs
 ```
 
-Credentials are managed outside git. As of the last verification, both targets
-were reachable with password-based SSH from this workstation.
+For broad backend changes, also run:
 
-## Local Build And Package
-
-Run from PowerShell on the Windows development machine:
-
-```powershell
-cd C:\Users\100448405\LinkBox\client
-npm.cmd run build
-
-cd C:\Users\100448405\LinkBox\mobile
-npm.cmd run build
-
-cmd /c tar.exe --exclude=.git --exclude=node_modules --exclude=client/node_modules --exclude=server/node_modules --exclude=mobile/node_modules --exclude=server/linkbox.db --exclude=server/linkbox.db-* --exclude=server/uploads --exclude=server/certs -czf C:\tmp\linkbox-update.tar.gz -C C:\Users\100448405\LinkBox .
+```bash
+cd server
+npm test
 ```
 
-The archive intentionally excludes local databases, uploads, certificates, and
-dependency folders. Remote data directories must never be overwritten by a
-deploy archive.
+Some HTTP tests bind `127.0.0.1`. In restricted sandboxes they may need explicit
+permission:
 
-## Deploy To Home Server
-
-Upload:
-
-```powershell
-& 'C:\Program Files\PuTTY\pscp.exe' -P 10281 -batch -hostkey 'ssh-ed25519 255 SHA256:usrCN0O7t/Gd56zxNDQMBG7g+rch7VOw2XYJrSr7TPg' C:\tmp\linkbox-update.tar.gz wq@5.tcp.cpolar.cn:/home/wq/linkbox-update.tar.gz
+```bash
+node --test server/test/socialDirectMessages.test.mjs
 ```
 
-Prepare and build before stopping the running container:
+## Package
 
-```powershell
-& 'C:\Program Files\PuTTY\plink.exe' -ssh -P 10281 -batch -hostkey 'ssh-ed25519 255 SHA256:usrCN0O7t/Gd56zxNDQMBG7g+rch7VOw2XYJrSr7TPg' wq@5.tcp.cpolar.cn "set -e; rm -rf /home/wq/LinkBox-new; mkdir -p /home/wq/LinkBox-new; tar -xzf /home/wq/linkbox-update.tar.gz -C /home/wq/LinkBox-new; if [ -f /home/wq/LinkBox/.env ]; then cp /home/wq/LinkBox/.env /home/wq/LinkBox-new/.env; fi; cd /home/wq/LinkBox-new; docker compose build linkbox"
+Run from `/Users/wq` on the Mac workstation:
+
+```bash
+tar \
+  --exclude='.git' \
+  --exclude='node_modules' \
+  --exclude='client/node_modules' \
+  --exclude='mobile/node_modules' \
+  --exclude='server/node_modules' \
+  --exclude='data' \
+  --exclude='uploads' \
+  --exclude='certs' \
+  --exclude='server/uploads' \
+  -czf /tmp/linkbox-update.tar.gz \
+  -C /Users/wq LinkBox
 ```
 
-Switch and verify:
+The archive intentionally excludes databases, uploads, certificates, and
+dependency folders.
 
-```powershell
-& 'C:\Program Files\PuTTY\plink.exe' -ssh -P 10281 -batch -hostkey 'ssh-ed25519 255 SHA256:usrCN0O7t/Gd56zxNDQMBG7g+rch7VOw2XYJrSr7TPg' wq@5.tcp.cpolar.cn "set -e; cd /home/wq/LinkBox; docker compose down; cd /home/wq; rm -rf /home/wq/LinkBox-prev; mv /home/wq/LinkBox /home/wq/LinkBox-prev; mv /home/wq/LinkBox-new /home/wq/LinkBox; cd /home/wq/LinkBox; docker compose up -d; sleep 5; docker compose ps; curl -fsS http://127.0.0.1:3100/ >/dev/null; echo HOME_LINKBOX_OK"
+## Upload
+
+```bash
+scp -P 6004 /tmp/linkbox-update.tar.gz \
+  wq@150.158.146.192:/tmp/linkbox-update.tar.gz
 ```
 
-Rollback if needed:
+## Deploy
 
-```sh
-cd /home/wq/LinkBox
-docker compose down
+Build the new release before stopping the running service. The switch creates a
+timestamped rollback directory and updates `/home/wq/LinkBox-prev`.
+
+```bash
+ssh -p 6004 wq@150.158.146.192 '
+set -e
+stamp=$(date +%Y%m%d-%H%M%S)
+rm -rf /home/wq/LinkBox-new
+mkdir -p /home/wq/LinkBox-new
+tar -xzf /tmp/linkbox-update.tar.gz -C /home/wq/LinkBox-new --strip-components=1
+cd /home/wq/LinkBox-new
+docker compose build linkbox
 cd /home/wq
-mv LinkBox LinkBox-bad
-mv LinkBox-prev LinkBox
+docker compose -f /home/wq/LinkBox/docker-compose.yml stop linkbox
+mv /home/wq/LinkBox /home/wq/LinkBox-prev-$stamp
+mv /home/wq/LinkBox-new /home/wq/LinkBox
+ln -sfn /home/wq/LinkBox-prev-$stamp /home/wq/LinkBox-prev
 cd /home/wq/LinkBox
-docker compose up -d
+docker compose up -d linkbox
+echo rollback=/home/wq/LinkBox-prev-$stamp
+'
 ```
 
-## Deploy To RK3576 / TaishanPi
+## Verify
 
-Upload:
+Local server check:
 
-```powershell
-& 'C:\Program Files\PuTTY\pscp.exe' -P 6277 -batch -hostkey 'ssh-ed25519 255 SHA256:/PLBOTxtyNmCJsf3mK7by9dvG4Lg6RNbdxSQRVb/Vzc' C:\tmp\linkbox-update.tar.gz lckfb@150.158.146.192:/home/lckfb/linkbox-update.tar.gz
+```bash
+ssh -p 6004 wq@150.158.146.192 '
+cd /home/wq/LinkBox
+docker compose ps
+curl -s -o /tmp/linkbox-root.html -w "%{http_code}\n" http://127.0.0.1:3100/
+curl -s -o /tmp/linkbox-mobile.html -w "%{http_code}\n" http://127.0.0.1:3100/mobile/
+docker compose logs --tail=30 linkbox
+'
 ```
 
-Prepare the new release. This reuses the existing native `server/node_modules`
-because `better-sqlite3` is architecture-specific and already built on the
-board:
+Public check from the workstation:
 
-```powershell
-& 'C:\Program Files\PuTTY\plink.exe' -ssh -P 6277 -batch -hostkey 'ssh-ed25519 255 SHA256:/PLBOTxtyNmCJsf3mK7by9dvG4Lg6RNbdxSQRVb/Vzc' lckfb@150.158.146.192 "set -e; rm -rf /home/lckfb/linkbox-new; mkdir -p /home/lckfb/linkbox-new; tar -xzf /home/lckfb/linkbox-update.tar.gz -C /home/lckfb/linkbox-new; if [ -d /opt/linkbox/server/node_modules ]; then cp -a /opt/linkbox/server/node_modules /home/lckfb/linkbox-new/server/node_modules; fi; if [ -d /opt/linkbox/server/certs ]; then cp -a /opt/linkbox/server/certs /home/lckfb/linkbox-new/server/certs; fi; test -d /home/lckfb/linkbox-new/client/dist; test -d /home/lckfb/linkbox-new/mobile/dist; test -d /home/lckfb/linkbox-new/server/node_modules; echo RK_PREP_OK"
+```bash
+curl -s -o /tmp/linkbox-public-root.html -w '%{http_code}\n' \
+  http://150.158.146.192:6057/
+
+curl -s -o /tmp/linkbox-public-mobile.html -w '%{http_code}\n' \
+  http://150.158.146.192:6057/mobile/
 ```
 
-Switch and verify. Enter the sudo password when prompted if the command is run
-interactively:
+Both should return `200`.
 
-```powershell
-& 'C:\Program Files\PuTTY\plink.exe' -ssh -P 6277 -batch -hostkey 'ssh-ed25519 255 SHA256:/PLBOTxtyNmCJsf3mK7by9dvG4Lg6RNbdxSQRVb/Vzc' lckfb@150.158.146.192 "set -e; ts=`$(date +%Y%m%d-%H%M%S); sudo systemctl stop linkbox; sudo mv /opt/linkbox /opt/linkbox-prev-`$ts; sudo mv /home/lckfb/linkbox-new /opt/linkbox; sudo chown -R root:root /opt/linkbox; sudo systemctl start linkbox; sleep 5; systemctl is-active linkbox; curl -fsS http://127.0.0.1:3100/ >/dev/null; echo RK_LINKBOX_OK; systemctl status linkbox --no-pager | head -12"
-```
+## Rollback
 
-If quoting gets in the way, use a fixed backup suffix instead:
+Use the timestamped rollback directory printed by deploy, or the
+`/home/wq/LinkBox-prev` symlink.
 
-```powershell
-& 'C:\Program Files\PuTTY\plink.exe' -ssh -P 6277 -batch -hostkey 'ssh-ed25519 255 SHA256:/PLBOTxtyNmCJsf3mK7by9dvG4Lg6RNbdxSQRVb/Vzc' lckfb@150.158.146.192 "set -e; sudo systemctl stop linkbox; sudo mv /opt/linkbox /opt/linkbox-prev-YYYYMMDD-HHMMSS; sudo mv /home/lckfb/linkbox-new /opt/linkbox; sudo chown -R root:root /opt/linkbox; sudo systemctl start linkbox"
-```
-
-Rollback if needed:
-
-```sh
-sudo systemctl stop linkbox
-sudo mv /opt/linkbox /opt/linkbox-bad
-sudo mv /opt/linkbox-prev-YYYYMMDD-HHMMSS /opt/linkbox
-sudo systemctl start linkbox
+```bash
+ssh -p 6004 wq@150.158.146.192 '
+set -e
+cd /home/wq
+docker compose -f /home/wq/LinkBox/docker-compose.yml stop linkbox
+bad=LinkBox-bad-$(date +%Y%m%d-%H%M%S)
+mv /home/wq/LinkBox /home/wq/$bad
+cp -a "$(readlink -f /home/wq/LinkBox-prev)" /home/wq/LinkBox
+cd /home/wq/LinkBox
+docker compose up -d linkbox
 curl -fsS http://127.0.0.1:3100/ >/dev/null
+echo rollback_ok
+'
 ```
 
-## Post-Deploy Checks
+## Useful Operations
 
-Home server:
+Show container status and logs:
 
-```powershell
-& 'C:\Program Files\PuTTY\plink.exe' -ssh -P 10281 -batch -hostkey 'ssh-ed25519 255 SHA256:usrCN0O7t/Gd56zxNDQMBG7g+rch7VOw2XYJrSr7TPg' wq@5.tcp.cpolar.cn "docker ps --filter name=linkbox --format '{{.Names}} {{.Status}}'; curl -fsS http://127.0.0.1:3100/ >/dev/null && echo HOME_HTTP_OK"
+```bash
+ssh -p 6004 wq@150.158.146.192 '
+cd /home/wq/LinkBox
+docker compose ps
+docker compose logs --tail=100 linkbox
+'
 ```
 
-RK3576:
+Restart only LinkBox:
 
-```powershell
-& 'C:\Program Files\PuTTY\plink.exe' -ssh -P 6277 -batch -hostkey 'ssh-ed25519 255 SHA256:/PLBOTxtyNmCJsf3mK7by9dvG4Lg6RNbdxSQRVb/Vzc' lckfb@150.158.146.192 "uname -m; systemctl is-active linkbox; curl -fsS http://127.0.0.1:3100/ >/dev/null && echo RK_HTTP_OK; journalctl -u linkbox -n 20 --no-pager"
+```bash
+ssh -p 6004 wq@150.158.146.192 '
+cd /home/wq/LinkBox
+docker compose restart linkbox
+'
 ```
+
+## Historical Targets
+
+Older notes referenced a cpolar endpoint and an RK3576/TaishanPi native
+systemd deployment. Those are not the current production path. If they are
+reactivated, verify host, SSH port, app path, data path, and service manager
+before using any old commands.
