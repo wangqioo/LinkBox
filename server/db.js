@@ -94,8 +94,8 @@ db.exec(`
     requester_id INTEGER NOT NULL,
     addressee_id INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (addressee_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(requester_id, addressee_id),
@@ -111,8 +111,8 @@ db.exec(`
     description TEXT DEFAULT '',
     owner_id INTEGER NOT NULL,
     agent_name TEXT DEFAULT 'Group Agent',
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
@@ -122,7 +122,7 @@ db.exec(`
     group_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     role TEXT NOT NULL DEFAULT 'member',
-    joined_at TEXT DEFAULT (datetime('now')),
+    joined_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     PRIMARY KEY (group_id, user_id),
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -136,7 +136,7 @@ db.exec(`
     user_id INTEGER NOT NULL,
     body TEXT NOT NULL,
     message_type TEXT NOT NULL DEFAULT 'text',
-    created_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
@@ -148,7 +148,7 @@ db.exec(`
     link_id INTEGER NOT NULL,
     shared_by INTEGER NOT NULL,
     note TEXT DEFAULT '',
-    created_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     PRIMARY KEY (group_id, link_id),
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
     FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE,
@@ -164,7 +164,7 @@ db.exec(`
     recipient_id INTEGER NOT NULL,
     body TEXT NOT NULL,
     message_type TEXT NOT NULL DEFAULT 'text',
-    created_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
   );

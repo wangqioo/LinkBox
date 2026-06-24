@@ -41,6 +41,14 @@ async function withSocialApp(fn) {
       INSERT INTO friendships (requester_id, addressee_id, status)
       VALUES (1, 2, 'accepted'), (1, 3, 'pending')
     `).run();
+    db.prepare(`
+      INSERT INTO groups (id, name, owner_id, agent_name)
+      VALUES (10, 'Launch', 1, 'Launch Agent')
+    `).run();
+    db.prepare(`
+      INSERT INTO group_members (group_id, user_id, role)
+      VALUES (10, 1, 'owner'), (10, 2, 'member')
+    `).run();
 
     const app = express();
     app.use(express.json());
@@ -89,6 +97,7 @@ test('accepted friends can exchange direct messages with current user metadata',
   assert.equal(sent.recipient_id, 2);
   assert.equal(sent.body, '今晚看资料');
   assert.equal(sent.user.username, 'alice');
+  assert.match(sent.created_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
   const list = await fetch(`${baseUrl}/api/social/friends/1/messages`, { headers: bobHeaders });
   const payload = await list.json();
@@ -98,6 +107,7 @@ test('accepted friends can exchange direct messages with current user metadata',
   assert.equal(payload.friend.id, 1);
   assert.equal(payload.messages.length, 1);
   assert.equal(payload.messages[0].body, '今晚看资料');
+  assert.equal(payload.messages[0].created_at, sent.created_at);
 }));
 
 test('direct messages require an accepted friendship', async () => withSocialApp(async ({ baseUrl, aliceHeaders, caraHeaders }) => {
@@ -114,6 +124,29 @@ test('direct messages require an accepted friendship', async () => withSocialApp
     body: JSON.stringify({ body: 'hello' }),
   });
   assert.equal(notFriend.status, 403);
+}));
+
+test('group messages return timezone-stable timestamps', async () => withSocialApp(async ({ baseUrl, aliceHeaders, bobHeaders }) => {
+  const send = await fetch(`${baseUrl}/api/social/groups/10/messages`, {
+    method: 'POST',
+    headers: aliceHeaders,
+    body: JSON.stringify({ body: '群里确认一下时间' }),
+  });
+  const sent = await send.json();
+
+  assert.equal(send.status, 201, JSON.stringify(sent));
+  assert.equal(sent.user_id, 1);
+  assert.equal(sent.group_id, 10);
+  assert.equal(sent.body, '群里确认一下时间');
+  assert.match(sent.created_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+  const list = await fetch(`${baseUrl}/api/social/groups/10/messages`, { headers: bobHeaders });
+  const payload = await list.json();
+
+  assert.equal(list.status, 200, JSON.stringify(payload));
+  assert.equal(payload.messages.length, 1);
+  assert.equal(payload.messages[0].body, '群里确认一下时间');
+  assert.equal(payload.messages[0].created_at, sent.created_at);
 }));
 
 test('accepted friends can share owned materials in direct messages', async () => withSocialApp(async ({ db, baseUrl, aliceHeaders, bobHeaders }) => {

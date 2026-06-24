@@ -74,8 +74,42 @@ function materialPayload(link) {
   };
 }
 
+function currentIsoTime() {
+  return new Date().toISOString();
+}
+
+function toUtcIsoTime(value) {
+  if (!value) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)) {
+    return new Date(`${text.replace(' ', 'T')}Z`).toISOString();
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return new Date(`${text}T00:00:00Z`).toISOString();
+  }
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? text : parsed.toISOString();
+}
+
+function directMessagePayload(row) {
+  return {
+    ...row,
+    created_at: toUtcIsoTime(row.created_at),
+    user: { id: row.user_id, username: row.username },
+  };
+}
+
+function groupMessagePayload(row) {
+  return {
+    ...row,
+    created_at: toUtcIsoTime(row.created_at),
+    user: { id: row.user_id, username: row.username },
+  };
+}
+
 function createScopedChatItem(req, { scope = 'chat' } = {}) {
-  const importedAt = new Date().toISOString();
+  const importedAt = currentIsoTime();
   const queue = getRuntimeQueue();
   if (req.file) {
     const asset = normalizeUploadedAsset(req.file, { uploadsDir: UPLOADS_DIR });
@@ -253,13 +287,15 @@ router.get('/friends/:userId/messages', (req, res) => {
     current_user: currentUser,
     friend,
     messages: rows.map(row => ({
-      id: row.id,
-      user_id: row.user_id,
-      recipient_id: row.recipient_id,
-      body: row.body,
-      message_type: row.message_type,
-      created_at: row.created_at,
-      user: { id: row.user_id, username: row.username },
+      ...directMessagePayload({
+        id: row.id,
+        user_id: row.user_id,
+        recipient_id: row.recipient_id,
+        body: row.body,
+        message_type: row.message_type,
+        created_at: row.created_at,
+        username: row.username,
+      }),
       ...(row.message_type === 'material' && row.link_id ? {
         material: materialPayload({
           id: row.link_id,
@@ -279,17 +315,18 @@ router.post('/friends/:userId/messages', (req, res) => {
   if (!friend) return res.status(403).json({ error: 'Only accepted friends can exchange messages' });
   const body = String(req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Message is required' });
+  const createdAt = currentIsoTime();
   const info = database.prepare(`
-    INSERT INTO direct_messages (sender_id, recipient_id, body)
-    VALUES (?, ?, ?)
-  `).run(req.userId, friendId, body);
+    INSERT INTO direct_messages (sender_id, recipient_id, body, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(req.userId, friendId, body, createdAt);
   const message = database.prepare(`
     SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.body, m.message_type, m.created_at, u.username
     FROM direct_messages m
     JOIN users u ON u.id = m.sender_id
     WHERE m.id = ?
   `).get(info.lastInsertRowid);
-  res.status(201).json({ ...message, user: { id: message.user_id, username: message.username } });
+  res.status(201).json(directMessagePayload(message));
 });
 
 router.post('/friends/:userId/materials', (req, res) => {
@@ -304,10 +341,11 @@ router.post('/friends/:userId/materials', (req, res) => {
     WHERE id = ? AND user_id = ?
   `).get(linkId, req.userId);
   if (!link) return res.status(404).json({ error: 'Only your own material can be shared' });
+  const createdAt = currentIsoTime();
   const info = database.prepare(`
-    INSERT INTO direct_messages (sender_id, recipient_id, body, message_type)
-    VALUES (?, ?, ?, 'material')
-  `).run(req.userId, friendId, String(linkId));
+    INSERT INTO direct_messages (sender_id, recipient_id, body, message_type, created_at)
+    VALUES (?, ?, ?, 'material', ?)
+  `).run(req.userId, friendId, String(linkId), createdAt);
   const message = database.prepare(`
     SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.body, m.message_type, m.created_at, u.username
     FROM direct_messages m
@@ -315,8 +353,7 @@ router.post('/friends/:userId/materials', (req, res) => {
     WHERE m.id = ?
   `).get(info.lastInsertRowid);
   res.status(201).json({
-    ...message,
-    user: { id: message.user_id, username: message.username },
+    ...directMessagePayload(message),
     material: materialPayload(link),
   });
 });
@@ -327,10 +364,11 @@ router.post('/friends/:userId/uploads', upload.single('file'), (req, res) => {
   if (!friend) return res.status(403).json({ error: 'Only accepted friends can exchange messages' });
   const link = createScopedChatItem(req, { scope: 'chat' });
   if (!link) return res.status(400).json({ error: 'Please upload a file or provide text/url' });
+  const createdAt = currentIsoTime();
   const info = database.prepare(`
-    INSERT INTO direct_messages (sender_id, recipient_id, body, message_type)
-    VALUES (?, ?, ?, 'material')
-  `).run(req.userId, friendId, String(link.id));
+    INSERT INTO direct_messages (sender_id, recipient_id, body, message_type, created_at)
+    VALUES (?, ?, ?, 'material', ?)
+  `).run(req.userId, friendId, String(link.id), createdAt);
   const message = database.prepare(`
     SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.body, m.message_type, m.created_at, u.username
     FROM direct_messages m
@@ -338,8 +376,7 @@ router.post('/friends/:userId/uploads', upload.single('file'), (req, res) => {
     WHERE m.id = ?
   `).get(info.lastInsertRowid);
   res.status(201).json({
-    ...message,
-    user: { id: message.user_id, username: message.username },
+    ...directMessagePayload(message),
     material: materialPayload(link),
   });
 });
@@ -480,14 +517,14 @@ router.get('/groups/:groupId/messages', (req, res) => {
     WHERE gl.group_id = ?
   `).all(groupId);
   const messages = [
-    ...rows.map(row => ({ ...row, user: { id: row.user_id, username: row.username } })),
+    ...rows.map(row => groupMessagePayload(row)),
     ...materials.map(row => ({
       id: `material:${row.link_id}`,
       group_id: row.group_id,
       user_id: row.user_id,
       body: row.note || row.title || row.url || `资料 ${row.link_id}`,
       message_type: 'material',
-      created_at: row.created_at,
+      created_at: toUtcIsoTime(row.created_at),
       user: { id: row.user_id, username: row.username },
       material: {
         ...materialPayload({
@@ -514,12 +551,13 @@ router.post('/groups/:groupId/messages', (req, res) => {
   if (!ensureGroupMember(groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const body = String(req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Message is required' });
-  const info = database.prepare('INSERT INTO group_messages (group_id, user_id, body) VALUES (?, ?, ?)').run(groupId, req.userId, body);
+  const createdAt = currentIsoTime();
+  const info = database.prepare('INSERT INTO group_messages (group_id, user_id, body, created_at) VALUES (?, ?, ?, ?)').run(groupId, req.userId, body, createdAt);
   const message = database.prepare(`
     SELECT m.id, m.group_id, m.user_id, m.body, m.message_type, m.created_at, u.username
     FROM group_messages m JOIN users u ON u.id = m.user_id WHERE m.id = ?
   `).get(info.lastInsertRowid);
-  res.status(201).json({ ...message, user: { id: message.user_id, username: message.username } });
+  res.status(201).json(groupMessagePayload(message));
 });
 
 router.get('/groups/:groupId/materials', (req, res) => {
@@ -537,6 +575,7 @@ router.get('/groups/:groupId/materials', (req, res) => {
   `).all(groupId);
   res.json(rows.map(row => ({
     ...row,
+    shared_at: toUtcIsoTime(row.shared_at),
     shared_by_user: { id: row.shared_by, username: row.shared_by_username },
   })));
 });
@@ -549,11 +588,12 @@ router.post('/groups/:groupId/materials', (req, res) => {
   if (!linkId) return res.status(400).json({ error: 'Material is required' });
   const link = database.prepare('SELECT id FROM links WHERE id = ? AND user_id = ?').get(linkId, req.userId);
   if (!link) return res.status(404).json({ error: 'Only your own material can be shared' });
+  const createdAt = currentIsoTime();
   database.prepare(`
-    INSERT INTO group_links (group_id, link_id, shared_by, note)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(group_id, link_id) DO UPDATE SET note = excluded.note, shared_by = excluded.shared_by, created_at = datetime('now')
-  `).run(groupId, linkId, req.userId, note);
+    INSERT INTO group_links (group_id, link_id, shared_by, note, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(group_id, link_id) DO UPDATE SET note = excluded.note, shared_by = excluded.shared_by, created_at = excluded.created_at
+  `).run(groupId, linkId, req.userId, note, createdAt);
   res.status(201).json({ ok: true });
 });
 
@@ -563,17 +603,18 @@ router.post('/groups/:groupId/uploads', upload.single('file'), (req, res) => {
   const note = String(req.body?.note || '').trim();
   const link = createScopedChatItem(req, { scope: 'chat' });
   if (!link) return res.status(400).json({ error: 'Please upload a file or provide text/url' });
+  const createdAt = currentIsoTime();
   database.prepare(`
-    INSERT INTO group_links (group_id, link_id, shared_by, note)
-    VALUES (?, ?, ?, ?)
-  `).run(groupId, link.id, req.userId, note);
+    INSERT INTO group_links (group_id, link_id, shared_by, note, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(groupId, link.id, req.userId, note, createdAt);
   res.status(201).json({
     id: `material:${link.id}`,
     group_id: groupId,
     user_id: req.userId,
     body: note || link.title || link.url || `资料 ${link.id}`,
     message_type: 'material',
-    created_at: new Date().toISOString(),
+    created_at: createdAt,
     user: database.prepare('SELECT id, username FROM users WHERE id = ?').get(req.userId),
     material: materialPayload(link),
   });

@@ -59,7 +59,7 @@ const MIGRATIONS = [
           recipient_id INTEGER NOT NULL,
           body TEXT NOT NULL,
           message_type TEXT NOT NULL DEFAULT 'text',
-          created_at TEXT DEFAULT (datetime('now')),
+          created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
           FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
         );
