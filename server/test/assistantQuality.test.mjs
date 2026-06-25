@@ -26,6 +26,29 @@ async function withQualityDb(fn) {
         name TEXT NOT NULL,
         owner_id INTEGER NOT NULL
       );
+      CREATE TABLE group_members (
+        group_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        role TEXT NOT NULL DEFAULT 'member',
+        joined_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (group_id, user_id)
+      );
+      CREATE TABLE group_links (
+        group_id INTEGER NOT NULL,
+        link_id INTEGER NOT NULL,
+        shared_by INTEGER NOT NULL,
+        note TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (group_id, link_id)
+      );
+      CREATE TABLE group_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        body TEXT NOT NULL,
+        message_type TEXT NOT NULL DEFAULT 'text',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
       CREATE TABLE links (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -56,7 +79,7 @@ async function withQualityDb(fn) {
         user_id INTEGER NOT NULL
       );
     `);
-    db.prepare("INSERT INTO users (id, username, password_hash) VALUES (1, 'alice', 'x')").run();
+    db.prepare("INSERT INTO users (id, username, password_hash) VALUES (1, 'alice', 'x'), (2, 'bob', 'x')").run();
     db.prepare('INSERT INTO assistant_conversations (id, user_id) VALUES (1, 1)').run();
     initDocumentSchema(db);
     initAssistantRunSchema(db);
@@ -69,10 +92,11 @@ async function withQualityDb(fn) {
 }
 
 function retrieveFromDb(db) {
-  return ({ question, task, scope }) => ({
+  return ({ question, task, scope, groupId }) => ({
     ranked: retrieveSources({
       db,
       userId: 1,
+      groupId,
       question,
       task,
       scope,
@@ -180,4 +204,35 @@ test('assistant quality: unrelated questions stay insufficient instead of using 
   assert.equal(turn.ranked.length, 0);
   assert.equal(turn.evidence.status, 'empty');
   assert.equal(turn.verification.support, 'insufficient');
+}));
+
+test('assistant quality: group scoped retrieval uses shared materials without personal leakage', () => withQualityDb(async (db) => {
+  db.prepare("INSERT INTO groups (id, name, owner_id) VALUES (10, 'Launch Team', 1)").run();
+  db.prepare("INSERT INTO group_members (group_id, user_id, role) VALUES (10, 1, 'owner'), (10, 2, 'member')").run();
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, imported_at, content_md)
+    VALUES
+      (5, 2, 'file', 'Shared Launch Runbook', '2026-06-25T12:00:00.000Z', ?),
+      (6, 1, 'file', 'Private Launch Payroll', '2026-06-25T13:00:00.000Z', ?)
+  `).run(
+    '# Shared Launch Runbook\n\n## Roadmap\n\nlaunch roadmap depends on qa signoff',
+    '# Private Launch Payroll\n\n## Roadmap\n\nlaunch roadmap payroll numbers are private',
+  );
+  db.prepare("INSERT INTO group_links (group_id, link_id, shared_by, note) VALUES (10, 5, 2, 'shared for launch')").run();
+  db.prepare("INSERT INTO group_messages (group_id, user_id, body) VALUES (10, 2, 'launch roadmap needs qa signoff')").run();
+
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 1,
+    groupId: 10,
+    question: 'launch roadmap',
+    task: 'ask',
+    retrieve: retrieveFromDb(db),
+  });
+
+  assert.equal(turn.ranked.some(source => source.id === 5), true);
+  assert.equal(turn.ranked.some(source => source.id === 6), false);
+  assert.equal(turn.ranked.some(source => source.id === 'group-message:1'), true);
+  assert.equal(turn.evidence.status, 'ready');
 }));
