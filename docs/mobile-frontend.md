@@ -46,7 +46,7 @@ http://150.158.146.192:6057/mobile/
 | Home | `mobile/src/views/Home.vue` | Main personal feed, upload, text-to-self, menus, comments |
 | File detail | `mobile/src/views/FileDetail.vue` | Detail view, image batch carousel, per-image comments, article/video/document content |
 | Friends and groups | `mobile/src/views/Friends.vue` | Contact list, private chats, group chats, group tools, chat material cards |
-| Assistant | `mobile/src/components/ChatBox.vue` | Personal or group-scoped AI assistant |
+| Assistant | `mobile/src/components/ChatBox.vue` | Personal or group-scoped AI assistant flow adapter |
 | Categories | `mobile/src/views/Category.vue`, `DayFiles.vue` | Filtered mobile file views |
 
 ## Personal Feed Behavior
@@ -106,6 +106,9 @@ Other group tools live in the top-right menu.
 
 The same `ChatBox.vue` component powers personal and group assistants. When a
 `groupId` prop is passed, `streamAssistant` sends that group id to the backend.
+`ChatBox.vue` owns conversation state, streaming, and `open-file` events; it
+delegates compact Agent diagnostics to `AssistantAgentStatus.vue` and citation
+source rendering to `AssistantSourceList.vue`.
 
 Group assistant behavior:
 
@@ -132,6 +135,8 @@ Group assistant behavior:
   depends on the current question and selected personal/group scope.
 - `mobile/src/utils/assistantConversations.js` owns saved-message normalization
   and next local message id calculation for the chat UI.
+- `mobile/src/utils/assistantDiagnostics.js` owns compact Agent diagnostic row
+  formatting for mobile Assistant status chips.
 
 ## Auto-Growing Textareas
 

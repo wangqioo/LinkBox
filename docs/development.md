@@ -322,10 +322,13 @@ client/src/pages/BackgroundJobsPanel.tsx Admin queue and failed-job controls
 Important mobile frontend modules:
 
 ```text
-mobile/src/components/ChatBox.vue       Assistant chat UI adapter
+mobile/src/components/ChatBox.vue       Assistant chat flow adapter
+mobile/src/components/AssistantAgentStatus.vue Compact Agent diagnostic chips
+mobile/src/components/AssistantSourceList.vue Assistant citation/source panel
 mobile/src/components/AutoGrowTextarea.vue Auto-growing long text input
 mobile/src/components/ImageBatchCard.vue Mobile stacked image batch card
 mobile/src/utils/markdownParser.js      Mobile Markdown/citation utility
+mobile/src/utils/assistantDiagnostics.js Mobile Assistant diagnostic row formatting
 mobile/src/utils/imageBatchGallery.js   Image batch grouping and gallery view models
 mobile/src/utils/groupChatDisplay.js    Current-user message alignment helpers
 mobile/src/utils/socialConversations.js Friends/groups conversation list helpers
