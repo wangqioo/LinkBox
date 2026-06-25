@@ -236,3 +236,117 @@ test('assistant quality: group scoped retrieval uses shared materials without pe
   assert.equal(turn.ranked.some(source => source.id === 'group-message:1'), true);
   assert.equal(turn.evidence.status, 'ready');
 }));
+
+test('assistant quality: weak single-source evidence is not treated as fully supported', () => withQualityDb(async (db) => {
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 1,
+    question: 'Agent 部署 风险 端口 缓存',
+    task: 'ask',
+    retrieve: async () => ({
+      ranked: [
+        {
+          id: 7,
+          title: '弱相关记录',
+          source_index: 1,
+          sourceKind: 'document',
+          retrieval_modes: ['recent'],
+          score: 0.05,
+          chunk_text: 'Agent 部署有一些背景。',
+        },
+      ],
+      embeddingConfig: { enabled: false },
+    }),
+  });
+
+  assert.equal(turn.retrievalConfidence.level, 'low');
+  assert.equal(turn.verification.support, 'partial');
+  assert.ok(turn.verification.issues.includes('low_retrieval_confidence'));
+}));
+
+test('assistant quality: low confidence retrieval can recover through corrective query', () => withQualityDb(async (db) => {
+  const attempted = [];
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 1,
+    question: '群里 Agent 部署 风险 端口 缓存',
+    task: 'ask',
+    retrieve: async ({ question }) => {
+      attempted.push(question);
+      if (question.startsWith('群里')) {
+        return {
+          ranked: [
+            {
+              id: 8,
+              title: '弱群消息',
+              source_index: 1,
+              sourceKind: 'group_message',
+              retrieval_modes: ['recent'],
+              score: 0.05,
+              content: '群里讨论过 Agent 部署。',
+            },
+          ],
+          embeddingConfig: { enabled: false },
+        };
+      }
+      return {
+        ranked: [
+          {
+            id: 9,
+            title: 'Agent 部署复盘',
+            source_index: 1,
+            sourceKind: 'document',
+            retrieval_modes: ['keyword', 'structured'],
+            score: 0.8,
+            chunk_text: 'Agent 部署风险包括端口冲突和缓存失效，需要上线前检查端口和缓存。',
+          },
+          {
+            id: 10,
+            title: 'Agent 上线待办',
+            source_index: 2,
+            sourceKind: 'structured_knowledge',
+            retrieval_modes: ['structured'],
+            score: 0.6,
+            chunk_text: '待办：上线前检查 Agent 端口和缓存。',
+          },
+        ],
+        embeddingConfig: { enabled: false },
+      };
+    },
+  });
+
+  assert.deepEqual(attempted, ['群里 Agent 部署 风险 端口 缓存', 'Agent 部署 风险 端口 缓存']);
+  assert.equal(turn.ranked[0].id, 9);
+  assert.equal(turn.retrievalConfidence.level, 'high');
+  assert.equal(turn.verification.support, 'supported');
+}));
+
+test('assistant quality: broad agent planning questions expose sub-question diagnostics', () => withQualityDb(async (db) => {
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 1,
+    question: 'LinkBox Agent 现在还差什么，下一步怎么做',
+    task: 'ask',
+    retrieve: async () => ({
+      ranked: [
+        {
+          id: 11,
+          title: 'Agent Roadmap',
+          source_index: 1,
+          sourceKind: 'document',
+          retrieval_modes: ['keyword', 'structured'],
+          score: 0.7,
+          chunk_text: 'LinkBox Agent 已完成 planner、retrieval confidence 和 verification。下一步是质量评测。',
+        },
+      ],
+      embeddingConfig: { enabled: false },
+    }),
+  });
+
+  assert.ok(turn.plan.subQuestions.includes('LinkBox Agent 已经完成了哪些能力？'));
+  assert.ok(turn.plan.rewriteQueries.includes('LinkBox Agent 下一步最应该做什么？'));
+  assert.equal(turn.agent.run.plan.subQuestions.length, 3);
+}));

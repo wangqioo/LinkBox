@@ -134,11 +134,18 @@ At this checkpoint:
   isolation.
 - Mobile Assistant now preserves saved `agent` metadata, handles streaming
   `agent` events, and shows compact diagnostic chips for intent, tools,
-  retrieval attempts, evidence, verification, and memory.
+  retrieval attempts, retrieval confidence, sub-question planning, evidence,
+  verification, and memory.
 - Assistant quality has a fixed backend fixture suite at
   `server/test/assistantQuality.test.mjs`, covering canonical document hits,
-  structured todo fallback, memory loading, and no-evidence insufficient
-  support without depending on real LLM text.
+  structured todo fallback, memory loading, no-evidence insufficient support,
+  low-confidence partial support, corrective retrieval recovery, and broad
+  planning diagnostics without depending on real LLM text.
+- Assistant retrieval confidence is scored in
+  `server/utils/assistantRetrievalConfidence.js` from source count, snippets,
+  retrieval modes, source kind diversity, query coverage, and source scores.
+  Low-confidence retrieval keeps searching with bounded rewrite/sub-question
+  queries before the answer is generated.
 - LLM-assisted higher-level understanding has an opt-in prototype boundary in
   `server/utils/llmUnderstandingAnnotations.js`. It builds a strict JSON prompt
   for questions, contradictions, timelines, and project summaries, validates

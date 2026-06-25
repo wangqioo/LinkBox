@@ -94,10 +94,11 @@ small slices rather than rewrites.
    explicit migrations.
 
 6. **Smart Agent quality loop**
-   The Smart Agent product surface is now implemented. Future work should be
-   driven by `server/test/assistantQuality.test.mjs` and real failure cases:
-   expand fixtures first, then tune retrieval, rerank, memory, or LLM-assisted
-   reasoning.
+   The Smart Agent product surface now includes confidence-aware retrieval,
+   corrective retrieval attempts, and sub-question diagnostics. Future work
+   should still be driven by `server/test/assistantQuality.test.mjs` and real
+   failure cases: expand fixtures first, then tune retrieval, rerank, memory,
+   or LLM-assisted reasoning.
 
 ## Decisions Needed
 

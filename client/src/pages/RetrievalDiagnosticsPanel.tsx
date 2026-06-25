@@ -56,10 +56,13 @@ function settingsSummary(settings: RetrievalDiagnosticsResponse['settings']) {
 function AgentDiagnostics({ agent }: { agent?: RetrievalDiagnosticsResponse['agent'] }) {
   if (!agent) return null;
   const tools = agent.plan?.tools || [];
+  const subQuestions = agent.plan?.subQuestions || [];
   const memories = agent.memory?.items || [];
   const evidence = agent.evidence?.items || [];
   const issues = agent.verification?.issues || [];
   const steps = agent.run?.steps || [];
+  const retrievalStep = steps.find(step => step.step_type === 'retrieval');
+  const confidence = agent.verification?.retrievalConfidence || retrievalStep?.metadata?.confidence as { level?: string; score?: number; reasons?: string[] } | undefined;
 
   return (
     <div className="rounded-lg border bg-gray-50 dark:bg-gray-800 px-3 py-3 space-y-3">
@@ -67,6 +70,7 @@ function AgentDiagnostics({ agent }: { agent?: RetrievalDiagnosticsResponse['age
         <span>Intent：{agent.plan?.intent || '—'}</span>
         <span>Evidence：{agent.evidence?.status || '—'}</span>
         <span>Support：{agent.verification?.support || '—'}</span>
+        {confidence?.level && <span>Confidence：{confidence.level}{typeof confidence.score === 'number' ? ` ${confidence.score}` : ''}</span>}
         <span>Run：{agent.run?.status || '—'}</span>
       </div>
 
@@ -82,6 +86,32 @@ function AgentDiagnostics({ agent }: { agent?: RetrievalDiagnosticsResponse['age
           </div>
         </div>
       )}
+
+      {!!subQuestions.length && (
+        <div>
+          <div className="text-xs font-semibold mb-1">Sub-questions</div>
+          <div className="space-y-1">
+            {subQuestions.map((question, index) => (
+              <div key={`${question}-${index}`} className="text-xs text-gray-500">
+                {index + 1}. {question}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {confidence?.reasons?.length ? (
+        <div>
+          <div className="text-xs font-semibold mb-1">Confidence reasons</div>
+          <div className="flex flex-wrap gap-1.5">
+            {confidence.reasons.map(reason => (
+              <span key={reason} className="rounded-md border bg-white px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-gray-900 dark:border-gray-700">
+                {reason}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {!!memories.length && (
         <div>

@@ -102,10 +102,13 @@ function RetrievalInfo({ retrieval, compact = false }: { retrieval?: AssistantSo
 function AgentStatus({ agent }: { agent?: AssistantAgent }) {
   if (!agent) return null;
   const tools = agent.plan?.tools?.length || 0;
+  const subQuestions = agent.plan?.subQuestions?.length || 0;
   const evidenceStatus = agent.evidence?.status || 'unknown';
   const support = agent.verification?.support || 'unknown';
   const memoryCount = agent.memory?.items?.length || 0;
-  const attempts = agent.run?.steps?.find(step => step.step_type === 'retrieval')?.metadata?.queryCount;
+  const retrievalStep = agent.run?.steps?.find(step => step.step_type === 'retrieval');
+  const attempts = retrievalStep?.metadata?.queryCount;
+  const confidence = agent.verification?.retrievalConfidence || retrievalStep?.metadata?.confidence as { level?: string; score?: number } | undefined;
 
   return (
     <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
@@ -115,9 +118,19 @@ function AgentStatus({ agent }: { agent?: AssistantAgent }) {
       <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
         工具 <span className="font-medium text-gray-700 dark:text-gray-200">{tools}</span>
       </span>
+      {subQuestions > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
+          子问 <span className="font-medium text-gray-700 dark:text-gray-200">{subQuestions}</span>
+        </span>
+      )}
       {typeof attempts === 'number' && (
         <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
           检索 <span className="font-medium text-gray-700 dark:text-gray-200">{attempts}</span>
+        </span>
+      )}
+      {confidence?.level && (
+        <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
+          置信 <span className="font-medium text-gray-700 dark:text-gray-200">{confidence.level}{typeof confidence.score === 'number' ? ` ${confidence.score}` : ''}</span>
         </span>
       )}
       <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">

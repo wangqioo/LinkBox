@@ -269,6 +269,7 @@ export interface AssistantAgent {
     intent?: string;
     tools?: Array<{ name?: string; reason?: string }>;
     rewriteQueries?: string[];
+    subQuestions?: string[];
     scopeType?: string;
   };
   evidence?: {
@@ -280,6 +281,13 @@ export interface AssistantAgent {
     support?: string;
     evidenceCount?: number;
     issues?: string[];
+    retrievalConfidence?: {
+      level?: string;
+      score?: number;
+      shouldCorrect?: boolean;
+      reasons?: string[];
+      signals?: Record<string, unknown>;
+    };
     citations?: { used?: number[]; invalid?: number[] };
   };
   memory?: {

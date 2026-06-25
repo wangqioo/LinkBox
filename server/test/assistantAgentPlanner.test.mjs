@@ -35,6 +35,19 @@ test('planAssistantTurn chooses group retrieval for group scoped questions', () 
   assert.ok(plan.rewriteQueries.includes('Launch 项目的下一步待办是什么'));
 });
 
+test('planAssistantTurn creates sub questions for broad project status questions', () => {
+  const plan = planAssistantTurn({
+    question: 'LinkBox Agent 现在还差什么，下一步怎么做',
+    task: 'ask',
+  });
+
+  assert.equal(plan.intent, 'question_answering');
+  assert.ok(plan.subQuestions.includes('LinkBox Agent 已经完成了哪些能力？'));
+  assert.ok(plan.subQuestions.includes('LinkBox Agent 现在还缺哪些能力或决策？'));
+  assert.ok(plan.subQuestions.includes('LinkBox Agent 下一步最应该做什么？'));
+  assert.ok(plan.rewriteQueries.includes('LinkBox Agent 已经完成了哪些能力？'));
+});
+
 test('planAssistantTurn treats empty questions as insufficient input', () => {
   const plan = planAssistantTurn({ question: '   ', task: 'ask' });
 

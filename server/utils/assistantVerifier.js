@@ -7,18 +7,24 @@ function citationNumbers(answer) {
   return uniqueNumbers(Array.from(matches, match => Number(match[1])).filter(Number.isFinite));
 }
 
-export function verifyEvidence(evidence = {}) {
+export function verifyEvidence(evidence = {}, { retrievalConfidence = null } = {}) {
   const items = Array.isArray(evidence.items) ? evidence.items : [];
   const issues = [];
   if (!items.length) issues.push('no_evidence');
   const hasSnippet = items.some(item => String(item.snippet || '').trim());
   if (items.length && !hasSnippet) issues.push('weak_evidence');
+  if (items.length && retrievalConfidence?.level === 'low') issues.push('low_retrieval_confidence');
+  if (items.length && retrievalConfidence?.level === 'insufficient') issues.push('insufficient_retrieval_confidence');
 
+  const support = !items.length
+    ? 'insufficient'
+    : (hasSnippet && retrievalConfidence?.level !== 'low' && retrievalConfidence?.level !== 'insufficient' ? 'supported' : 'partial');
   return {
     phase: 'retrieval',
-    support: !items.length ? 'insufficient' : (hasSnippet ? 'supported' : 'partial'),
+    support,
     evidenceCount: items.length,
     issues,
+    ...(retrievalConfidence ? { retrievalConfidence } : {}),
   };
 }
 

@@ -89,6 +89,40 @@ test('prepareAssistantAgentTurn records insufficient evidence when retrieval is 
   db.close();
 });
 
+test('prepareAssistantAgentTurn marks weak retrieval confidence as partial support', async () => {
+  const db = setupDb();
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 5,
+    question: '部署 风险 端口 缓存',
+    task: 'ask',
+    retrieve: async () => ({
+      ranked: [
+        {
+          id: 71,
+          title: '泛泛部署记录',
+          source_index: 1,
+          sourceKind: 'document',
+          retrieval_modes: ['recent'],
+          score: 0.05,
+          chunk_text: '这里有一些部署相关背景。',
+        },
+      ],
+      embeddingConfig: { enabled: false },
+    }),
+  });
+
+  const retrievalStep = turn.agent.run.steps.find(step => step.step_type === 'retrieval');
+  assert.equal(turn.evidence.status, 'ready');
+  assert.equal(turn.verification.support, 'partial');
+  assert.equal(turn.verification.retrievalConfidence.level, 'low');
+  assert.equal(retrievalStep.metadata.confidence.level, 'low');
+  assert.equal(retrievalStep.metadata.confidence.shouldCorrect, true);
+
+  db.close();
+});
+
 test('prepareAssistantAgentTurn retries retrieval with rewrite queries', async () => {
   const db = setupDb();
   const attemptedQuestions = [];
@@ -125,6 +159,68 @@ test('prepareAssistantAgentTurn retries retrieval with rewrite queries', async (
   assert.deepEqual(attemptedQuestions, ['群里 交付 风险', '交付 风险']);
   assert.equal(turn.ranked.length, 1);
   assert.equal(turn.evidence.status, 'ready');
+  assert.equal(turn.agent.run.steps.find(step => step.step_type === 'retrieval').metadata.queryCount, 2);
+
+  db.close();
+});
+
+test('prepareAssistantAgentTurn continues after weak retrieval and keeps stronger corrective evidence', async () => {
+  const db = setupDb();
+  const attemptedQuestions = [];
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 5,
+    question: '群里 部署 风险 端口 缓存',
+    task: 'ask',
+    retrieve: async ({ question }) => {
+      attemptedQuestions.push(question);
+      if (question === '群里 部署 风险 端口 缓存') {
+        return {
+          ranked: [
+            {
+              id: 1,
+              title: '弱相关记录',
+              source_index: 1,
+              sourceKind: 'group_message',
+              retrieval_modes: ['recent'],
+              score: 0.05,
+              content: '群里提到过部署背景。',
+            },
+          ],
+          embeddingConfig: { enabled: false },
+        };
+      }
+      return {
+        ranked: [
+          {
+            id: 2,
+            title: '部署风险复盘',
+            source_index: 1,
+            sourceKind: 'document',
+            retrieval_modes: ['keyword', 'structured'],
+            score: 0.8,
+            chunk_text: '部署风险包括端口冲突和缓存失效，群里要求上线前检查端口和缓存。',
+          },
+          {
+            id: 3,
+            title: '上线待办',
+            source_index: 2,
+            sourceKind: 'structured_knowledge',
+            retrieval_modes: ['structured'],
+            score: 0.6,
+            chunk_text: '待办：部署前检查端口和缓存。',
+          },
+        ],
+        embeddingConfig: { enabled: false },
+      };
+    },
+  });
+
+  assert.deepEqual(attemptedQuestions, ['群里 部署 风险 端口 缓存', '部署 风险 端口 缓存']);
+  assert.deepEqual(turn.ranked.map(source => source.id), [2, 3]);
+  assert.equal(turn.retrievalConfidence.level, 'high');
+  assert.equal(turn.verification.support, 'supported');
   assert.equal(turn.agent.run.steps.find(step => step.step_type === 'retrieval').metadata.queryCount, 2);
 
   db.close();

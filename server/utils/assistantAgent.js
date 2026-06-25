@@ -8,6 +8,7 @@ import {
 } from './assistantRuns.js';
 import { verifyAssistantAnswer, verifyEvidence } from './assistantVerifier.js';
 import { searchAssistantMemories } from './assistantMemory.js';
+import { assessRetrievalConfidence } from './assistantRetrievalConfidence.js';
 
 function uniqueQueries(queries) {
   const seen = new Set();
@@ -34,6 +35,7 @@ async function executeRetrievalPlan({ retrieve, question, task, scope, groupId, 
     ...(plan.rewriteQueries || []),
   ]);
   let finalRetrieval = { ranked: [], embeddingConfig: {} };
+  let bestConfidence = null;
   const attempts = [];
 
   for (const plannedQuestion of queries) {
@@ -46,21 +48,31 @@ async function executeRetrievalPlan({ retrieve, question, task, scope, groupId, 
       plan,
     });
     const ranked = retrieval.ranked || [];
+    const confidence = assessRetrievalConfidence({
+      question: plannedQuestion,
+      sources: ranked,
+      attempts: [...attempts, { question: plannedQuestion, sourceCount: ranked.length }],
+    });
     attempts.push({
       question: plannedQuestion,
       sourceCount: ranked.length,
+      confidence,
       modes: Array.from(new Set(ranked.flatMap(source => source.retrieval_modes || source.retrievalModes || []))),
     });
-    finalRetrieval = {
-      ranked,
-      embeddingConfig: retrieval.embeddingConfig || finalRetrieval.embeddingConfig || {},
-    };
-    if (ranked.length) break;
+    if (!bestConfidence || confidence.score >= bestConfidence.score || (!finalRetrieval.ranked.length && ranked.length)) {
+      bestConfidence = confidence;
+      finalRetrieval = {
+        ranked,
+        embeddingConfig: retrieval.embeddingConfig || finalRetrieval.embeddingConfig || {},
+      };
+    }
+    if (ranked.length && !confidence.shouldCorrect) break;
   }
 
   return {
     ...finalRetrieval,
     attempts,
+    confidence: bestConfidence,
   };
 }
 
@@ -124,6 +136,11 @@ export async function prepareAssistantAgentTurn({
     plan,
   });
   const ranked = retrieval.ranked || [];
+  const retrievalConfidence = retrieval.confidence || assessRetrievalConfidence({
+    question,
+    sources: ranked,
+    attempts: retrieval.attempts,
+  });
   recordAssistantRunStep(db, {
     runId: run.id,
     stepType: 'retrieval',
@@ -132,6 +149,7 @@ export async function prepareAssistantAgentTurn({
       sourceCount: ranked.length,
       queryCount: retrieval.attempts.length,
       attempts: retrieval.attempts,
+      confidence: retrievalConfidence,
       embeddingEnabled: Boolean(retrieval.embeddingConfig?.enabled),
       provider: retrieval.embeddingConfig?.provider,
       model: retrieval.embeddingConfig?.model,
@@ -139,7 +157,7 @@ export async function prepareAssistantAgentTurn({
   });
 
   const evidence = buildEvidenceNotebook(ranked);
-  const verification = verifyEvidence(evidence);
+  const verification = verifyEvidence(evidence, { retrievalConfidence });
   recordAssistantRunStep(db, {
     runId: run.id,
     stepType: 'evidence',
@@ -148,6 +166,7 @@ export async function prepareAssistantAgentTurn({
       status: evidence.status,
       evidenceCount: evidence.items.length,
       support: verification.support,
+      confidence: retrievalConfidence,
     },
   });
 
@@ -162,6 +181,7 @@ export async function prepareAssistantAgentTurn({
     plan,
     ranked,
     embeddingConfig: retrieval.embeddingConfig || {},
+    retrievalConfidence,
     memory,
     evidence,
     verification,

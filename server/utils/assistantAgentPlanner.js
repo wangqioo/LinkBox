@@ -14,6 +14,27 @@ function stripGroupPrefix(question) {
   return question.replace(/^群里\s*/u, '').trim();
 }
 
+function projectSubject(question) {
+  const normalized = cleanQuestion(question);
+  const match = normalized.match(/(LinkBox\s*Agent|LinkBox|Agent|智能助手|助手)/iu);
+  return match?.[1]?.replace(/\s+/g, ' ').trim() || '这个项目';
+}
+
+function shouldDecompose(question) {
+  return /还差|下一步|怎么做|规划|状态|进展|优化|完善/u.test(question)
+    && /(Agent|智能助手|助手|项目|LinkBox)/iu.test(question);
+}
+
+function subQuestionsFor(question) {
+  if (!shouldDecompose(question)) return [];
+  const subject = projectSubject(question);
+  return [
+    `${subject} 已经完成了哪些能力？`,
+    `${subject} 现在还缺哪些能力或决策？`,
+    `${subject} 下一步最应该做什么？`,
+  ];
+}
+
 function retrievalTools({ intent, scopeType, question }) {
   if (intent === 'insufficient_input') return [];
   const tools = [];
@@ -66,9 +87,11 @@ export function planAssistantTurn({
 
   const intent = TASK_INTENTS[task] || TASK_INTENTS.ask;
   const scopeType = groupId ? 'group' : 'personal';
+  const subQuestions = subQuestionsFor(normalizedQuestion);
   const rewriteQueries = [
     normalizedQuestion,
     stripGroupPrefix(normalizedQuestion),
+    ...subQuestions,
   ].filter((value, index, values) => value && values.indexOf(value) === index);
 
   return {
@@ -78,6 +101,7 @@ export function planAssistantTurn({
     scope: scope || {},
     tools: retrievalTools({ intent, scopeType, question: normalizedQuestion }),
     rewriteQueries,
+    subQuestions,
   };
 }
 
