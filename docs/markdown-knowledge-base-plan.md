@@ -277,7 +277,8 @@ Tasks:
 - [x] define a rerank contract that accepts candidates and returns ordered candidate
   IDs with scores
 - [x] implement a local heuristic reranker first
-- [ ] optionally add an OpenAI-compatible LLM reranker later
+- [x] document the decision to defer an OpenAI-compatible LLM reranker until
+  retrieval quality tests show clear gains over the local heuristic
 - [x] keep reranking optional and bounded by a small candidate limit
 - [x] add tests proving rerank changes candidate order without removing citations
 
