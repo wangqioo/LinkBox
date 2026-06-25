@@ -8,6 +8,9 @@
 
 **Tech Stack:** Express, better-sqlite3, React, TypeScript, Vite, Node test runner.
 
+**Status 2026-06-25:** Completed. Embedding configuration, provider-consistent
+indexing and retrieval, admin UI, and verification coverage are present.
+
 ---
 
 ### Task 1: Embedding Config API
@@ -17,11 +20,11 @@
 - Modify: `server/routes/settings.js`
 - Test: `server/test/embeddingConfig.test.mjs`
 
-- [ ] Add tests for default local embedding config, secret sanitization, updates, and reserved generic settings.
-- [ ] Implement `getEmbeddingConfig({ includeSecret })`, `updateEmbeddingConfig(input)`, and `testEmbeddingConfig(input)`.
-- [ ] Store settings under `embedding:enabled`, `embedding:provider`, `embedding:base_url`, `embedding:model`, `embedding:api_key`.
-- [ ] Add admin routes `GET /api/settings/embeddings`, `PUT /api/settings/embeddings`, `POST /api/settings/embeddings/test`.
-- [ ] Update generic settings reservation so `embedding:*` cannot be written through `PUT /api/settings`.
+- [x] Add tests for default local embedding config, secret sanitization, updates, and reserved generic settings.
+- [x] Implement `getEmbeddingConfig({ includeSecret })`, `updateEmbeddingConfig(input)`, and `testEmbeddingConfig(input)`.
+- [x] Store settings under `embedding:enabled`, `embedding:provider`, `embedding:base_url`, `embedding:model`, `embedding:api_key`.
+- [x] Add admin routes `GET /api/settings/embeddings`, `PUT /api/settings/embeddings`, `POST /api/settings/embeddings/test`.
+- [x] Update generic settings reservation so `embedding:*` cannot be written through `PUT /api/settings`.
 
 ### Task 2: Provider-Consistent Indexing And Retrieval
 
@@ -34,12 +37,12 @@
 - Test: `server/test/documentMaintenance.test.mjs`
 - Test: `server/test/assistantRetrieval.test.mjs`
 
-- [ ] Add an async embedded search path that uses the same remote embedder/config to embed the query.
-- [ ] Keep sync `searchEmbeddedDocumentChunks` local-compatible.
-- [ ] Add `retrieveSourcesAsync` for remote embedding retrieval and keep existing `retrieveSources` for sync callers.
-- [ ] Make document maintenance stats and backfill provider/model-aware.
-- [ ] Make `document.embed` jobs use saved embedding config.
-- [ ] Add tests proving remote query vectors are used when provider is OpenAI-compatible.
+- [x] Add an async embedded search path that uses the same remote embedder/config to embed the query.
+- [x] Keep sync `searchEmbeddedDocumentChunks` local-compatible.
+- [x] Add `retrieveSourcesAsync` for remote embedding retrieval and keep existing `retrieveSources` for sync callers.
+- [x] Make document maintenance stats and backfill provider/model-aware.
+- [x] Make `document.embed` jobs use saved embedding config.
+- [x] Add tests proving remote query vectors are used when provider is OpenAI-compatible.
 
 ### Task 3: Frontend Embedding Settings
 
@@ -50,15 +53,15 @@
 - Modify: `client/src/pages/SettingsPage.tsx`
 - Modify: `client/src/pages/DocumentMaintenancePanel.tsx`
 
-- [ ] Add `EmbeddingConfig` API types and settings endpoints.
-- [ ] Add a separate panel for enabled/provider/base URL/model/API key/test connection.
-- [ ] Load/save embedding config independently from chat AI config.
-- [ ] Show configured provider/model in document maintenance.
-- [ ] Run client tests and build.
+- [x] Add `EmbeddingConfig` API types and settings endpoints.
+- [x] Add a separate panel for enabled/provider/base URL/model/API key/test connection.
+- [x] Load/save embedding config independently from chat AI config.
+- [x] Show configured provider/model in document maintenance.
+- [x] Run client tests and build.
 
 ### Task 4: Verification
 
-- [ ] Run `cd server && npm test`.
-- [ ] Run `cd client && npm test`.
-- [ ] Run `cd client && npm run build`.
-- [ ] Run `git diff --check`.
+- [x] Run `cd server && npm test`.
+- [x] Run `cd client && npm test`.
+- [x] Run `cd client && npm run build`.
+- [x] Run `git diff --check`.

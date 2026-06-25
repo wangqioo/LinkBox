@@ -1,12 +1,16 @@
 # Architecture Follow-Ups Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Deepen LinkBox's assistant retrieval, item presentation, and extraction post-processing modules without changing the product shape.
 
 **Architecture:** Add one focused module per slice, then wire existing callers through the new module. Keep existing lower-level helpers as adapters until the new module owns the caller-facing behavior.
 
 **Tech Stack:** Node.js ESM, Express route adapters, better-sqlite3, Node built-in test runner, React/Vite desktop app, Vite mobile app.
+
+**Status 2026-06-25:** Completed. Canonical assistant retrieval, shared item
+presentation, extracted content persistence, caller wiring, regression tests,
+and architecture/development documentation are present.
 
 ---
 
@@ -36,7 +40,7 @@
 - Modify: `server/utils/assistantTurn.js`
 - Reference: `server/utils/assistantRetrieval.js`, `server/test/assistantRetrieval.test.mjs`, `server/test/assistantTurn.test.mjs`
 
-- [ ] **Step 1: Write the failing canonical preference test**
+- [x] **Step 1: Write the failing canonical preference test**
 
 Add `server/test/assistantSourceRetrieval.test.mjs` with a test database containing one canonical document chunk and one legacy chunk for the same query.
 
@@ -67,13 +71,13 @@ test('retrieveAssistantSources prefers canonical document chunks over legacy chu
 }));
 ```
 
-- [ ] **Step 2: Run the new test to verify RED**
+- [x] **Step 2: Run the new test to verify RED**
 
 Run: `node --test server/test/assistantSourceRetrieval.test.mjs`
 
 Expected: FAIL because `server/utils/assistantSourceRetrieval.js` does not exist or does not export `retrieveAssistantSources`.
 
-- [ ] **Step 3: Implement the minimal retrieval module**
+- [x] **Step 3: Implement the minimal retrieval module**
 
 Create `server/utils/assistantSourceRetrieval.js`:
 
@@ -101,13 +105,13 @@ export function retrieveAssistantSources(db, options = {}) {
 }
 ```
 
-- [ ] **Step 4: Run targeted retrieval tests**
+- [x] **Step 4: Run targeted retrieval tests**
 
 Run: `node --test server/test/assistantSourceRetrieval.test.mjs server/test/assistantRetrieval.test.mjs`
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Add fallback and source-shape tests**
+- [x] **Step 5: Add fallback and source-shape tests**
 
 Add tests in `server/test/assistantSourceRetrieval.test.mjs`:
 
@@ -152,7 +156,7 @@ test('retrieveAssistantSources preserves stable source metadata', () => withDb((
 }));
 ```
 
-- [ ] **Step 6: Implement metadata normalization**
+- [x] **Step 6: Implement metadata normalization**
 
 Update `server/utils/assistantSourceRetrieval.js` so every returned source has:
 
@@ -166,17 +170,17 @@ Update `server/utils/assistantSourceRetrieval.js` so every returned source has:
 }
 ```
 
-- [ ] **Step 7: Wire assistant turn to the new retrieval interface**
+- [x] **Step 7: Wire assistant turn to the new retrieval interface**
 
 Modify `server/utils/assistantTurn.js` to import `retrieveAssistantSources` and call it from the place that currently calls `retrieveSources` or equivalent source retrieval logic.
 
-- [ ] **Step 8: Run assistant tests**
+- [x] **Step 8: Run assistant tests**
 
 Run: `node --test server/test/assistantSourceRetrieval.test.mjs server/test/assistantRetrieval.test.mjs server/test/assistantTurn.test.mjs`
 
 Expected: all tests PASS.
 
-- [ ] **Step 9: Commit canonical retrieval slice**
+- [x] **Step 9: Commit canonical retrieval slice**
 
 ```bash
 git add server/utils/assistantSourceRetrieval.js server/test/assistantSourceRetrieval.test.mjs server/utils/assistantTurn.js
@@ -194,7 +198,7 @@ git commit -m "Deepen assistant source retrieval"
 - Modify: `server/utils/mobileFilePresenter.js`
 - Reference: `server/test/itemRepository.test.mjs`, `server/test/mobileFilePresenter.test.mjs`
 
-- [ ] **Step 1: Write failing presentation tests**
+- [x] **Step 1: Write failing presentation tests**
 
 Create `server/test/itemPresentation.test.mjs`:
 
@@ -237,13 +241,13 @@ test('presentItem prefers durable processing state over legacy status', () => {
 });
 ```
 
-- [ ] **Step 2: Run presentation test to verify RED**
+- [x] **Step 2: Run presentation test to verify RED**
 
 Run: `node --test server/test/itemPresentation.test.mjs`
 
 Expected: FAIL because `itemPresentation.js` is missing.
 
-- [ ] **Step 3: Implement `presentItem`**
+- [x] **Step 3: Implement `presentItem`**
 
 Create `server/utils/itemPresentation.js`:
 
@@ -300,13 +304,13 @@ export function presentItem(item = {}) {
 }
 ```
 
-- [ ] **Step 4: Run presentation tests**
+- [x] **Step 4: Run presentation tests**
 
 Run: `node --test server/test/itemPresentation.test.mjs`
 
 Expected: PASS.
 
-- [ ] **Step 5: Wire repository responses**
+- [x] **Step 5: Wire repository responses**
 
 Modify `server/utils/itemRepository.js`:
 
@@ -327,13 +331,13 @@ For single item helpers:
 return presentItem(attachProcessingStatus(db, { ...link, tags: attachTags(db, link.id) }));
 ```
 
-- [ ] **Step 6: Wire mobile presenter to shared display**
+- [x] **Step 6: Wire mobile presenter to shared display**
 
 Modify `server/utils/mobileFilePresenter.js` to call `presentItem(link)` at the start of `toMobileFile`.
 
 Use `item.display.type`, `item.display.status`, `item.display.canRetry`, and `item.display.primaryAssetUrl` for derived mobile fields while preserving existing mobile response keys.
 
-- [ ] **Step 7: Add mobile compatibility test**
+- [x] **Step 7: Add mobile compatibility test**
 
 Extend `server/test/mobileFilePresenter.test.mjs`:
 
@@ -355,13 +359,13 @@ test('toMobileFile sources type and retry state from shared presentation', () =>
 });
 ```
 
-- [ ] **Step 8: Run item presentation tests**
+- [x] **Step 8: Run item presentation tests**
 
 Run: `node --test server/test/itemPresentation.test.mjs server/test/itemRepository.test.mjs server/test/mobileFilePresenter.test.mjs`
 
 Expected: all tests PASS.
 
-- [ ] **Step 9: Run desktop and mobile builds**
+- [x] **Step 9: Run desktop and mobile builds**
 
 Run:
 
@@ -372,7 +376,7 @@ cd ../mobile && npm run build
 
 Expected: both builds PASS. The existing Vite CJS warning in mobile is acceptable.
 
-- [ ] **Step 10: Commit item presentation slice**
+- [x] **Step 10: Commit item presentation slice**
 
 ```bash
 git add server/utils/itemPresentation.js server/test/itemPresentation.test.mjs server/utils/itemRepository.js server/utils/mobileFilePresenter.js server/test/mobileFilePresenter.test.mjs
@@ -390,7 +394,7 @@ git commit -m "Unify item presentation"
 - Modify: `server/utils/linkAiActions.js`
 - Reference: `server/test/enrichmentJobs.test.mjs`, `server/test/linkAiActions.test.mjs`
 
-- [ ] **Step 1: Write failing persistence tests**
+- [x] **Step 1: Write failing persistence tests**
 
 Create `server/test/extractedContentPersistence.test.mjs`:
 
@@ -419,13 +423,13 @@ test('persistExtractedContent stores markdown and schedules summary work', () =>
 }));
 ```
 
-- [ ] **Step 2: Run persistence test to verify RED**
+- [x] **Step 2: Run persistence test to verify RED**
 
 Run: `node --test server/test/extractedContentPersistence.test.mjs`
 
 Expected: FAIL because `extractedContentPersistence.js` is missing.
 
-- [ ] **Step 3: Implement `persistExtractedContent`**
+- [x] **Step 3: Implement `persistExtractedContent`**
 
 Create `server/utils/extractedContentPersistence.js`:
 
@@ -472,7 +476,7 @@ export function persistExtractedContent(db, queue, {
 }
 ```
 
-- [ ] **Step 4: Add HTML, thumbnail, and empty extraction tests**
+- [x] **Step 4: Add HTML, thumbnail, and empty extraction tests**
 
 Add tests:
 
@@ -508,13 +512,13 @@ test('persistExtractedContent marks empty extraction done without summary job', 
 }));
 ```
 
-- [ ] **Step 5: Run persistence tests**
+- [x] **Step 5: Run persistence tests**
 
 Run: `node --test server/test/extractedContentPersistence.test.mjs`
 
 Expected: PASS.
 
-- [ ] **Step 6: Wire background extraction jobs**
+- [x] **Step 6: Wire background extraction jobs**
 
 Modify `server/utils/enrichmentJobs.js`:
 
@@ -531,19 +535,19 @@ persistExtractedContent(database, queue, {
 
 - In `file.extractMarkdown`, pass `rawHtml`, `thumbnail`, and `summaryJobType: 'file.summarize'`.
 
-- [ ] **Step 7: Wire manual link extraction**
+- [x] **Step 7: Wire manual link extraction**
 
 Modify `server/utils/linkAiActions.js` so `extractLinkContent` calls `persistExtractedContent` after `extractPageMarkdown`.
 
 Pass `summarize: false` if the manual endpoint should preserve current behavior and avoid automatic summary scheduling; pass `summarize: true` only if existing tests already expect summary work.
 
-- [ ] **Step 8: Run extraction-related tests**
+- [x] **Step 8: Run extraction-related tests**
 
 Run: `node --test server/test/extractedContentPersistence.test.mjs server/test/enrichmentJobs.test.mjs server/test/linkAiActions.test.mjs`
 
 Expected: all tests PASS.
 
-- [ ] **Step 9: Commit extraction persistence slice**
+- [x] **Step 9: Commit extraction persistence slice**
 
 ```bash
 git add server/utils/extractedContentPersistence.js server/test/extractedContentPersistence.test.mjs server/utils/enrichmentJobs.js server/utils/linkAiActions.js
@@ -558,7 +562,7 @@ git commit -m "Unify extracted content persistence"
 - Modify: `docs/development.md`
 - Modify: `docs/architecture-redesign.md`
 
-- [ ] **Step 1: Update docs**
+- [x] **Step 1: Update docs**
 
 In `docs/development.md`, add completed notes for:
 
@@ -568,7 +572,7 @@ In `docs/development.md`, add completed notes for:
 
 In `docs/architecture-redesign.md`, move canonical retrieval, presentation, and extraction persistence from forward plan into current completed work.
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
 Run:
 
@@ -590,14 +594,14 @@ Expected:
 - Mobile utility tests PASS, with the existing `MODULE_TYPELESS_PACKAGE_JSON` warning accepted.
 - `git diff --check` PASS.
 
-- [ ] **Step 3: Commit docs**
+- [x] **Step 3: Commit docs**
 
 ```bash
 git add docs/development.md docs/architecture-redesign.md
 git commit -m "Update architecture followup progress"
 ```
 
-- [ ] **Step 4: Report status**
+- [x] **Step 4: Report status**
 
 Run:
 

@@ -8,6 +8,9 @@
 
 **Tech Stack:** Express, better-sqlite3, React, TypeScript, Vite, Node test runner.
 
+**Status 2026-06-25:** Completed. Backend diagnostics, the authenticated
+endpoint, API types, settings-page UI, and verification coverage are present.
+
 ---
 
 ### Task 1: Backend Diagnostics Contract
@@ -17,11 +20,11 @@
 - Modify: `server/routes/assistant.js`
 - Test: `server/test/assistantSourceRetrieval.test.mjs`
 
-- [ ] Add tests for a diagnostics builder that preserves `sourceKind`, `source_index`, `score`, `combined_score`, `embedding_score`, `retrieval_modes`, `rerank_mode`, `rerank_score`, `document_id`, `chunk_id`, `heading_path`, and `chunk_type`.
-- [ ] Add `buildRetrievalDiagnostics({ question, task, scope, sources, settings })`.
-- [ ] Add `POST /api/assistant/retrieval-diagnostics` behind existing auth.
-- [ ] Make the endpoint use saved embedding config and `retrieveAssistantSourcesAsync`.
-- [ ] Return `{ query, task, scope, settings, sources }` and no LLM answer.
+- [x] Add tests for a diagnostics builder that preserves `sourceKind`, `source_index`, `score`, `combined_score`, `embedding_score`, `retrieval_modes`, `rerank_mode`, `rerank_score`, `document_id`, `chunk_id`, `heading_path`, and `chunk_type`.
+- [x] Add `buildRetrievalDiagnostics({ question, task, scope, sources, settings })`.
+- [x] Add `POST /api/assistant/retrieval-diagnostics` behind existing auth.
+- [x] Make the endpoint use saved embedding config and `retrieveAssistantSourcesAsync`.
+- [x] Return `{ query, task, scope, settings, sources }` and no LLM answer.
 
 ### Task 2: Frontend Diagnostics Panel
 
@@ -30,15 +33,15 @@
 - Create: `client/src/pages/RetrievalDiagnosticsPanel.tsx`
 - Modify: `client/src/pages/SettingsPage.tsx`
 
-- [ ] Add TypeScript types for retrieval diagnostics.
-- [ ] Add `api.getRetrievalDiagnostics({ question, task, scope })`.
-- [ ] Create a compact settings-page panel with a query input, task selector, run button, and source/chunk rows.
-- [ ] Show retrieval mode, source kind, score, heading path, and chunk snippet.
-- [ ] Keep UI read-only and admin settings-only for this slice.
+- [x] Add TypeScript types for retrieval diagnostics.
+- [x] Add `api.getRetrievalDiagnostics({ question, task, scope })`.
+- [x] Create a compact settings-page panel with a query input, task selector, run button, and source/chunk rows.
+- [x] Show retrieval mode, source kind, score, heading path, and chunk snippet.
+- [x] Keep UI read-only and admin settings-only for this slice.
 
 ### Task 3: Verification
 
-- [ ] Run `cd server && npm test`.
-- [ ] Run `cd client && npm test`.
-- [ ] Run `cd client && npm run build`.
-- [ ] Run `git diff --check`.
+- [x] Run `cd server && npm test`.
+- [x] Run `cd client && npm test`.
+- [x] Run `cd client && npm run build`.
+- [x] Run `git diff --check`.

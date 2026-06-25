@@ -1,12 +1,16 @@
 # Durable Jobs Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a SQLite-backed durable background job system and move LinkBox enrichment work onto it.
 
 **Architecture:** Add a `jobs` table and a small queue module that leases, retries, and records background work. Keep routes focused on HTTP/database acceptance, and move link/image/file enrichment into job handlers registered at server startup.
 
 **Tech Stack:** Node.js ESM, Express, better-sqlite3, node:test, React/Vite docs verification.
+
+**Status 2026-06-25:** Completed. The durable SQLite job queue, runtime queue
+adapter, enrichment job handlers, queue stats/admin retry controls, chunk
+index tests, and deployment/runtime documentation are present.
 
 ---
 
@@ -32,13 +36,13 @@
 - Modify: `server/db.js`
 - Create: `server/test/jobQueue.test.mjs`
 
-- [ ] Add a `test` script to `server/package.json`:
+- [x] Add a `test` script to `server/package.json`:
 
 ```json
 "test": "node --test"
 ```
 
-- [ ] Add the `jobs` table to `server/db.js`:
+- [x] Add the `jobs` table to `server/db.js`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS jobs (
@@ -62,7 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run ON jobs(status, next_run_at)
 CREATE INDEX IF NOT EXISTS idx_jobs_link ON jobs(link_id);
 ```
 
-- [ ] Write `server/test/jobQueue.test.mjs` with a failing import:
+- [x] Write `server/test/jobQueue.test.mjs` with a failing import:
 
 ```js
 import test from 'node:test';
@@ -111,7 +115,7 @@ test('recoverRunningJobs returns stale running jobs to queued', () => withDb((db
 }));
 ```
 
-- [ ] Run `cd server && npm test -- test/jobQueue.test.mjs`.
+- [x] Run `cd server && npm test -- test/jobQueue.test.mjs`.
 
 Expected: fails because `server/utils/jobQueue.js` does not exist.
 
@@ -121,7 +125,7 @@ Expected: fails because `server/utils/jobQueue.js` does not exist.
 - Create: `server/utils/jobQueue.js`
 - Test: `server/test/jobQueue.test.mjs`
 
-- [ ] Implement `server/utils/jobQueue.js`:
+- [x] Implement `server/utils/jobQueue.js`:
 
 ```js
 export function initJobSchema(db) {
@@ -306,7 +310,7 @@ export function createJobQueue({ db, handlers = {}, concurrency = Number(process
 }
 ```
 
-- [ ] Run `cd server && npm test -- test/jobQueue.test.mjs`.
+- [x] Run `cd server && npm test -- test/jobQueue.test.mjs`.
 
 Expected: both tests pass.
 
@@ -318,7 +322,7 @@ Expected: both tests pass.
 - Modify: `server/index.js`
 - Test: `server/test/jobQueue.test.mjs`
 
-- [ ] Create `server/utils/enrichmentJobs.js` with handlers that use existing utilities:
+- [x] Create `server/utils/enrichmentJobs.js` with handlers that use existing utilities:
 
 ```js
 import { join } from 'path';
@@ -422,7 +426,7 @@ export function registerEnrichmentJobs(queue, { uploadsDir }) {
 }
 ```
 
-- [ ] Modify `server/index.js` to create and start the queue:
+- [x] Modify `server/index.js` to create and start the queue:
 
 ```js
 import { createJobQueue } from './utils/jobQueue.js';
@@ -437,9 +441,9 @@ registerEnrichmentJobs(jobQueue, { uploadsDir });
 jobQueue.start();
 ```
 
-- [ ] Modify `server/routes/links.js` to import `jobQueue` from `../index.js`, remove `backgroundQueue`, and enqueue durable jobs where background tasks currently run.
+- [x] Modify `server/routes/links.js` to import `jobQueue` from `../index.js`, remove `backgroundQueue`, and enqueue durable jobs where background tasks currently run.
 
-- [ ] Run `cd server && npm test -- test/jobQueue.test.mjs`.
+- [x] Run `cd server && npm test -- test/jobQueue.test.mjs`.
 
 Expected: queue tests still pass.
 
@@ -450,7 +454,7 @@ Expected: queue tests still pass.
 - Modify: `server/index.js`
 - Modify: `server/routes/links.js`
 
-- [ ] Create `server/utils/runtimeQueue.js`:
+- [x] Create `server/utils/runtimeQueue.js`:
 
 ```js
 let queue = null;
@@ -465,11 +469,11 @@ export function getRuntimeQueue() {
 }
 ```
 
-- [ ] Change `server/index.js` to import `setRuntimeQueue` and call it after queue creation.
+- [x] Change `server/index.js` to import `setRuntimeQueue` and call it after queue creation.
 
-- [ ] Change `server/routes/links.js` to call `getRuntimeQueue()` inside handlers instead of importing from `index.js`.
+- [x] Change `server/routes/links.js` to call `getRuntimeQueue()` inside handlers instead of importing from `index.js`.
 
-- [ ] Run `cd server && npm test -- test/jobQueue.test.mjs`.
+- [x] Run `cd server && npm test -- test/jobQueue.test.mjs`.
 
 Expected: queue tests pass and no circular import warning appears.
 
@@ -479,7 +483,7 @@ Expected: queue tests pass and no circular import warning appears.
 - Modify: `server/routes/links.js`
 - Modify: `server/routes/settings.js`
 
-- [ ] Replace link creation background work with:
+- [x] Replace link creation background work with:
 
 ```js
 getRuntimeQueue().enqueue('link.fetchMetadata', {
@@ -488,7 +492,7 @@ getRuntimeQueue().enqueue('link.fetchMetadata', {
 });
 ```
 
-- [ ] Replace image description background work with:
+- [x] Replace image description background work with:
 
 ```js
 getRuntimeQueue().enqueue('image.describe', {
@@ -497,7 +501,7 @@ getRuntimeQueue().enqueue('image.describe', {
 });
 ```
 
-- [ ] Replace file extraction background work with:
+- [x] Replace file extraction background work with:
 
 ```js
 getRuntimeQueue().enqueue('file.extractMarkdown', {
@@ -506,11 +510,11 @@ getRuntimeQueue().enqueue('file.extractMarkdown', {
 });
 ```
 
-- [ ] Replace batch import metadata background work with durable `link.fetchMetadata` jobs.
+- [x] Replace batch import metadata background work with durable `link.fetchMetadata` jobs.
 
-- [ ] Replace settings system queue stats to read from `getRuntimeQueue().stats()`.
+- [x] Replace settings system queue stats to read from `getRuntimeQueue().stats()`.
 
-- [ ] Run `cd server && npm test`.
+- [x] Run `cd server && npm test`.
 
 Expected: all backend tests pass.
 
@@ -520,7 +524,7 @@ Expected: all backend tests pass.
 - Create: `server/test/chunkIndex.test.mjs`
 - Modify: `server/package.json` if needed
 
-- [ ] Write tests for chunk splitting:
+- [x] Write tests for chunk splitting:
 
 ```js
 import test from 'node:test';
@@ -546,7 +550,7 @@ test('tokenizeQuery extracts latin and Chinese tokens', () => {
 });
 ```
 
-- [ ] Run `cd server && npm test -- test/chunkIndex.test.mjs`.
+- [x] Run `cd server && npm test -- test/chunkIndex.test.mjs`.
 
 Expected: tests pass or reveal current tokenizer behavior that must be preserved or improved deliberately.
 
@@ -556,13 +560,13 @@ Expected: tests pass or reveal current tokenizer behavior that must be preserved
 - Modify: `README.md`
 - Modify: `docs/taishanpi-deploy.md`
 
-- [ ] Update README quick start to use port 3100.
+- [x] Update README quick start to use port 3100.
 
-- [ ] Add a short note that enrichment jobs are durable and resume after restart.
+- [x] Add a short note that enrichment jobs are durable and resume after restart.
 
-- [ ] Update TaishanPi docs to mention the durable queue and admin system queue status.
+- [x] Update TaishanPi docs to mention the durable queue and admin system queue status.
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 cd server && npm test
@@ -572,7 +576,7 @@ cd ../server && node --check index.js
 
 Expected: backend tests pass, frontend build passes, server syntax check passes.
 
-- [ ] Commit all changes:
+- [x] Commit all changes:
 
 ```bash
 git add .
