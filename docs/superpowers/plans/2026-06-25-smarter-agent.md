@@ -4,13 +4,20 @@
 
 **Goal:** Make LinkBox Assistant feel smarter by adding retrieval confidence, corrective retrieval, and visible sub-question reasoning while preserving the current chat API.
 
-**Architecture:** Keep the existing planner, retrieval, evidence, verification, memory, and diagnostics layers. Add a focused confidence module, then let the agent use low-confidence retrieval as a trigger for corrective queries. Add sub-question planning as metadata first so it improves retrieval diagnostics without forcing a large prompt rewrite.
+**Architecture:** Keep the existing planner, retrieval, evidence, verification, memory, and diagnostics layers. Add a focused confidence module, then let the agent use low-confidence retrieval as a trigger for corrective queries. Broad project/status questions use sub-question planning for bounded multi-pass retrieval, diagnostics, and answer-generation guidance.
 
 **Tech Stack:** Node.js ESM, Express, better-sqlite3, existing Assistant modules, Node test runner, React/Vue diagnostics surfaces as needed.
 
 **Status 2026-06-25:** Completed for the first smarter-agent slice. The agent
 now scores retrieval confidence, continues after low-confidence retrieval,
 records confidence diagnostics, and exposes sub-question planning metadata.
+
+**Status 2026-06-26:** Completed the answer-grounding slice. Broad questions now
+gather evidence across bounded sub-question retrieval instead of stopping at the
+first good-looking hit. Chat and streaming prompts receive plan, retrieval
+confidence, and verification guidance, so low-confidence evidence constrains the
+final answer. Answer verification also preserves retrieval confidence issues
+after citation checks.
 
 ---
 
@@ -62,3 +69,23 @@ records confidence diagnostics, and exposes sub-question planning metadata.
 - [x] Add fixture proving corrective retrieval can recover a missed answer.
 - [x] Add fixture proving broad project questions expose sub-question diagnostics.
 - [x] Update docs with the smarter agent behavior and validation commands.
+
+### Task 5: Answer Grounding From Agent State
+
+**Files:**
+- Modify: `server/utils/assistantAgent.js`
+- Modify: `server/utils/assistantTurn.js`
+- Modify: `server/utils/assistantVerifier.js`
+- Modify: `server/routes/assistant.js`
+- Test: `server/test/assistantAgent.test.mjs`
+- Test: `server/test/assistantTurn.test.mjs`
+- Test: `server/test/assistantQuality.test.mjs`
+
+- [x] Gather broad-question evidence across bounded sub-question retrieval and
+      dedupe merged sources.
+- [x] Inject sub-question plan, retrieval confidence, and evidence verification
+      into chat and streaming prompts.
+- [x] Preserve low/insufficient retrieval confidence during final answer
+      citation verification.
+- [x] Add focused and quality fixtures for prompt grounding, confidence-aware
+      answer verification, and multi-sub-question evidence gathering.

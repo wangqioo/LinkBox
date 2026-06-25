@@ -32,8 +32,9 @@ export function verifyAssistantAnswer({
   answer = '',
   evidence = {},
   sourceCount,
+  retrievalConfidence = null,
 } = {}) {
-  const base = verifyEvidence(evidence);
+  const base = verifyEvidence(evidence, { retrievalConfidence });
   if (base.support === 'insufficient') {
     return {
       ...base,

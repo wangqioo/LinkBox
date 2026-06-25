@@ -202,6 +202,52 @@ export function normalizeTask(task) {
   return TASKS[task] ? task : 'ask';
 }
 
+function formatList(values, limit = 6) {
+  return (Array.isArray(values) ? values : [])
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function buildAgentGuidance({
+  plan = null,
+  retrievalConfidence = null,
+  verification = null,
+} = {}) {
+  const lines = [];
+  const confidenceLevel = retrievalConfidence?.level;
+  if (confidenceLevel) {
+    const score = Number.isFinite(Number(retrievalConfidence.score))
+      ? ` (${Math.round(Number(retrievalConfidence.score))})`
+      : '';
+    lines.push(`检索置信度：${confidenceLevel}${score}`);
+    const reasons = formatList(retrievalConfidence.reasons);
+    if (reasons.length) lines.push(`检索置信度原因：${reasons.join('、')}`);
+  }
+
+  if (verification?.support) {
+    lines.push(`证据支持：${verification.support}`);
+    const issues = formatList(verification.issues);
+    if (issues.length) lines.push(`证据问题：${issues.join('、')}`);
+  }
+
+  const subQuestions = formatList(plan?.subQuestions, 8);
+  if (subQuestions.length) {
+    lines.push('子问题拆解：');
+    subQuestions.forEach((question, index) => {
+      lines.push(`${index + 1}. ${question}`);
+    });
+  }
+
+  const needsCaution = ['low', 'insufficient'].includes(confidenceLevel)
+    || ['partial', 'insufficient'].includes(verification?.support);
+  if (needsCaution) {
+    lines.push('回答策略：资料不足时必须明确说明不足；区分资料已支持的结论、合理推断和仍需补充确认的内容；不要把低置信度检索包装成确定结论。');
+  }
+
+  return lines.length ? `\n\n当前智能体诊断：\n${lines.join('\n')}` : '';
+}
+
 export function buildMessages(question, ranked, task = 'ask', options = {}) {
   const taskConfig = TASKS[normalizeTask(task)];
   const grouped = groupSources(ranked);
@@ -212,10 +258,15 @@ export function buildMessages(question, ranked, task = 'ask', options = {}) {
     .slice(0, 5)
     .map((memory, index) => `${index + 1}. ${memory.memory_type || 'note'}：${memory.content}`)
     .join('\n');
+  const agentGuidance = buildAgentGuidance({
+    plan: options.plan,
+    retrievalConfidence: options.retrievalConfidence,
+    verification: options.verification,
+  });
   return [
     {
       role: 'system',
-      content: `你是 LinkBox 私人资料助理。不要输出思考过程。只能基于用户提供的资料工作；资料不足时明确说明不足。回答要具体、可执行，使用 Markdown 组织结构。有序列表必须使用连续数字编号，例如 1. 2. 3.，不要每一条都写 1.。引用只能使用这些编号：${sourceIds || '无'}。引用格式必须是完整的 [资料1]，不要写 [资料1-3]、[资料21] 或缺少右括号。当前任务：${taskConfig.label}。任务要求：${taskConfig.instruction}${memoryText ? `\n\n低优先级用户偏好和长期上下文：\n${memoryText}` : ''}`,
+      content: `你是 LinkBox 私人资料助理。不要输出思考过程。只能基于用户提供的资料工作；资料不足时明确说明不足。回答要具体、可执行，使用 Markdown 组织结构。有序列表必须使用连续数字编号，例如 1. 2. 3.，不要每一条都写 1.。引用只能使用这些编号：${sourceIds || '无'}。引用格式必须是完整的 [资料1]，不要写 [资料1-3]、[资料21] 或缺少右括号。当前任务：${taskConfig.label}。任务要求：${taskConfig.instruction}${agentGuidance}${memoryText ? `\n\n低优先级用户偏好和长期上下文：\n${memoryText}` : ''}`,
     },
     {
       role: 'user',

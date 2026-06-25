@@ -114,6 +114,9 @@ At this checkpoint:
   `assistant_run_steps`, retries retrieval with planner rewrite queries, builds
   an evidence notebook, verifies answer citations after generation, and returns
   compatible `agent` metadata from chat, stream, and retrieval diagnostics.
+  Broad project/status questions gather bounded sub-question evidence before
+  generation, and chat/stream prompts receive the plan, retrieval confidence,
+  and verification state so low-confidence evidence constrains the answer text.
 - Assistant messages include `agent_json` so restored history can show run and
   verification summaries. Explicit user memory is stored in
   `assistant_memories` only when the user asks LinkBox to remember a preference
@@ -140,7 +143,7 @@ At this checkpoint:
   `server/test/assistantQuality.test.mjs`, covering canonical document hits,
   structured todo fallback, memory loading, no-evidence insufficient support,
   low-confidence partial support, corrective retrieval recovery, and broad
-  planning diagnostics without depending on real LLM text.
+  planning/sub-question evidence gathering without depending on real LLM text.
 - Assistant retrieval confidence is scored in
   `server/utils/assistantRetrievalConfidence.js` from source count, snippets,
   retrieval modes, source kind diversity, query coverage, and source scores.

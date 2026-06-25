@@ -236,7 +236,12 @@ router.post('/chat', async (req, res) => {
   }
 
   const answer = await callAIChat({
-    messages: buildMessages(question, ranked, task, { memoryItems: agentTurn.memory.items }),
+    messages: buildMessages(question, ranked, task, {
+      memoryItems: agentTurn.memory.items,
+      plan: agentTurn.plan,
+      retrievalConfidence: agentTurn.retrievalConfidence,
+      verification: agentTurn.verification,
+    }),
     maxTokens: ASSISTANT_MAX_TOKENS,
     timeoutMs: 90000,
   });
@@ -335,7 +340,12 @@ router.post('/chat/stream', async (req, res) => {
   try {
     let answer = '';
     await streamAIChat({
-      messages: buildMessages(question, ranked, task, { memoryItems: agentTurn.memory.items }),
+      messages: buildMessages(question, ranked, task, {
+        memoryItems: agentTurn.memory.items,
+        plan: agentTurn.plan,
+        retrievalConfidence: agentTurn.retrievalConfidence,
+        verification: agentTurn.verification,
+      }),
       maxTokens: ASSISTANT_MAX_TOKENS,
       enableThinking: false,
       timeoutMs: 90000,

@@ -350,3 +350,52 @@ test('assistant quality: broad agent planning questions expose sub-question diag
   assert.ok(turn.plan.rewriteQueries.includes('LinkBox Agent 下一步最应该做什么？'));
   assert.equal(turn.agent.run.plan.subQuestions.length, 3);
 }));
+
+test('assistant quality: broad agent questions gather evidence across sub-questions', () => withQualityDb(async (db) => {
+  const attempted = [];
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 1,
+    question: 'LinkBox Agent 现在还差什么，下一步怎么做',
+    task: 'ask',
+    retrieve: async ({ question }) => {
+      attempted.push(question);
+      const notes = {
+        'LinkBox Agent 已经完成了哪些能力？': {
+          id: 20,
+          title: 'Agent Done',
+          chunk_text: 'LinkBox Agent 已完成 planner、evidence notebook、retrieval confidence 和 citation verification。',
+        },
+        'LinkBox Agent 现在还缺哪些能力或决策？': {
+          id: 21,
+          title: 'Agent Gaps',
+          chunk_text: 'LinkBox Agent 还缺自动回答质量回归、长期记忆治理和真实失败样本沉淀。',
+        },
+        'LinkBox Agent 下一步最应该做什么？': {
+          id: 22,
+          title: 'Agent Next',
+          chunk_text: 'LinkBox Agent 下一步应该让子问题检索结果约束最终回答，并持续扩充质量 fixtures。',
+        },
+      };
+      const note = notes[question] || notes['LinkBox Agent 已经完成了哪些能力？'];
+      return {
+        ranked: [
+          {
+            ...note,
+            source_index: 1,
+            sourceKind: 'document',
+            retrieval_modes: ['keyword', 'structured'],
+            score: 0.8,
+          },
+        ],
+        embeddingConfig: { enabled: false },
+      };
+    },
+  });
+
+  assert.equal(attempted.length, 4);
+  assert.deepEqual(turn.ranked.map(source => source.id), [20, 21, 22]);
+  assert.equal(turn.evidence.items.length, 3);
+  assert.equal(turn.verification.support, 'supported');
+}));

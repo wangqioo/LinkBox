@@ -173,3 +173,38 @@ test('buildMessages includes assistant memories as low-priority context', () => 
   assert.match(messages[0].content, /先列风险/);
   assert.match(messages[0].content, /引用只能使用这些编号：\[资料1\]/);
 });
+
+test('buildMessages includes agent confidence and sub-question guidance', () => {
+  const messages = buildMessages('LinkBox Agent 还差什么？', [
+    {
+      id: 88,
+      type: 'file',
+      title: 'Agent Roadmap',
+      chunk_text: '当前 Agent 已经支持检索、证据和诊断，但还需要更谨慎地表达不确定性。',
+    },
+  ], 'ask', {
+    plan: {
+      subQuestions: [
+        '当前 Agent 已经完成了什么？',
+        '下一步还需要补齐什么？',
+      ],
+    },
+    retrievalConfidence: {
+      level: 'low',
+      score: 41,
+      reasons: ['single_source', 'low_query_coverage'],
+    },
+    verification: {
+      support: 'partial',
+      issues: ['low_retrieval_confidence'],
+    },
+  });
+
+  assert.match(messages[0].content, /检索置信度：low \(41\)/);
+  assert.match(messages[0].content, /single_source/);
+  assert.match(messages[0].content, /证据支持：partial/);
+  assert.match(messages[0].content, /资料不足时必须明确说明不足/);
+  assert.match(messages[0].content, /子问题拆解/);
+  assert.match(messages[0].content, /当前 Agent 已经完成了什么/);
+  assert.match(messages[0].content, /下一步还需要补齐什么/);
+});

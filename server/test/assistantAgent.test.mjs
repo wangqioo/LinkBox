@@ -226,6 +226,95 @@ test('prepareAssistantAgentTurn continues after weak retrieval and keeps stronge
   db.close();
 });
 
+test('prepareAssistantAgentTurn gathers bounded sub-question evidence for broad questions', async () => {
+  const db = setupDb();
+  const attemptedQuestions = [];
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 5,
+    question: 'LinkBox Agent 现在还差什么，下一步怎么做',
+    task: 'ask',
+    retrieve: async ({ question }) => {
+      attemptedQuestions.push(question);
+      if (question.includes('已经完成')) {
+        return {
+          ranked: [
+            {
+              id: 1,
+              title: 'Agent 已完成能力',
+              source_index: 1,
+              sourceKind: 'document',
+              retrieval_modes: ['keyword'],
+              score: 0.7,
+              chunk_text: 'LinkBox Agent 已经完成 planner、retrieval confidence 和 verification。',
+            },
+          ],
+          embeddingConfig: { enabled: false },
+        };
+      }
+      if (question.includes('还缺')) {
+        return {
+          ranked: [
+            {
+              id: 2,
+              title: 'Agent 待补能力',
+              source_index: 1,
+              sourceKind: 'document',
+              retrieval_modes: ['structured'],
+              score: 0.7,
+              chunk_text: 'LinkBox Agent 现在还缺答案质量评测和更细的长期记忆策略。',
+            },
+          ],
+          embeddingConfig: { enabled: false },
+        };
+      }
+      if (question.includes('下一步')) {
+        return {
+          ranked: [
+            {
+              id: 3,
+              title: 'Agent 下一步计划',
+              source_index: 1,
+              sourceKind: 'document',
+              retrieval_modes: ['keyword', 'structured'],
+              score: 0.8,
+              chunk_text: 'LinkBox Agent 下一步最应该做自动质量回归和回答策略收敛。',
+            },
+          ],
+          embeddingConfig: { enabled: false },
+        };
+      }
+      return {
+        ranked: [
+          {
+            id: 1,
+            title: 'Agent 已完成能力',
+            source_index: 1,
+            sourceKind: 'document',
+            retrieval_modes: ['keyword'],
+            score: 0.7,
+            chunk_text: 'LinkBox Agent 已经完成 planner、retrieval confidence 和 verification。',
+          },
+        ],
+        embeddingConfig: { enabled: false },
+      };
+    },
+  });
+
+  assert.deepEqual(attemptedQuestions, [
+    'LinkBox Agent 现在还差什么，下一步怎么做',
+    'LinkBox Agent 已经完成了哪些能力？',
+    'LinkBox Agent 现在还缺哪些能力或决策？',
+    'LinkBox Agent 下一步最应该做什么？',
+  ]);
+  assert.deepEqual(turn.ranked.map(source => source.id), [1, 2, 3]);
+  assert.equal(turn.agent.run.steps.find(step => step.step_type === 'retrieval').metadata.queryCount, 4);
+  assert.equal(turn.evidence.items.length, 3);
+
+  db.close();
+});
+
 test('completeAssistantAgentAnswer records citation verification on the run', async () => {
   const db = setupDb();
   const turn = await prepareAssistantAgentTurn({
@@ -265,6 +354,44 @@ test('completeAssistantAgentAnswer records citation verification on the run', as
     'evidence',
     'answer_verification',
   ]);
+  assert.equal(completed.agent.run.verification.support, 'partial');
+
+  db.close();
+});
+
+test('completeAssistantAgentAnswer preserves low retrieval confidence in answer verification', async () => {
+  const db = setupDb();
+  const turn = await prepareAssistantAgentTurn({
+    db,
+    userId: 1,
+    conversationId: 5,
+    question: '部署 风险 端口 缓存',
+    task: 'ask',
+    retrieve: async () => ({
+      ranked: [
+        {
+          id: 71,
+          title: '泛泛部署记录',
+          source_index: 1,
+          sourceKind: 'document',
+          retrieval_modes: ['recent'],
+          score: 0.05,
+          chunk_text: '这里有一些部署相关背景。',
+        },
+      ],
+      embeddingConfig: { enabled: false },
+    }),
+  });
+
+  const completed = completeAssistantAgentAnswer({
+    db,
+    agentTurn: turn,
+    answer: '资料只提供了部署相关背景，不能确认端口和缓存风险细节。[资料1]',
+    sourceCount: 1,
+  });
+
+  assert.equal(completed.verification.support, 'partial');
+  assert.ok(completed.verification.issues.includes('low_retrieval_confidence'));
   assert.equal(completed.agent.run.verification.support, 'partial');
 
   db.close();

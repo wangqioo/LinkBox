@@ -1,6 +1,6 @@
 # LinkBox Roadmap And Status
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 This is the current planning index for LinkBox. Use it before starting new
 feature or architecture work so older plans are not mistaken for active tasks.
@@ -30,9 +30,10 @@ main 52fa19a Fix social message timestamps
 
 The latest local development after that baseline adds Smart Agent
 productization: historical structured-understanding backfill, Assistant memory
-management, mobile Agent diagnostics, quality fixtures, and an opt-in
-LLM-assisted understanding annotation boundary. See `docs/development.md` for
-exact verification commands and current working-tree notes.
+management, mobile Agent diagnostics, confidence-aware answer grounding,
+sub-question evidence gathering, quality fixtures, and an opt-in LLM-assisted
+understanding annotation boundary. See `docs/development.md` for exact
+verification commands and current working-tree notes.
 
 ## Done
 
@@ -50,8 +51,9 @@ exact verification commands and current working-tree notes.
   notebooks, citation verification, structured item understanding, explicit
   memory, and desktop diagnostics.
 - Smart Agent productization: historical structured-understanding backfill,
-  desktop memory review/deletion, mobile Agent status chips, fixed quality
-  fixtures, and isolated LLM-assisted document annotations.
+  desktop memory review/deletion, mobile Agent status chips, confidence-aware
+  answer grounding, sub-question evidence gathering, fixed quality fixtures,
+  and isolated LLM-assisted document annotations.
 - Personal and group Assistant conversation history.
 - Social collaboration: friends, direct chats, groups, group materials, scoped
   uploads, comments, and group Assistant isolation.
@@ -95,10 +97,11 @@ small slices rather than rewrites.
 
 6. **Smart Agent quality loop**
    The Smart Agent product surface now includes confidence-aware retrieval,
-   corrective retrieval attempts, and sub-question diagnostics. Future work
-   should still be driven by `server/test/assistantQuality.test.mjs` and real
-   failure cases: expand fixtures first, then tune retrieval, rerank, memory,
-   or LLM-assisted reasoning.
+   corrective retrieval attempts, sub-question evidence gathering, and
+   confidence-aware answer grounding. Future work should still be driven by
+   `server/test/assistantQuality.test.mjs` and real failure cases: expand
+   fixtures first, then tune retrieval, rerank, memory, or LLM-assisted
+   reasoning.
 
 ## Decisions Needed
 

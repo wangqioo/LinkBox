@@ -10,6 +10,31 @@ import { verifyAssistantAnswer, verifyEvidence } from './assistantVerifier.js';
 import { searchAssistantMemories } from './assistantMemory.js';
 import { assessRetrievalConfidence } from './assistantRetrievalConfidence.js';
 
+function sourceIdentity(source) {
+  const sourceKind = source?.sourceKind || source?.source_kind || source?.type || '';
+  if (sourceKind === 'group_message' || source?.type === 'group_message') {
+    return `group-message:${source.id}`;
+  }
+  if (source?.chunk_id) return `chunk:${source.chunk_id}`;
+  if (source?.document_id && source?.chunk_index !== undefined) {
+    return `document:${source.document_id}:${source.chunk_index}`;
+  }
+  if (source?.url) return `url:${String(source.url).replace(/#.*$/, '').replace(/\/$/, '').toLowerCase()}`;
+  return `id:${source?.id}`;
+}
+
+function mergeRankedSources(current = [], incoming = []) {
+  const merged = [];
+  const seen = new Set();
+  for (const source of [...current, ...incoming]) {
+    const key = sourceIdentity(source);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(source);
+  }
+  return merged;
+}
+
 function uniqueQueries(queries) {
   const seen = new Set();
   return queries
@@ -34,7 +59,9 @@ async function executeRetrievalPlan({ retrieve, question, task, scope, groupId, 
     question,
     ...(plan.rewriteQueries || []),
   ]);
+  const shouldGatherSubQuestions = Array.isArray(plan.subQuestions) && plan.subQuestions.length > 0;
   let finalRetrieval = { ranked: [], embeddingConfig: {} };
+  let overviewRanked = [];
   let bestConfidence = null;
   const attempts = [];
 
@@ -59,14 +86,39 @@ async function executeRetrievalPlan({ retrieve, question, task, scope, groupId, 
       confidence,
       modes: Array.from(new Set(ranked.flatMap(source => source.retrieval_modes || source.retrievalModes || []))),
     });
-    if (!bestConfidence || confidence.score >= bestConfidence.score || (!finalRetrieval.ranked.length && ranked.length)) {
+    if (shouldGatherSubQuestions) {
+      if (plannedQuestion === question) {
+        overviewRanked = mergeRankedSources(overviewRanked, ranked);
+      } else {
+        finalRetrieval = {
+          ranked: mergeRankedSources(finalRetrieval.ranked, ranked),
+          embeddingConfig: finalRetrieval.embeddingConfig || retrieval.embeddingConfig || {},
+        };
+      }
+    } else if (!bestConfidence || confidence.score >= bestConfidence.score || (!finalRetrieval.ranked.length && ranked.length)) {
       bestConfidence = confidence;
       finalRetrieval = {
         ranked,
         embeddingConfig: retrieval.embeddingConfig || finalRetrieval.embeddingConfig || {},
       };
     }
-    if (ranked.length && !confidence.shouldCorrect) break;
+    if (!shouldGatherSubQuestions && ranked.length && !confidence.shouldCorrect) break;
+  }
+
+  if (shouldGatherSubQuestions && finalRetrieval.ranked.length) {
+    finalRetrieval.ranked = mergeRankedSources(finalRetrieval.ranked, overviewRanked);
+    bestConfidence = assessRetrievalConfidence({
+      question,
+      sources: finalRetrieval.ranked,
+      attempts,
+    });
+  } else if (shouldGatherSubQuestions && overviewRanked.length) {
+    finalRetrieval.ranked = overviewRanked;
+    bestConfidence = assessRetrievalConfidence({
+      question,
+      sources: finalRetrieval.ranked,
+      attempts,
+    });
   }
 
   return {
@@ -204,6 +256,7 @@ export function completeAssistantAgentAnswer({
     answer,
     evidence: agentTurn.evidence,
     sourceCount,
+    retrievalConfidence: agentTurn.retrievalConfidence,
   });
   recordAssistantRunStep(db, {
     runId: agentTurn.agent.run.id,
