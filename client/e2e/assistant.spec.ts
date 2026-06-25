@@ -25,6 +25,26 @@ test('assistant answers from the user collection with visible citations', async 
   await expect(page.getByText('分数').first()).toBeVisible();
 });
 
+test('user can review and delete explicit assistant memories', async ({ page }) => {
+  await registerViaUi(page);
+
+  await page.getByRole('link', { name: /资料助理/ }).click();
+  await page.getByPlaceholder(/问一个|总结|报告|整理|待办/).fill('记住：E2E memory token 624 回答前先给结论。');
+  await page.getByRole('button', { name: /发送/ }).click();
+
+  await expect(page.getByRole('button', { name: /记忆 1/ })).toBeVisible();
+  await page.getByRole('button', { name: /记忆/ }).click();
+  const memoryPanel = page.getByRole('region', { name: '助手记忆' });
+  await expect(memoryPanel).toBeVisible();
+  await expect(memoryPanel.getByText(/E2E memory token 624/)).toBeVisible();
+
+  await memoryPanel.getByRole('button', { name: /删除助手记忆 E2E memory token 624/ }).click();
+  await expect(memoryPanel.getByText(/E2E memory token 624/)).toHaveCount(0);
+  await expect(page.getByText(/暂无记忆/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /记忆 1/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '记忆', exact: true })).toBeVisible();
+});
+
 test('admin can run retrieval diagnostics and inspect matching sources', async ({ page }) => {
   await loginAsAdminViaUi(page);
 

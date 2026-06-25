@@ -312,7 +312,7 @@ export default function AssistantPage() {
           </button>
         </div>
         {memoryOpen && (
-          <div className="border-b bg-gray-50/80 dark:bg-gray-900/40 px-3 py-3">
+          <div className="border-b bg-gray-50/80 dark:bg-gray-900/40 px-3 py-3" role="region" aria-label="助手记忆">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-sm font-semibold">助手记忆</div>
@@ -320,10 +320,11 @@ export default function AssistantPage() {
               </div>
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => loadMemories().catch(() => setMemories([]))}
+                  aria-label="刷新助手记忆"
                   className="btn-secondary px-2 py-1" disabled={loadingMemories}>
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingMemories ? 'animate-spin' : ''}`} />
                 </button>
-                <button type="button" onClick={() => setMemoryOpen(false)} className="btn-secondary px-2 py-1">
+                <button type="button" onClick={() => setMemoryOpen(false)} aria-label="关闭助手记忆" className="btn-secondary px-2 py-1">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -347,6 +348,7 @@ export default function AssistantPage() {
                       <div className="break-words text-sm text-gray-700 dark:text-gray-200">{memory.content}</div>
                     </div>
                     <button type="button" onClick={() => deleteMemory(memory.id)}
+                      aria-label={`删除助手记忆 ${memory.content}`}
                       className="btn-secondary px-2 py-1" disabled={deletingMemoryId === memory.id}>
                       {deletingMemoryId === memory.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                     </button>
