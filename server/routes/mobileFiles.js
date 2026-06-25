@@ -302,11 +302,11 @@ router.put('/batch/:batchId/comment', (req, res) => {
   const comment = String(req.body?.comment || '').slice(0, 2000);
   const rows = db.prepare(`
     SELECT id FROM links
-    WHERE user_id = ? AND type = 'image' AND batch_id = ?
+    WHERE user_id = ? AND COALESCE(scope, 'personal') = 'personal' AND type = 'image' AND batch_id = ?
     ORDER BY COALESCE(batch_index, 0) ASC, id ASC
   `).all(req.userId, batchId);
   if (!rows.length) return res.status(404).json({ error: 'Batch not found' });
-  const update = db.prepare('UPDATE links SET comment = ? WHERE id = ? AND user_id = ?');
+  const update = db.prepare("UPDATE links SET comment = ? WHERE id = ? AND user_id = ? AND COALESCE(scope, 'personal') = 'personal'");
   const tx = db.transaction(() => {
     for (const row of rows) update.run(comment, row.id, req.userId);
   });
@@ -314,7 +314,7 @@ router.put('/batch/:batchId/comment', (req, res) => {
   for (const row of rows) refreshItemAiIndexes(row.id);
   const updated = db.prepare(`
     SELECT * FROM links
-    WHERE user_id = ? AND type = 'image' AND batch_id = ?
+    WHERE user_id = ? AND COALESCE(scope, 'personal') = 'personal' AND type = 'image' AND batch_id = ?
     ORDER BY COALESCE(batch_index, 0) ASC, id ASC
   `).all(req.userId, batchId);
   res.json(rowsToMobileFiles(updated));

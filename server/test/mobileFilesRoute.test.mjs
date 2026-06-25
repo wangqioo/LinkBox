@@ -124,6 +124,31 @@ test('mobile comment updates refresh AI indexes for the item', async () => withM
   assert.match(document.markdown, /## 我的留言\n\n这张图后续要重点分析左上角按钮/);
 }));
 
+test('mobile batch comments update only personal images in the batch', async () => withMobileFilesApp(async ({ db, baseUrl, authHeaders }) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, comment, batch_id, batch_index, imported_at, scope)
+    VALUES
+      (60, 7, 'image', '个人图 1', '', 'batch-scope', 0, '2026-06-21T00:00:00.000Z', 'personal'),
+      (61, 7, 'image', '个人图 2', '', 'batch-scope', 1, '2026-06-21T00:00:01.000Z', 'personal'),
+      (62, 7, 'image', '群聊图', '群聊原留言', 'batch-scope', 2, '2026-06-21T00:00:02.000Z', 'chat')
+  `).run();
+
+  const response = await fetch(`${baseUrl}/api/mobile/files/batch/batch-scope/comment`, {
+    method: 'PUT',
+    headers: {
+      ...authHeaders,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ comment: '个人批次留言' }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.map(item => Number(item.id)), [60, 61]);
+  assert.deepEqual(body.map(item => item.comment), ['个人批次留言', '个人批次留言']);
+  assert.equal(db.prepare('SELECT comment FROM links WHERE id = 62').get().comment, '群聊原留言');
+}));
+
 test('mobile personal list hides chat scoped items', async () => withMobileFilesApp(async ({ db, baseUrl, authHeaders }) => {
   db.prepare(`
     INSERT INTO links (id, user_id, type, title, content, imported_at, scope)
