@@ -86,7 +86,9 @@ test('mobile image batch hides ai analysis body in the feed', async ({ page }) =
   const gallery = page.locator('.image-batch-card');
   await expect(gallery).toBeVisible();
   await expect(gallery.locator('.batch-status-dot.failed')).toBeVisible();
-  await expect(gallery.locator('.batch-delete')).toBeVisible();
+  await page.locator('.image-batch-row').getByRole('button', { name: '更多操作' }).click();
+  await expect(page.getByText('删除当前照片')).toBeVisible();
+  await page.locator('.modal-mask').click({ position: { x: 8, y: 8 } });
   await expect(gallery).not.toContainText('AI 分析失败');
   await expect(gallery).not.toContainText('ai-error-1.jpeg');
   await expect(gallery).not.toContainText('归入');

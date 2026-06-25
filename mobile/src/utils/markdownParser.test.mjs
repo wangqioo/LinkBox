@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseBlocks, renderBlocksToHtml } from './markdownParser.js'
+import {
+  parseBlocks,
+  renderAssistantMarkdown,
+  renderBlocksToHtml,
+} from './markdownParser.js'
 
 test('parseBlocks escapes unsafe raw HTML and normalizes citations', () => {
   const blocks = parseBlocks(`结论见[资料1 - 2]和[资料4
@@ -25,5 +29,27 @@ test('renderBlocksToHtml proxies markdown images and sanitizes html table blocks
   assert.equal(
     renderBlocksToHtml(blocks, { proxyImageUrl: src => `/proxy?url=${encodeURIComponent(src)}` }),
     '<p><img alt="封面" src="/proxy?url=https%3A%2F%2Fexample.com%2Fa.png" /></p><div class="table-scroll"><div data-linkbox-table=""><table><tbody><tr><td>A</td></tr></tbody></table></div></div>',
+  )
+})
+
+test('renderAssistantMarkdown renders chat headings lists inline marks and bounded citations', () => {
+  assert.equal(
+    renderAssistantMarkdown(`# 标题
+
+结论 **重点** \`code\` [资料1 - 2]
+
+- 第一项
+
+- 第二项
+
+3. 第三项`, [{ id: 1 }, { id: 2 }]),
+    '<h2>标题</h2><p>结论 <strong>重点</strong> <code>code</code> <mark>[资料1]</mark><mark>[资料2]</mark></p><ul><li>第一项</li><li>第二项</li></ul><ol start="3"><li>第三项</li></ol>',
+  )
+})
+
+test('renderAssistantMarkdown escapes unsafe html in assistant answers', () => {
+  assert.equal(
+    renderAssistantMarkdown('<script>alert("x")</script>', []),
+    '<p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;</p>',
   )
 })

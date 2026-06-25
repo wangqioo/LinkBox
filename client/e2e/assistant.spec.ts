@@ -17,9 +17,12 @@ test('assistant answers from the user collection with visible citations', async 
   await page.getByRole('button', { name: /发送/ }).click();
 
   await expect(page.getByText(/Playwright mock AI 回答/)).toBeVisible();
+  await expect(page.getByText(/意图/).first()).toBeVisible();
+  await expect(page.getByText(/校验/).first()).toBeVisible();
   await page.getByRole('button', { name: /引用资料/ }).click();
-  await expect(page.getByText(/检索：/).first()).toBeVisible();
-  await expect(page.getByText(/score/).first()).toBeVisible();
+  await expect(page.getByText('来源').first()).toBeVisible();
+  await expect(page.getByText('命中').first()).toBeVisible();
+  await expect(page.getByText('分数').first()).toBeVisible();
 });
 
 test('admin can run retrieval diagnostics and inspect matching sources', async ({ page }) => {
@@ -41,6 +44,9 @@ test('admin can run retrieval diagnostics and inspect matching sources', async (
   await page.getByRole('button', { name: /运行诊断/ }).click();
 
   await expect(page.getByText(/Query：e2e-retrieval-token-802 是什么？/)).toBeVisible();
+  await expect(page.getByText(/Intent：/)).toBeVisible();
+  await expect(page.getByText(/Support：/)).toBeVisible();
+  await expect(page.getByText(/Steps：/)).toBeVisible();
   await expect(page.getByText(/^1\. E2E Retrieval Diagnostics Source$/)).toBeVisible();
   await expect(page.getByText(/The retrieval diagnostics panel should find e2e-retrieval-token-802/)).toBeVisible();
   await expect(page.getByText(/score/)).toBeVisible();

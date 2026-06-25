@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mobileProcessingText } from './mobileProcessingStatus.js'
+import { mobileProcessingHint, mobileProcessingText } from './mobileProcessingStatus.js'
 
 test('mobileProcessingText prefers processing failure details', () => {
   assert.equal(mobileProcessingText({
@@ -11,6 +11,17 @@ test('mobileProcessingText prefers processing failure details', () => {
       lastError: '文件解析超时',
     },
   }), '文件解析超时')
+})
+
+test('mobileProcessingHint returns failure recovery hints separately', () => {
+  assert.equal(mobileProcessingHint({
+    status: 'failed',
+    processing: {
+      state: 'failed',
+      recoveryHint: '检查文档解析依赖后重试',
+    },
+  }), '检查文档解析依赖后重试')
+  assert.equal(mobileProcessingHint({ status: 'pending' }), '')
 })
 
 test('mobileProcessingText uses active processing label', () => {

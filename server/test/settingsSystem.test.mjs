@@ -126,6 +126,8 @@ test('GET /api/settings/system returns bounded recent failed jobs', async () => 
     max_attempts: 3,
     last_error: 'parser missing 21',
     updated_at: '2026-06-16T10:21:00.000Z',
+    stage_label: '解析文件正文',
+    recovery_hint: '确认文件格式受支持，检查 pdftotext/LibreOffice 等文档解析依赖后重试。',
   });
   assert.deepEqual(body.queue.failedJobs[1], {
     id: 20,
@@ -135,6 +137,8 @@ test('GET /api/settings/system returns bounded recent failed jobs', async () => 
     max_attempts: 4,
     last_error: 'LLM offline',
     updated_at: '2026-06-16T10:20:00.000Z',
+    stage_label: '生成网页摘要',
+    recovery_hint: '检查 AI 服务地址、模型和 API Key 是否可用后重试。',
   });
   assert.equal(body.queue.failedJobs.some(job => job.id === 1), false);
 }));

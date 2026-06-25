@@ -12,6 +12,10 @@ import {
   reindexAllDocuments,
 } from '../utils/documentMaintenance.js';
 import { errorPayload, httpError, jsonError } from '../utils/appError.js';
+import {
+  labelForEnrichmentJob,
+  recoveryHintForEnrichmentJob,
+} from '../utils/itemEnrichmentPlan.js';
 
 // Only admin (user id=1) can manage settings
 function requireAdmin(req, res, next) {
@@ -32,7 +36,15 @@ function listFailedJobs(database, limit = 20) {
     WHERE status = 'failed'
     ORDER BY datetime(updated_at) DESC, id DESC
     LIMIT ?
-  `).all(boundedLimit);
+  `).all(boundedLimit).map(describeFailedJob);
+}
+
+function describeFailedJob(job) {
+  return {
+    ...job,
+    stage_label: labelForEnrichmentJob(job.type, {}) || job.type || '后台任务',
+    recovery_hint: recoveryHintForEnrichmentJob(job.type),
+  };
 }
 
 function selectedFailedLinkIds(database, ids) {

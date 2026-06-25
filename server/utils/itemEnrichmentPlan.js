@@ -10,6 +10,16 @@ const JOB_LABELS = {
   'file.summarize': '生成文件摘要',
 };
 
+const JOB_RECOVERY_HINTS = {
+  'file.extractMarkdown': '确认文件格式受支持，检查 pdftotext/LibreOffice 等文档解析依赖后重试。',
+  'link.summarize': '检查 AI 服务地址、模型和 API Key 是否可用后重试。',
+  'file.summarize': '检查 AI 服务地址、模型和 API Key 是否可用后重试。',
+  'image.describe': '检查视觉模型配置、图片文件是否可读后重试。',
+  'link.fetchMetadata': '检查目标网页是否可访问，必要时补充站点 Cookie 后重试。',
+  'link.extractMarkdown': '检查目标网页是否可访问，必要时补充站点 Cookie 后重试。',
+  'document.embed': '检查 Embedding 配置和模型服务后重试，必要时重新建立文档索引。',
+};
+
 export function initialEnrichmentJob(kind, processing = {}) {
   if (kind === 'link') {
     return {
@@ -48,6 +58,10 @@ export function labelForEnrichmentJob(type, item = null) {
     if (label) return label;
   }
   return JOB_LABELS[type] || type || '';
+}
+
+export function recoveryHintForEnrichmentJob(type) {
+  return JOB_RECOVERY_HINTS[type] || '查看错误详情，确认相关服务或文件可用后重试。';
 }
 
 export function followupEnrichmentJobs({

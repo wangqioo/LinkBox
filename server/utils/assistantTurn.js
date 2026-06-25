@@ -207,10 +207,15 @@ export function buildMessages(question, ranked, task = 'ask', options = {}) {
   const grouped = groupSources(ranked);
   const context = trimContext(grouped, options);
   const sourceIds = grouped.map(source => `[资料${source.source_index}]`).join('、');
+  const memoryItems = Array.isArray(options.memoryItems) ? options.memoryItems : [];
+  const memoryText = memoryItems
+    .slice(0, 5)
+    .map((memory, index) => `${index + 1}. ${memory.memory_type || 'note'}：${memory.content}`)
+    .join('\n');
   return [
     {
       role: 'system',
-      content: `你是 LinkBox 私人资料助理。不要输出思考过程。只能基于用户提供的资料工作；资料不足时明确说明不足。回答要具体、可执行，使用 Markdown 组织结构。有序列表必须使用连续数字编号，例如 1. 2. 3.，不要每一条都写 1.。引用只能使用这些编号：${sourceIds || '无'}。引用格式必须是完整的 [资料1]，不要写 [资料1-3]、[资料21] 或缺少右括号。当前任务：${taskConfig.label}。任务要求：${taskConfig.instruction}`,
+      content: `你是 LinkBox 私人资料助理。不要输出思考过程。只能基于用户提供的资料工作；资料不足时明确说明不足。回答要具体、可执行，使用 Markdown 组织结构。有序列表必须使用连续数字编号，例如 1. 2. 3.，不要每一条都写 1.。引用只能使用这些编号：${sourceIds || '无'}。引用格式必须是完整的 [资料1]，不要写 [资料1-3]、[资料21] 或缺少右括号。当前任务：${taskConfig.label}。任务要求：${taskConfig.instruction}${memoryText ? `\n\n低优先级用户偏好和长期上下文：\n${memoryText}` : ''}`,
     },
     {
       role: 'user',

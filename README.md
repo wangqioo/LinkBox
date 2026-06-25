@@ -197,7 +197,7 @@ LinkBox/
   docker-compose.yml
 ```
 
-详细开发说明、当前暂停点、验证命令和后续 TODO 见 [docs/development.md](docs/development.md)。移动端说明见 [docs/mobile-frontend.md](docs/mobile-frontend.md)。好友、私聊、群聊和群 Assistant 说明见 [docs/social-collaboration.md](docs/social-collaboration.md)。部署流程见 [docs/deployment.md](docs/deployment.md)。Bilibili 视频处理说明见 [docs/bilibili-video-processing.md](docs/bilibili-video-processing.md)。架构重构路线见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。知识库重构计划见 [docs/markdown-knowledge-base-plan.md](docs/markdown-knowledge-base-plan.md)。
+当前路线图和规划状态见 [docs/roadmap.md](docs/roadmap.md)，验证矩阵见 [docs/validation.md](docs/validation.md)，项目术语见 [CONTEXT.md](CONTEXT.md)。详细开发说明、当前暂停点和验证命令见 [docs/development.md](docs/development.md)。移动端说明见 [docs/mobile-frontend.md](docs/mobile-frontend.md)。好友、私聊、群聊和群 Assistant 说明见 [docs/social-collaboration.md](docs/social-collaboration.md)。部署流程见 [docs/deployment.md](docs/deployment.md)。Bilibili 视频处理说明见 [docs/bilibili-video-processing.md](docs/bilibili-video-processing.md)。架构重构背景见 [docs/architecture-redesign.md](docs/architecture-redesign.md)。知识库重构背景见 [docs/markdown-knowledge-base-plan.md](docs/markdown-knowledge-base-plan.md)。
 
 ## 快速开始
 

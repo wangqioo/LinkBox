@@ -1,4 +1,7 @@
-import { labelForEnrichmentJob } from './itemEnrichmentPlan.js';
+import {
+  labelForEnrichmentJob,
+  recoveryHintForEnrichmentJob,
+} from './itemEnrichmentPlan.js';
 import { itemKindForRow } from './itemKind.js';
 
 function labelForJob(type, link = null) {
@@ -15,6 +18,7 @@ function normalizeJob(row, link = null) {
     attempts: row.attempts,
     maxAttempts: row.max_attempts,
     lastError: row.last_error || '',
+    recoveryHint: row.status === 'failed' ? recoveryHintForEnrichmentJob(row.type) : '',
     updatedAt: row.updated_at || '',
   };
 }
@@ -29,6 +33,7 @@ export function buildProcessingStatus(link, jobs = []) {
       canRetry: true,
       failedJobId: failedJob.id,
       lastError: failedJob.last_error || '',
+      recoveryHint: recoveryHintForEnrichmentJob(failedJob.type),
       updatedAt: failedJob.updated_at || '',
       activeJob: normalizeJob(failedJob, link),
     };
@@ -43,6 +48,7 @@ export function buildProcessingStatus(link, jobs = []) {
       canRetry: false,
       failedJobId: null,
       lastError: activeJob?.last_error || '',
+      recoveryHint: '',
       updatedAt: activeJob?.updated_at || '',
       activeJob: normalizeJob(activeJob, link),
     };
@@ -56,6 +62,7 @@ export function buildProcessingStatus(link, jobs = []) {
       canRetry: false,
       failedJobId: null,
       lastError: '',
+      recoveryHint: '查看错误详情，确认相关服务或文件可用后重试。',
       updatedAt: '',
       activeJob: null,
     };
@@ -68,6 +75,7 @@ export function buildProcessingStatus(link, jobs = []) {
     canRetry: false,
     failedJobId: null,
     lastError: '',
+    recoveryHint: '',
     updatedAt: '',
     activeJob: null,
   };

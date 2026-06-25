@@ -13,6 +13,16 @@ import { indexLinkContent, removeLinkContentIndex } from '../utils/chunkIndex.js
 import { indexDocumentForItem } from '../utils/documentIndex.js';
 import { toMobileFile } from '../utils/mobileFilePresenter.js';
 import { attachProcessingStatus } from '../utils/itemProcessingStatus.js';
+import {
+  areFriends,
+  currentIsoTime,
+  directMessagePayload,
+  ensureGroupMember,
+  groupMessagePayload,
+  materialPayload as shapeMaterialPayload,
+  requireAcceptedFriend,
+  toUtcIsoTime,
+} from '../utils/socialService.js';
 
 const UPLOADS_DIR = process.env.UPLOADS_DIR || join(process.cwd(), 'uploads');
 const storage = multer.diskStorage({
@@ -25,34 +35,6 @@ export function createSocialRouter(database = db) {
 const router = Router();
 router.use(authMiddleware);
 
-function ensureGroupMember(groupId, userId) {
-  return database.prepare(`
-    SELECT gm.role, g.name, g.owner_id, g.agent_name
-    FROM group_members gm
-    JOIN groups g ON g.id = gm.group_id
-    WHERE gm.group_id = ? AND gm.user_id = ?
-  `).get(groupId, userId) || null;
-}
-
-function areFriends(userId, otherId) {
-  return !!database.prepare(`
-    SELECT 1 FROM friendships
-    WHERE status = 'accepted'
-      AND ((requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?))
-  `).get(userId, otherId, otherId, userId);
-}
-
-function requireAcceptedFriend(userId, otherId) {
-  if (!otherId || otherId === userId) return null;
-  const friendship = database.prepare(`
-    SELECT 1 FROM friendships
-    WHERE status = 'accepted'
-      AND ((requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?))
-  `).get(userId, otherId, otherId, userId);
-  if (!friendship) return null;
-  return database.prepare('SELECT id, username FROM users WHERE id = ?').get(otherId) || null;
-}
-
 function attachMobileLink(linkId) {
   const row = database.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
   return row ? toMobileFile(attachProcessingStatus(database, row)) : null;
@@ -64,48 +46,7 @@ function refreshItemAiIndexes(linkId) {
 }
 
 function materialPayload(link) {
-  return {
-    link_id: link.id,
-    title: link.title || link.url || `资料 ${link.id}`,
-    summary: link.summary || link.description || '',
-    type: link.type,
-    url: link.url,
-    file: attachMobileLink(link.id),
-  };
-}
-
-function currentIsoTime() {
-  return new Date().toISOString();
-}
-
-function toUtcIsoTime(value) {
-  if (!value) return '';
-  const text = String(value).trim();
-  if (!text) return '';
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)) {
-    return new Date(`${text.replace(' ', 'T')}Z`).toISOString();
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-    return new Date(`${text}T00:00:00Z`).toISOString();
-  }
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? text : parsed.toISOString();
-}
-
-function directMessagePayload(row) {
-  return {
-    ...row,
-    created_at: toUtcIsoTime(row.created_at),
-    user: { id: row.user_id, username: row.username },
-  };
-}
-
-function groupMessagePayload(row) {
-  return {
-    ...row,
-    created_at: toUtcIsoTime(row.created_at),
-    user: { id: row.user_id, username: row.username },
-  };
+  return shapeMaterialPayload(link, { file: attachMobileLink(link.id) });
 }
 
 function createScopedChatItem(req, { scope = 'chat' } = {}) {
@@ -269,7 +210,7 @@ router.delete('/friends/:id', (req, res) => {
 
 router.get('/friends/:userId/messages', (req, res) => {
   const friendId = Number(req.params.userId);
-  const friend = requireAcceptedFriend(req.userId, friendId);
+  const friend = requireAcceptedFriend(database, req.userId, friendId);
   if (!friend) return res.status(403).json({ error: 'Only accepted friends can exchange messages' });
   const currentUser = database.prepare('SELECT id, username FROM users WHERE id = ?').get(req.userId);
   const rows = database.prepare(`
@@ -311,7 +252,7 @@ router.get('/friends/:userId/messages', (req, res) => {
 
 router.post('/friends/:userId/messages', (req, res) => {
   const friendId = Number(req.params.userId);
-  const friend = requireAcceptedFriend(req.userId, friendId);
+  const friend = requireAcceptedFriend(database, req.userId, friendId);
   if (!friend) return res.status(403).json({ error: 'Only accepted friends can exchange messages' });
   const body = String(req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Message is required' });
@@ -331,7 +272,7 @@ router.post('/friends/:userId/messages', (req, res) => {
 
 router.post('/friends/:userId/materials', (req, res) => {
   const friendId = Number(req.params.userId);
-  const friend = requireAcceptedFriend(req.userId, friendId);
+  const friend = requireAcceptedFriend(database, req.userId, friendId);
   if (!friend) return res.status(403).json({ error: 'Only accepted friends can exchange messages' });
   const linkId = Number(req.body?.link_id);
   if (!linkId) return res.status(400).json({ error: 'Material is required' });
@@ -360,7 +301,7 @@ router.post('/friends/:userId/materials', (req, res) => {
 
 router.post('/friends/:userId/uploads', upload.single('file'), (req, res) => {
   const friendId = Number(req.params.userId);
-  const friend = requireAcceptedFriend(req.userId, friendId);
+  const friend = requireAcceptedFriend(database, req.userId, friendId);
   if (!friend) return res.status(403).json({ error: 'Only accepted friends can exchange messages' });
   const link = createScopedChatItem(req, { scope: 'chat' });
   if (!link) return res.status(400).json({ error: 'Please upload a file or provide text/url' });
@@ -383,7 +324,7 @@ router.post('/friends/:userId/uploads', upload.single('file'), (req, res) => {
 
 router.put('/friends/:userId/materials/:linkId/comment', (req, res) => {
   const friendId = Number(req.params.userId);
-  const friend = requireAcceptedFriend(req.userId, friendId);
+  const friend = requireAcceptedFriend(database, req.userId, friendId);
   if (!friend) return res.status(403).json({ error: 'Only accepted friends can exchange messages' });
   const linkId = Number(req.params.linkId);
   const ownsChatMaterial = database.prepare(`
@@ -402,7 +343,7 @@ router.put('/friends/:userId/materials/:linkId/comment', (req, res) => {
 
 router.delete('/friends/:userId/messages/:messageId', (req, res) => {
   const friendId = Number(req.params.userId);
-  const friend = requireAcceptedFriend(req.userId, friendId);
+  const friend = requireAcceptedFriend(database, req.userId, friendId);
   if (!friend) return res.status(403).json({ error: 'Only accepted friends can exchange messages' });
   const messageId = Number(req.params.messageId);
   const result = database.prepare(`
@@ -440,7 +381,7 @@ router.post('/groups', (req, res) => {
   if (!name) return res.status(400).json({ error: 'Group name is required' });
 
   for (const memberId of memberIds) {
-    if (memberId !== req.userId && !areFriends(req.userId, memberId)) {
+    if (memberId !== req.userId && !areFriends(database, req.userId, memberId)) {
       return res.status(400).json({ error: 'Only accepted friends can be invited to a group' });
     }
   }
@@ -464,7 +405,7 @@ router.post('/groups', (req, res) => {
 
 router.get('/groups/:groupId', (req, res) => {
   const groupId = Number(req.params.groupId);
-  const member = ensureGroupMember(groupId, req.userId);
+  const member = ensureGroupMember(database, groupId, req.userId);
   if (!member) return res.status(404).json({ error: 'Group not found or inaccessible' });
 
   const group = database.prepare(`
@@ -485,18 +426,18 @@ router.get('/groups/:groupId', (req, res) => {
 
 router.post('/groups/:groupId/members', (req, res) => {
   const groupId = Number(req.params.groupId);
-  const member = ensureGroupMember(groupId, req.userId);
+  const member = ensureGroupMember(database, groupId, req.userId);
   if (!member || (member.role !== 'owner' && member.role !== 'admin')) return res.status(403).json({ error: 'Only group owners or admins can invite members' });
   const userId = Number(req.body?.user_id);
   if (!userId) return res.status(400).json({ error: 'User is required' });
-  if (!areFriends(req.userId, userId)) return res.status(400).json({ error: 'Only accepted friends can be invited to a group' });
+  if (!areFriends(database, req.userId, userId)) return res.status(400).json({ error: 'Only accepted friends can be invited to a group' });
   database.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, ?)').run(groupId, userId, 'member');
   res.status(201).json({ ok: true });
 });
 
 router.get('/groups/:groupId/messages', (req, res) => {
   const groupId = Number(req.params.groupId);
-  const member = ensureGroupMember(groupId, req.userId);
+  const member = ensureGroupMember(database, groupId, req.userId);
   if (!member) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const currentUser = database.prepare('SELECT id, username FROM users WHERE id = ?').get(req.userId);
   const rows = database.prepare(`
@@ -548,7 +489,7 @@ router.get('/groups/:groupId/messages', (req, res) => {
 
 router.post('/groups/:groupId/messages', (req, res) => {
   const groupId = Number(req.params.groupId);
-  if (!ensureGroupMember(groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
+  if (!ensureGroupMember(database, groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const body = String(req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Message is required' });
   const createdAt = currentIsoTime();
@@ -562,7 +503,7 @@ router.post('/groups/:groupId/messages', (req, res) => {
 
 router.get('/groups/:groupId/materials', (req, res) => {
   const groupId = Number(req.params.groupId);
-  if (!ensureGroupMember(groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
+  if (!ensureGroupMember(database, groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const rows = database.prepare(`
     SELECT gl.group_id, gl.link_id, gl.shared_by, gl.note, gl.created_at AS shared_at,
       l.type, l.url, l.title, l.summary, l.comment, l.imported_at,
@@ -582,7 +523,7 @@ router.get('/groups/:groupId/materials', (req, res) => {
 
 router.post('/groups/:groupId/materials', (req, res) => {
   const groupId = Number(req.params.groupId);
-  if (!ensureGroupMember(groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
+  if (!ensureGroupMember(database, groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const linkId = Number(req.body?.link_id);
   const note = String(req.body?.note || '').trim();
   if (!linkId) return res.status(400).json({ error: 'Material is required' });
@@ -599,7 +540,7 @@ router.post('/groups/:groupId/materials', (req, res) => {
 
 router.post('/groups/:groupId/uploads', upload.single('file'), (req, res) => {
   const groupId = Number(req.params.groupId);
-  if (!ensureGroupMember(groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
+  if (!ensureGroupMember(database, groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const note = String(req.body?.note || '').trim();
   const link = createScopedChatItem(req, { scope: 'chat' });
   if (!link) return res.status(400).json({ error: 'Please upload a file or provide text/url' });
@@ -622,7 +563,7 @@ router.post('/groups/:groupId/uploads', upload.single('file'), (req, res) => {
 
 router.put('/groups/:groupId/materials/:linkId/comment', (req, res) => {
   const groupId = Number(req.params.groupId);
-  if (!ensureGroupMember(groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
+  if (!ensureGroupMember(database, groupId, req.userId)) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const linkId = Number(req.params.linkId);
   const exists = database.prepare('SELECT 1 FROM group_links WHERE group_id = ? AND link_id = ?').get(groupId, linkId);
   if (!exists) return res.status(404).json({ error: 'Material not found in this group' });
@@ -635,7 +576,7 @@ router.put('/groups/:groupId/materials/:linkId/comment', (req, res) => {
 
 router.delete('/groups/:groupId/messages/:messageId', (req, res) => {
   const groupId = Number(req.params.groupId);
-  const member = ensureGroupMember(groupId, req.userId);
+  const member = ensureGroupMember(database, groupId, req.userId);
   if (!member) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const messageId = Number(req.params.messageId);
   const where = member.role === 'owner' || member.role === 'admin'
@@ -651,7 +592,7 @@ router.delete('/groups/:groupId/messages/:messageId', (req, res) => {
 
 router.delete('/groups/:groupId/materials/:linkId', (req, res) => {
   const groupId = Number(req.params.groupId);
-  const member = ensureGroupMember(groupId, req.userId);
+  const member = ensureGroupMember(database, groupId, req.userId);
   if (!member) return res.status(404).json({ error: 'Group not found or inaccessible' });
   const linkId = Number(req.params.linkId);
   const material = database.prepare('SELECT * FROM group_links WHERE group_id = ? AND link_id = ?').get(groupId, linkId);

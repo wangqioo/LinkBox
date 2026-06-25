@@ -13,12 +13,14 @@ export interface ProcessingDisplayInput {
     label?: string;
     canRetry?: boolean;
     lastError?: string;
+    recoveryHint?: string;
   };
 }
 
 export interface ProcessingDisplay {
   kind: 'active' | 'failed';
   text: string;
+  recoveryHint?: string;
   step: number;
   canRetry: boolean;
 }
@@ -31,6 +33,7 @@ export function deriveProcessingDisplay(input: ProcessingDisplayInput): Processi
     return {
       kind: 'failed',
       text: processing.lastError || '内容处理失败，可重试后台任务',
+      recoveryHint: processing.recoveryHint || '',
       step: 0,
       canRetry: Boolean(processing.canRetry),
     };
@@ -40,6 +43,7 @@ export function deriveProcessingDisplay(input: ProcessingDisplayInput): Processi
     return {
       kind: 'failed',
       text: '处理失败',
+      recoveryHint: '',
       step: 0,
       canRetry: false,
     };

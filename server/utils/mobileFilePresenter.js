@@ -76,6 +76,7 @@ export function toMobileFile(link = {}) {
     status,
     processing: item.processing || null,
     can_retry: item.display.canRetry,
+    recovery_hint: item.processing?.recoveryHint || '',
     error: status === 'failed'
       ? item.processing?.lastError || 'Processing failed'
       : null,

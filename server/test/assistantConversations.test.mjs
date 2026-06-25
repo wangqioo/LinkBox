@@ -50,6 +50,10 @@ test('assistant conversations persist messages and sources', () => {
       content: 'The assistant now has history.',
       task: 'ask',
       sources: [{ id: 7, title: 'Release notes' }],
+      agent: {
+        runId: 3,
+        verification: { support: 'supported' },
+      },
     });
 
     const list = listAssistantConversations(db, { userId: 1, groupId: null });
@@ -60,6 +64,10 @@ test('assistant conversations persist messages and sources', () => {
     const history = listAssistantMessages(db, { userId: 1, conversationId: conversation.id, groupId: null });
     assert.equal(history.messages.length, 2);
     assert.deepEqual(history.messages[1].sources, [{ id: 7, title: 'Release notes' }]);
+    assert.deepEqual(history.messages[1].agent, {
+      runId: 3,
+      verification: { support: 'supported' },
+    });
   } finally {
     db.close();
   }

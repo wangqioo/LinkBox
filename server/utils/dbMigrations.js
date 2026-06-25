@@ -3,8 +3,62 @@ import { initDocumentSchema } from './documentIndex.js';
 import { backfillItemContent } from './itemContentStore.js';
 import { backfillItemAssets } from './itemAssetStore.js';
 import { initAssistantConversationSchema } from './assistantConversations.js';
+import { initAssistantRunSchema } from './assistantRuns.js';
+import { initItemUnderstandingSchema } from './itemUnderstanding.js';
+import { initAssistantMemorySchema } from './assistantMemory.js';
 
 const MIGRATIONS = [
+  {
+    name: '000_base_schema',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS links (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          type TEXT DEFAULT 'link',
+          url TEXT DEFAULT '',
+          title TEXT DEFAULT '',
+          description TEXT DEFAULT '',
+          thumbnail TEXT DEFAULT '',
+          comment TEXT DEFAULT '',
+          content TEXT DEFAULT '',
+          image_path TEXT DEFAULT '',
+          imported_at TEXT DEFAULT (datetime('now')),
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS tags (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          color TEXT DEFAULT '#6366f1',
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          UNIQUE(user_id, name)
+        );
+
+        CREATE TABLE IF NOT EXISTS link_tags (
+          link_id INTEGER NOT NULL,
+          tag_id INTEGER NOT NULL,
+          PRIMARY KEY (link_id, tag_id),
+          FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_links_user ON links(user_id);
+        CREATE INDEX IF NOT EXISTS idx_links_imported ON links(imported_at);
+        CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id);
+      `);
+    },
+  },
   {
     name: '001_links_item_columns',
     up(db) {
@@ -78,6 +132,130 @@ const MIGRATIONS = [
     name: '009_assistant_conversations',
     up(db) {
       initAssistantConversationSchema(db);
+    },
+  },
+  {
+    name: '010_social_collaboration_schema',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS friendships (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          requester_id INTEGER NOT NULL,
+          addressee_id INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (addressee_id) REFERENCES users(id) ON DELETE CASCADE,
+          UNIQUE(requester_id, addressee_id),
+          CHECK(requester_id != addressee_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships(requester_id);
+        CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON friendships(addressee_id);
+
+        CREATE TABLE IF NOT EXISTS groups (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          description TEXT DEFAULT '',
+          owner_id INTEGER NOT NULL,
+          agent_name TEXT DEFAULT 'Group Agent',
+          created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_groups_owner ON groups(owner_id);
+
+        CREATE TABLE IF NOT EXISTS group_members (
+          group_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          role TEXT NOT NULL DEFAULT 'member',
+          joined_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          PRIMARY KEY (group_id, user_id),
+          FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+
+        CREATE TABLE IF NOT EXISTS group_messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          group_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          body TEXT NOT NULL,
+          message_type TEXT NOT NULL DEFAULT 'text',
+          created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS group_links (
+          group_id INTEGER NOT NULL,
+          link_id INTEGER NOT NULL,
+          shared_by INTEGER NOT NULL,
+          note TEXT DEFAULT '',
+          created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          PRIMARY KEY (group_id, link_id),
+          FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+          FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE,
+          FOREIGN KEY (shared_by) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_group_links_group ON group_links(group_id);
+        CREATE INDEX IF NOT EXISTS idx_group_links_link ON group_links(link_id);
+      `);
+    },
+  },
+  {
+    name: '011_settings_and_legacy_chunks_schema',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS settings (
+          key TEXT PRIMARY KEY,
+          value TEXT DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS link_chunks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          link_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          chunk_index INTEGER NOT NULL,
+          text TEXT NOT NULL,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE,
+          UNIQUE(link_id, chunk_index)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_link_chunks_link ON link_chunks(link_id);
+        CREATE INDEX IF NOT EXISTS idx_link_chunks_user ON link_chunks(user_id);
+      `);
+    },
+  },
+  {
+    name: '012_assistant_runs_schema',
+    up(db) {
+      initAssistantRunSchema(db);
+    },
+  },
+  {
+    name: '013_assistant_message_agent_metadata',
+    up(db) {
+      addColumnIfMissing(db, 'assistant_messages', 'agent_json', "TEXT DEFAULT '{}'");
+    },
+  },
+  {
+    name: '014_item_understanding_schema',
+    up(db) {
+      initItemUnderstandingSchema(db);
+    },
+  },
+  {
+    name: '015_assistant_memory_schema',
+    up(db) {
+      initAssistantMemorySchema(db);
     },
   },
 ];

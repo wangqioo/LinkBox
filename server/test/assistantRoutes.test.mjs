@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import { mkdtempSync, rmSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, mkdtempSync, rmSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { generateToken } from '../middleware/auth.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function withAssistantApp(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-assistant-routes-test-'));
@@ -56,6 +59,29 @@ async function withAssistantApp(fn) {
   }
 }
 
+test('assistant route uses centralized JSON error helpers', () => {
+  const routeSource = readFileSync(join(__dirname, '../routes/assistant.js'), 'utf8');
+
+  assert.match(routeSource, /jsonError/);
+  assert.doesNotMatch(routeSource, /res\.status\([^)]*\)\.json\(\{\s*error:/);
+});
+
+test('assistant route preserves validation and conversation error responses', async () => withAssistantApp(async ({ baseUrl, headers }) => {
+  const missingQuestion = await fetch(`${baseUrl}/api/assistant/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ question: '' }),
+  });
+  assert.equal(missingQuestion.status, 400);
+  assert.deepEqual(await missingQuestion.json(), { error: '问题不能为空' });
+
+  const missingConversation = await fetch(`${baseUrl}/api/assistant/conversations/999/messages`, {
+    headers,
+  });
+  assert.equal(missingConversation.status, 404);
+  assert.deepEqual(await missingConversation.json(), { error: 'Conversation not found' });
+}));
+
 test('POST /api/assistant/retrieval-diagnostics returns retrieval metadata without calling LLM', async () => withAssistantApp(async ({ db, baseUrl, headers }) => {
   db.prepare(`
     INSERT INTO links (id, user_id, type, title, imported_at, content_md)
@@ -87,6 +113,35 @@ Durable queue retry metadata.`);
   assert.equal(body.sources[0].heading_path, 'Queue Notes > Durable Jobs');
   assert.equal(body.sources[0].retrieval_modes.includes('keyword'), true);
   assert.match(body.sources[0].snippet, /Durable queue retry metadata/);
+  assert.equal(body.agent.plan.intent, 'question_answering');
+  assert.equal(body.agent.evidence.status, 'ready');
+  assert.equal(body.agent.verification.support, 'supported');
+  assert.equal(body.agent.run.status, 'completed');
+  assert.equal(body.agent.run.steps.find(step => step.step_type === 'retrieval').metadata.queryCount, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM assistant_runs').get().count, 1);
+}));
+
+test('POST /api/assistant/chat returns agent metadata when evidence is empty', async () => withAssistantApp(async ({ db, baseUrl, headers }) => {
+  const response = await fetch(`${baseUrl}/api/assistant/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      question: '记住：回答 launch 问题时先列风险',
+      task: 'ask',
+    }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.sources.length, 0);
+  assert.equal(body.agent.plan.intent, 'question_answering');
+  assert.equal(body.agent.evidence.status, 'empty');
+  assert.equal(body.agent.verification.support, 'insufficient');
+  assert.equal(body.agent.memory.items.length, 1);
+  assert.match(body.agent.memory.items[0].content, /先列风险/);
+  assert.equal(body.agent.run.status, 'completed');
+  assert.equal(body.agent.run.steps.some(step => step.step_type === 'answer_verification'), true);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM assistant_runs').get().count, 1);
 }));
 
 test('assistant conversation endpoints create, list, read, and delete personal history', async () => withAssistantApp(async ({ db, baseUrl, headers }) => {

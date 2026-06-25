@@ -78,15 +78,21 @@ export default function BackgroundJobsPanel({
             <div key={job.id} className="px-3 py-2 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-medium text-red-700 dark:text-red-300 truncate">
-                  #{job.id} {job.type}
+                  #{job.id} {job.stage_label || job.type}
                   {job.link_id ? ` · 链接 #${job.link_id}` : ''}
                 </div>
                 <div className="text-xs text-red-600 dark:text-red-200 mt-0.5">
+                  {job.stage_label && job.stage_label !== job.type ? `${job.type} · ` : ''}
                   尝试 {job.attempts}/{job.max_attempts} · {job.updated_at}
                 </div>
                 <div className="text-xs text-red-600 dark:text-red-200 mt-1 break-words line-clamp-2">
                   {job.last_error || '未记录错误'}
                 </div>
+                {job.recovery_hint && (
+                  <div className="text-xs text-red-700 dark:text-red-100 mt-1 break-words">
+                    建议：{job.recovery_hint}
+                  </div>
+                )}
               </div>
               <button
                 type="button"

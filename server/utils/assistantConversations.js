@@ -26,6 +26,7 @@ export function initAssistantConversationSchema(db) {
       content TEXT NOT NULL DEFAULT '',
       task TEXT DEFAULT 'ask',
       sources_json TEXT DEFAULT '[]',
+      agent_json TEXT DEFAULT '{}',
       error TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE,
@@ -91,7 +92,7 @@ export function listAssistantMessages(db, { userId, conversationId, groupId = un
   const conversation = getAssistantConversation(db, { userId, conversationId, groupId });
   if (!conversation) return null;
   const messages = db.prepare(`
-    SELECT id, conversation_id, role, content, task, sources_json, error, created_at
+    SELECT id, conversation_id, role, content, task, sources_json, agent_json, error, created_at
     FROM assistant_messages
     WHERE conversation_id = ?
     ORDER BY id ASC
@@ -105,12 +106,13 @@ export function appendAssistantMessage(db, {
   content = '',
   task = 'ask',
   sources = [],
+  agent = {},
   error = '',
 }) {
   const result = db.prepare(`
-    INSERT INTO assistant_messages (conversation_id, role, content, task, sources_json, error)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(conversationId, role, content, task, JSON.stringify(sources || []), error || '');
+    INSERT INTO assistant_messages (conversation_id, role, content, task, sources_json, agent_json, error)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(conversationId, role, content, task, JSON.stringify(sources || []), JSON.stringify(agent || {}), error || '');
   db.prepare('UPDATE assistant_conversations SET updated_at = datetime(\'now\') WHERE id = ?').run(conversationId);
   return Number(result.lastInsertRowid);
 }
@@ -160,6 +162,7 @@ function presentMessage(row) {
     content: row.content || '',
     task: row.task || 'ask',
     sources: parseJsonArray(row.sources_json),
+    agent: parseJsonObject(row.agent_json),
     error: row.error || '',
     created_at: row.created_at,
   };
@@ -171,5 +174,14 @@ function parseJsonArray(value) {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
   }
 }

@@ -22,6 +22,9 @@ import {
   listAssistantMessages,
   maybeUpdateConversationTitle,
 } from '../utils/assistantConversations.js';
+import { completeAssistantAgentAnswer, prepareAssistantAgentTurn } from '../utils/assistantAgent.js';
+import { captureAssistantMemories } from '../utils/assistantMemory.js';
+import { httpError, jsonError } from '../utils/appError.js';
 
 const MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
 const MAX_FALLBACK_SOURCES = Number(process.env.ASSISTANT_MAX_FALLBACK_SOURCES || 2);
@@ -30,6 +33,16 @@ const ASSISTANT_MAX_TOKENS = Number(process.env.ASSISTANT_MAX_TOKENS || 900);
 function writeSse(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function publicAgentTurn(agentTurn) {
+  return {
+    plan: agentTurn.plan,
+    evidence: agentTurn.evidence,
+    verification: agentTurn.verification,
+    memory: agentTurn.memory,
+    run: agentTurn.agent.run,
+  };
 }
 
 export function createAssistantRouter(database = defaultDb) {
@@ -44,9 +57,7 @@ function isGroupMember(groupId, userId) {
 async function retrieveForRequest(req, { question, task }) {
   const groupId = Number(req.body?.groupId || req.body?.group_id || 0);
   if (groupId && !isGroupMember(groupId, req.userId)) {
-    const error = new Error('Group material is not accessible');
-    error.status = 403;
-    throw error;
+    throw httpError(403, 'Group material is not accessible');
   }
   const embeddingConfig = getEmbeddingConfig({ includeSecret: true });
   const ranked = await retrieveAssistantSourcesAsync(database, {
@@ -70,6 +81,25 @@ async function retrieveForRequest(req, { question, task }) {
   };
 }
 
+async function prepareAgentTurnForRequest(req, { question, task, conversationId = null }) {
+  const groupId = groupIdFromRequest(req);
+  captureAssistantMemories(database, {
+    userId: req.userId,
+    groupId: groupId || null,
+    text: question,
+  });
+  return prepareAssistantAgentTurn({
+    db: database,
+    userId: req.userId,
+    conversationId,
+    groupId: groupId || null,
+    question,
+    task,
+    scope: req.body?.scope || {},
+    retrieve: ({ question: plannedQuestion }) => retrieveForRequest(req, { question: plannedQuestion, task }),
+  });
+}
+
 function groupIdFromRequest(req) {
   const groupId = Number(req.body?.groupId || req.body?.group_id || req.query?.groupId || req.query?.group_id || 0);
   return Number.isFinite(groupId) && groupId > 0 ? groupId : 0;
@@ -77,9 +107,7 @@ function groupIdFromRequest(req) {
 
 function requireConversationAccess(req, groupId) {
   if (groupId && !isGroupMember(groupId, req.userId)) {
-    const error = new Error('Group conversation is not accessible');
-    error.status = 403;
-    throw error;
+    throw httpError(403, 'Group conversation is not accessible');
   }
 }
 
@@ -94,7 +122,7 @@ router.get('/conversations', (req, res) => {
       }),
     });
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message || 'Failed to load conversations' });
+    jsonError(res, error, 'Failed to load conversations');
   }
 });
 
@@ -109,7 +137,7 @@ router.post('/conversations', (req, res) => {
     });
     res.status(201).json({ conversation });
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message || 'Failed to create conversation' });
+    jsonError(res, error, 'Failed to create conversation');
   }
 });
 
@@ -122,10 +150,10 @@ router.get('/conversations/:id/messages', (req, res) => {
       conversationId: Number(req.params.id),
       groupId: groupId || null,
     });
-    if (!result) return res.status(404).json({ error: 'Conversation not found' });
+    if (!result) return jsonError(res, httpError(404, 'Conversation not found'), 'Failed to load conversation messages');
     res.json(result);
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message || 'Failed to load conversation messages' });
+    jsonError(res, error, 'Failed to load conversation messages');
   }
 });
 
@@ -138,47 +166,63 @@ router.delete('/conversations/:id', (req, res) => {
       conversationId: Number(req.params.id),
       groupId: groupId || null,
     });
-    if (!ok) return res.status(404).json({ error: 'Conversation not found' });
+    if (!ok) return jsonError(res, httpError(404, 'Conversation not found'), 'Failed to delete conversation');
     res.json({ ok: true });
   } catch (error) {
-    res.status(error.status || 500).json({ error: error.message || 'Failed to delete conversation' });
+    jsonError(res, error, 'Failed to delete conversation');
   }
 });
 
 router.post('/chat', async (req, res) => {
   const question = String(req.body?.question || '').trim();
-  if (!question) return res.status(400).json({ error: '问题不能为空' });
+  if (!question) return jsonError(res, httpError(400, '问题不能为空'), 'Assistant chat failed');
   const task = normalizeTask(req.body?.task);
 
-  let ranked;
+  let agentTurn;
   try {
-    ({ ranked } = await retrieveForRequest(req, { question, task }));
+    agentTurn = await prepareAgentTurnForRequest(req, { question, task });
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Assistant retrieval failed' });
+    return jsonError(res, error, 'Assistant retrieval failed');
   }
+  const ranked = agentTurn.ranked;
   if (!ranked.length) {
+    agentTurn = completeAssistantAgentAnswer({
+      db: database,
+      agentTurn,
+      answer: '没有在你的资料库里找到足够相关的内容。可以换个关键词，或先收藏/上传相关资料。',
+      sourceCount: 0,
+    });
     return res.json({
       answer: '没有在你的资料库里找到足够相关的内容。可以换个关键词，或先收藏/上传相关资料。',
       sources: [],
+      agent: publicAgentTurn(agentTurn),
     });
   }
 
   const answer = await callAIChat({
-    messages: buildMessages(question, ranked, task),
+    messages: buildMessages(question, ranked, task, { memoryItems: agentTurn.memory.items }),
     maxTokens: ASSISTANT_MAX_TOKENS,
     timeoutMs: 90000,
   });
   const sources = publicSources(ranked);
+  const normalizedAnswer = normalizeCitationText(answer, sources.length);
+  agentTurn = completeAssistantAgentAnswer({
+    db: database,
+    agentTurn,
+    answer: normalizedAnswer,
+    sourceCount: sources.length,
+  });
 
   res.json({
-    answer: normalizeCitationText(answer, sources.length),
+    answer: normalizedAnswer,
     sources,
+    agent: publicAgentTurn(agentTurn),
   });
 });
 
 router.post('/chat/stream', async (req, res) => {
   const question = String(req.body?.question || '').trim();
-  if (!question) return res.status(400).json({ error: '问题不能为空' });
+  if (!question) return jsonError(res, httpError(400, '问题不能为空'), 'Assistant stream failed');
   const task = normalizeTask(req.body?.task);
   const groupId = groupIdFromRequest(req);
   let conversation = null;
@@ -188,7 +232,7 @@ router.post('/chat/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  let ranked;
+  let agentTurn;
   try {
     conversation = ensureAssistantConversationForTurn(database, {
       userId: req.userId,
@@ -204,7 +248,11 @@ router.post('/chat/stream', async (req, res) => {
       task,
     });
     writeSse(res, 'conversation', { conversation });
-    ({ ranked } = await retrieveForRequest(req, { question, task }));
+    agentTurn = await prepareAgentTurnForRequest(req, {
+      question,
+      task,
+      conversationId: conversation.id,
+    });
   } catch (error) {
     if (conversation?.id) {
       appendAssistantMessage(database, {
@@ -218,18 +266,31 @@ router.post('/chat/stream', async (req, res) => {
     writeSse(res, 'error', { error: error.message || 'Assistant retrieval failed' });
     return res.end();
   }
+  const ranked = agentTurn.ranked;
   const sources = publicSources(ranked);
+  writeSse(res, 'agent', { agent: publicAgentTurn(agentTurn) });
   writeSse(res, 'sources', { sources });
 
   if (!ranked.length) {
     const emptyAnswer = '没有在你的资料库里找到足够相关的内容。可以换个关键词，或先收藏/上传相关资料。';
+    agentTurn = completeAssistantAgentAnswer({
+      db: database,
+      agentTurn,
+      answer: emptyAnswer,
+      sourceCount: 0,
+    });
     appendAssistantMessage(database, {
       conversationId: conversation.id,
       role: 'assistant',
       content: emptyAnswer,
       task,
       sources,
+      agent: {
+        runId: agentTurn.agent.run.id,
+        verification: agentTurn.verification,
+      },
     });
+    writeSse(res, 'agent', { agent: publicAgentTurn(agentTurn) });
     writeSse(res, 'delta', { text: emptyAnswer });
     writeSse(res, 'done', {});
     return res.end();
@@ -238,7 +299,7 @@ router.post('/chat/stream', async (req, res) => {
   try {
     let answer = '';
     await streamAIChat({
-      messages: buildMessages(question, ranked, task),
+      messages: buildMessages(question, ranked, task, { memoryItems: agentTurn.memory.items }),
       maxTokens: ASSISTANT_MAX_TOKENS,
       enableThinking: false,
       timeoutMs: 90000,
@@ -248,13 +309,25 @@ router.post('/chat/stream', async (req, res) => {
         writeSse(res, 'delta', { text: normalized });
       },
     });
+    const normalizedAnswer = normalizeCitationText(answer, sources.length);
+    agentTurn = completeAssistantAgentAnswer({
+      db: database,
+      agentTurn,
+      answer: normalizedAnswer,
+      sourceCount: sources.length,
+    });
     appendAssistantMessage(database, {
       conversationId: conversation.id,
       role: 'assistant',
-      content: normalizeCitationText(answer, sources.length),
+      content: normalizedAnswer,
       task,
       sources,
+      agent: {
+        runId: agentTurn.agent.run.id,
+        verification: agentTurn.verification,
+      },
     });
+    writeSse(res, 'agent', { agent: publicAgentTurn(agentTurn) });
     writeSse(res, 'done', {});
     res.end();
   } catch (e) {
@@ -276,17 +349,17 @@ router.post('/chat/stream', async (req, res) => {
 
 router.post('/retrieval-diagnostics', async (req, res) => {
   const question = String(req.body?.question || '').trim();
-  if (!question) return res.status(400).json({ error: '问题不能为空' });
+  if (!question) return jsonError(res, httpError(400, '问题不能为空'), 'Assistant retrieval failed');
   const task = normalizeTask(req.body?.task);
-  let ranked;
-  let embeddingConfig;
+  let agentTurn;
   try {
-    ({ ranked, embeddingConfig } = await retrieveForRequest(req, { question, task }));
+    agentTurn = await prepareAgentTurnForRequest(req, { question, task });
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || 'Assistant retrieval failed' });
+    return jsonError(res, error, 'Assistant retrieval failed');
   }
+  const { ranked, embeddingConfig } = agentTurn;
 
-  res.json(buildRetrievalDiagnostics({
+  const diagnostics = buildRetrievalDiagnostics({
     question,
     task,
     scope: req.body?.scope || {},
@@ -300,7 +373,11 @@ router.post('/retrieval-diagnostics', async (req, res) => {
       model: embeddingConfig.model,
       apiKeyConfigured: Boolean(embeddingConfig.apiKey || embeddingConfig.apiKeyConfigured),
     },
-  }));
+  });
+  res.json({
+    ...diagnostics,
+    agent: publicAgentTurn(agentTurn),
+  });
 });
 
 return router;

@@ -154,3 +154,22 @@ test('normalizeCitationText expands valid citation ranges and caps them to avail
     '参考 [资料1][资料2][资料3]、[资料2][资料3][资料4]、，还有半截 [资料2] 和越界 [资料9。',
   );
 });
+
+test('buildMessages includes assistant memories as low-priority context', () => {
+  const messages = buildMessages('部署怎么做？', [
+    {
+      id: 10,
+      type: 'file',
+      title: 'Deploy Notes',
+      chunk_text: 'deployment evidence',
+    },
+  ], 'ask', {
+    memoryItems: [
+      { memory_type: 'preference', content: '回答部署问题时先列风险' },
+    ],
+  });
+
+  assert.match(messages[0].content, /低优先级用户偏好/);
+  assert.match(messages[0].content, /先列风险/);
+  assert.match(messages[0].content, /引用只能使用这些编号：\[资料1\]/);
+});

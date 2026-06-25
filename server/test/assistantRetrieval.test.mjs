@@ -7,6 +7,7 @@ import { tmpdir } from 'os';
 import { initDocumentSchema, indexDocumentForItem } from '../utils/documentIndex.js';
 import { indexMissingDocumentEmbeddingsAsync } from '../utils/documentEmbeddings.js';
 import { retrieveSources, retrieveSourcesAsync } from '../utils/assistantRetrieval.js';
+import { upsertItemUnderstanding } from '../utils/itemUnderstanding.js';
 
 async function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-assistant-retrieval-test-'));
@@ -106,6 +107,28 @@ test('retrieveSources can disable legacy fallback with environment config', () =
       process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = previous;
     }
   }
+}));
+
+test('retrieveSources falls back to structured item understanding evidence', () => withDb((db) => {
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, url, title, summary, comment, imported_at, content_md)
+    VALUES (1, 5, 'file', '', 'Agent Roadmap', '', 'TODO: add memory diagnostics', '2026-06-11T00:00:00.000Z', '')
+  `).run();
+  upsertItemUnderstanding(db, 1);
+
+  const sources = retrieveSources({
+    db,
+    userId: 5,
+    question: 'memory diagnostics',
+    task: 'ask',
+    maxSources: 4,
+    includeLegacyFallback: false,
+  });
+
+  assert.equal(sources.length >= 1, true);
+  assert.equal(sources[0].sourceKind, 'structured_knowledge');
+  assert.equal(sources[0].retrieval_modes.includes('structured'), true);
+  assert.match(sources[0].chunk_text, /memory diagnostics/);
 }));
 
 test('retrieveSources disables row-level legacy fallback with environment config', () => withDb((db) => {

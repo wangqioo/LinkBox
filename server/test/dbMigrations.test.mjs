@@ -7,6 +7,7 @@ import { tmpdir } from 'os';
 import { runMigrations } from '../utils/dbMigrations.js';
 
 const EXPECTED_MIGRATIONS = [
+  '000_base_schema',
   '001_links_item_columns',
   '002_links_batch_columns',
   '003_jobs_schema',
@@ -16,6 +17,12 @@ const EXPECTED_MIGRATIONS = [
   '007_direct_messages_schema',
   '008_link_scope',
   '009_assistant_conversations',
+  '010_social_collaboration_schema',
+  '011_settings_and_legacy_chunks_schema',
+  '012_assistant_runs_schema',
+  '013_assistant_message_agent_metadata',
+  '014_item_understanding_schema',
+  '015_assistant_memory_schema',
 ];
 
 function withDb(fn) {
@@ -85,6 +92,68 @@ test('runMigrations adds missing item columns to legacy links tables', () => wit
     SELECT name FROM schema_migrations WHERE name = '001_links_item_columns'
   `).get();
   assert.equal(row.name, '001_links_item_columns');
+}));
+
+test('runMigrations creates the complete base schema for empty databases', () => withDb((db) => {
+  const result = runMigrations(db);
+
+  assert.equal(result.applied, EXPECTED_MIGRATIONS.length);
+  assert.deepEqual(result.names, EXPECTED_MIGRATIONS);
+  assert.deepEqual(columnNames(db, 'users'), [
+    'id',
+    'username',
+    'password_hash',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'links'), [
+    'id',
+    'user_id',
+    'type',
+    'url',
+    'title',
+    'description',
+    'thumbnail',
+    'comment',
+    'content',
+    'image_path',
+    'imported_at',
+    'created_at',
+    'summary',
+    'html_note',
+    'content_md',
+    'status',
+    'batch_id',
+    'batch_index',
+    'scope',
+  ]);
+  assert.deepEqual(columnNames(db, 'tags'), [
+    'id',
+    'user_id',
+    'name',
+    'color',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'link_tags'), [
+    'link_id',
+    'tag_id',
+  ]);
+  assert.deepEqual(columnNames(db, 'settings'), [
+    'key',
+    'value',
+  ]);
+  assert.deepEqual(columnNames(db, 'link_chunks'), [
+    'id',
+    'link_id',
+    'user_id',
+    'chunk_index',
+    'text',
+    'created_at',
+  ]);
+  assert.equal(indexNames(db, 'links').includes('idx_links_user'), true);
+  assert.equal(indexNames(db, 'links').includes('idx_links_imported'), true);
+  assert.equal(indexNames(db, 'tags').includes('idx_tags_user'), true);
+  assert.equal(indexNames(db, 'link_chunks').includes('idx_link_chunks_link'), true);
+  assert.equal(indexNames(db, 'link_chunks').includes('idx_link_chunks_user'), true);
 }));
 
 test('runMigrations is idempotent once migrations are recorded', () => withDb((db) => {
@@ -169,12 +238,171 @@ test('runMigrations creates assistant conversation history tables', () => withDb
     'content',
     'task',
     'sources_json',
+    'agent_json',
     'error',
     'created_at',
   ]);
   assert.equal(indexNames(db, 'assistant_conversations').includes('idx_assistant_conversations_user'), true);
   assert.equal(indexNames(db, 'assistant_conversations').includes('idx_assistant_conversations_group'), true);
   assert.equal(indexNames(db, 'assistant_messages').includes('idx_assistant_messages_conversation'), true);
+}));
+
+test('runMigrations creates assistant run observability tables', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.equal(result.names.includes('012_assistant_runs_schema'), true);
+  assert.deepEqual(columnNames(db, 'assistant_runs'), [
+    'id',
+    'user_id',
+    'conversation_id',
+    'scope_type',
+    'group_id',
+    'question',
+    'task',
+    'intent',
+    'status',
+    'plan_json',
+    'evidence_json',
+    'verification_json',
+    'created_at',
+    'completed_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'assistant_run_steps'), [
+    'id',
+    'run_id',
+    'step_index',
+    'step_type',
+    'label',
+    'status',
+    'metadata_json',
+    'created_at',
+  ]);
+  assert.equal(indexNames(db, 'assistant_runs').includes('idx_assistant_runs_user'), true);
+  assert.equal(indexNames(db, 'assistant_run_steps').includes('idx_assistant_run_steps_run'), true);
+}));
+
+test('runMigrations adds assistant message agent metadata to legacy conversation tables', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.equal(result.names.includes('013_assistant_message_agent_metadata'), true);
+  assert.equal(columnNames(db, 'assistant_messages').includes('agent_json'), true);
+}));
+
+test('runMigrations creates item understanding tables', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.equal(result.names.includes('014_item_understanding_schema'), true);
+  assert.deepEqual(columnNames(db, 'item_entities'), [
+    'id',
+    'item_id',
+    'user_id',
+    'name',
+    'kind',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'item_topics'), [
+    'id',
+    'item_id',
+    'user_id',
+    'name',
+    'weight',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'item_todos'), [
+    'id',
+    'item_id',
+    'user_id',
+    'text',
+    'status',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'item_claims'), [
+    'id',
+    'item_id',
+    'user_id',
+    'text',
+    'created_at',
+  ]);
+  assert.equal(indexNames(db, 'item_topics').includes('idx_item_topics_user_name'), true);
+}));
+
+test('runMigrations creates assistant memory table', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.equal(result.names.includes('015_assistant_memory_schema'), true);
+  assert.deepEqual(columnNames(db, 'assistant_memories'), [
+    'id',
+    'user_id',
+    'scope_type',
+    'group_id',
+    'memory_type',
+    'content',
+    'source',
+    'created_at',
+    'updated_at',
+  ]);
+  assert.equal(indexNames(db, 'assistant_memories').includes('idx_assistant_memories_user'), true);
+}));
+
+test('runMigrations creates social collaboration tables and indexes', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.equal(result.names.includes('010_social_collaboration_schema'), true);
+  assert.deepEqual(columnNames(db, 'friendships'), [
+    'id',
+    'requester_id',
+    'addressee_id',
+    'status',
+    'created_at',
+    'updated_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'groups'), [
+    'id',
+    'name',
+    'description',
+    'owner_id',
+    'agent_name',
+    'created_at',
+    'updated_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'group_members'), [
+    'group_id',
+    'user_id',
+    'role',
+    'joined_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'group_messages'), [
+    'id',
+    'group_id',
+    'user_id',
+    'body',
+    'message_type',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'group_links'), [
+    'group_id',
+    'link_id',
+    'shared_by',
+    'note',
+    'created_at',
+  ]);
+  assert.equal(indexNames(db, 'friendships').includes('idx_friendships_requester'), true);
+  assert.equal(indexNames(db, 'friendships').includes('idx_friendships_addressee'), true);
+  assert.equal(indexNames(db, 'groups').includes('idx_groups_owner'), true);
+  assert.equal(indexNames(db, 'group_members').includes('idx_group_members_user'), true);
+  assert.equal(indexNames(db, 'group_messages').includes('idx_group_messages_group'), true);
+  assert.equal(indexNames(db, 'group_links').includes('idx_group_links_group'), true);
+  assert.equal(indexNames(db, 'group_links').includes('idx_group_links_link'), true);
 }));
 
 test('runMigrations creates document tables and indexes for legacy databases', () => withDb((db) => {

@@ -106,3 +106,85 @@ export function renderBlocksToHtml(blocks, { proxyImageUrl } = {}) {
     return '';
   }).join('');
 }
+
+function renderAssistantInline(value) {
+  return escapeHtml(value)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[(资料\d+)\]/g, '<mark>[$1]</mark>');
+}
+
+export function renderAssistantMarkdown(markdown, sources = []) {
+  const lines = normalizeCitations(markdown, sources.length).split(/\r?\n/);
+  const html = [];
+  let listOpen = false;
+  let orderedListOpen = false;
+
+  function closeLists() {
+    if (listOpen) {
+      html.push('</ul>');
+      listOpen = false;
+    }
+    if (orderedListOpen) {
+      html.push('</ol>');
+      orderedListOpen = false;
+    }
+  }
+
+  function nextNonBlankLine(start) {
+    for (let i = start; i < lines.length; i += 1) {
+      const line = lines[i].trim();
+      if (line) return line;
+    }
+    return '';
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line) {
+      const nextLine = nextNonBlankLine(index + 1);
+      if (listOpen && /^[-*]\s+/.test(nextLine)) continue;
+      if (orderedListOpen && /^\d+\.\s+/.test(nextLine)) continue;
+      closeLists();
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      closeLists();
+      html.push(`<h3>${renderAssistantInline(line.slice(4))}</h3>`);
+    } else if (line.startsWith('## ')) {
+      closeLists();
+      html.push(`<h2>${renderAssistantInline(line.slice(3))}</h2>`);
+    } else if (line.startsWith('# ')) {
+      closeLists();
+      html.push(`<h2>${renderAssistantInline(line.slice(2))}</h2>`);
+    } else if (/^[-*]\s+/.test(line)) {
+      if (orderedListOpen) {
+        html.push('</ol>');
+        orderedListOpen = false;
+      }
+      if (!listOpen) {
+        html.push('<ul>');
+        listOpen = true;
+      }
+      html.push(`<li>${renderAssistantInline(line.replace(/^[-*]\s+/, ''))}</li>`);
+    } else if (/^\d+\.\s+/.test(line)) {
+      if (listOpen) {
+        html.push('</ul>');
+        listOpen = false;
+      }
+      const start = Number(line.match(/^(\d+)\.\s+/)?.[1] || 1);
+      if (!orderedListOpen) {
+        html.push(`<ol start="${Number.isFinite(start) ? start : 1}">`);
+        orderedListOpen = true;
+      }
+      html.push(`<li>${renderAssistantInline(line.replace(/^\d+\.\s+/, ''))}</li>`);
+    } else {
+      closeLists();
+      html.push(`<p>${renderAssistantInline(line)}</p>`);
+    }
+  }
+
+  closeLists();
+  return html.join('');
+}

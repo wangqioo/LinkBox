@@ -95,6 +95,8 @@ export interface FailedJobSummary {
   max_attempts: number;
   last_error: string;
   updated_at: string;
+  stage_label?: string;
+  recovery_hint?: string;
 }
 
 export type HealthCheckStatus = 'ok' | 'warn' | 'fail';
@@ -215,6 +217,7 @@ export interface AssistantRetrievalMetadata {
 export interface AssistantAnswer {
   answer: string;
   sources: AssistantSource[];
+  agent?: AssistantAgent;
 }
 
 export interface AssistantConversation {
@@ -235,8 +238,37 @@ export interface AssistantMessage {
   content: string;
   task: string;
   sources: AssistantSource[];
+  agent?: AssistantAgent;
   error?: string;
   created_at: string;
+}
+
+export interface AssistantAgent {
+  plan?: {
+    intent?: string;
+    tools?: Array<{ name?: string; reason?: string }>;
+    rewriteQueries?: string[];
+    scopeType?: string;
+  };
+  evidence?: {
+    status?: string;
+    items?: Array<{ citation?: string; title?: string; snippet?: string; supportReason?: string }>;
+  };
+  verification?: {
+    phase?: string;
+    support?: string;
+    evidenceCount?: number;
+    issues?: string[];
+    citations?: { used?: number[]; invalid?: number[] };
+  };
+  memory?: {
+    items?: Array<{ id?: number; memory_type?: string; content?: string; score?: number }>;
+  };
+  run?: {
+    id?: number;
+    status?: string;
+    steps?: Array<{ step_type?: string; label?: string; status?: string; metadata?: Record<string, unknown> }>;
+  };
 }
 
 export interface RetrievalDiagnosticsRequest {
@@ -280,6 +312,7 @@ export interface RetrievalDiagnosticsResponse {
   scope?: unknown;
   settings?: RetrievalDiagnosticsSettings;
   sources: RetrievalDiagnosticsSource[];
+  agent?: AssistantAgent;
 }
 
 export interface DocumentInspectionChunk {
@@ -398,6 +431,7 @@ export interface AssistantStreamHandlers {
   groupId?: number;
   conversationId?: number | null;
   onConversation?: (conversation: AssistantConversation) => void;
+  onAgent?: (agent: AssistantAgent) => void;
   onSources?: (sources: AssistantSource[]) => void;
   onDelta?: (text: string) => void;
   onDone?: () => void;
@@ -593,6 +627,7 @@ export const api = {
       const data = JSON.parse(dataLine.slice(5).trim());
 
       if (event === 'conversation') handlers.onConversation?.(data.conversation);
+      if (event === 'agent') handlers.onAgent?.(data.agent);
       if (event === 'sources') handlers.onSources?.(data.sources || []);
       if (event === 'delta') handlers.onDelta?.(data.text || '');
       if (event === 'done') handlers.onDone?.();

@@ -2,10 +2,14 @@
 
 Date: 2026-06-24
 
+Status: historical architecture background. For current active work and
+decisions, start with [roadmap.md](./roadmap.md).
+
 ## Current Status
 
-Implementation has reached the committed checkpoint
-`e1952e5 Polish mobile chat and group agent retrieval`.
+Implementation has passed the committed checkpoint
+`52fa19a Fix social message timestamps`. Some items below describe work that is
+now complete; the active queue is tracked in [roadmap.md](./roadmap.md).
 
 Completed:
 
@@ -248,7 +252,8 @@ Remaining Phase 2 focus:
 - Consolidate item write/tag/response shaping so create/update/delete paths
   return the same item presentation shape as list/detail where intended.
 - Continue migrating route modules to the shared `AppError`/JSON error helper
-  where it removes repeated response shaping.
+  where it removes repeated response shaping. Auth, tags, admin, settings, and
+  Assistant JSON endpoints have already moved.
 
 ### Phase 3: Frontend Link Feature
 
@@ -283,26 +288,21 @@ Remaining Phase 2 focus:
 
 ## Forward Plan
 
-Next slice:
-
-- Run and harden the full Playwright browser suite on a clean machine:
-  `cd client && npm run test:e2e`. The focused assistant/retrieval diagnostics
-  and failed-job retry suite passes, but the full suite should be treated as the
-  next release gate.
+The full Playwright suite, canonical-only suite, and server smoke suite are now
+part of the normal validation gate. See [roadmap.md](./roadmap.md) for the
+current next slices.
 
 Still needed before a broader release:
 
-- Add a compact chat-source inspection affordance so normal assistant answers
-  can be debugged with the same retrieval metadata returned by diagnostics.
-- Extract reusable processing banner/card components and align desktop/mobile
-  item cards around the same `processing` labels, retry state, and last-error
-  text.
+- Continue decomposing the largest mobile views into workflow-specific
+  composables.
+- Deepen `server/routes/social.js` into permission, direct-chat, group-chat,
+  and group-material modules behind the existing route contract.
 - Consolidate item write/tag/response shaping so create/update/delete paths
   return the same item presentation shape as list/detail where intended.
 - Continue migrating route modules to the shared application error helper where
   it reduces repeated response shaping.
-- Write migration plan for item/content/assets tables.
-- Move jobs, document tables, and future item/content/assets schema changes into
+- Keep schema ownership moving from boot-time `CREATE TABLE` blocks toward
   explicit migrations.
 - Retire or narrow legacy `link_chunks` after canonical document retrieval has
   enough production confidence.

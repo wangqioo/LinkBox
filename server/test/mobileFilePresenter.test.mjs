@@ -31,6 +31,7 @@ test('toMobileFile carries processing details and last error for clients', () =>
     processing: {
       state: 'failed',
       lastError: 'pdftotext missing',
+      recoveryHint: '确认文件格式受支持，检查 pdftotext/LibreOffice 等文档解析依赖后重试。',
     },
   });
 
@@ -39,6 +40,7 @@ test('toMobileFile carries processing details and last error for clients', () =>
   assert.equal(file.status, 'failed');
   assert.equal(file.error, 'pdftotext missing');
   assert.equal(file.processing.state, 'failed');
+  assert.equal(file.recovery_hint, '确认文件格式受支持，检查 pdftotext/LibreOffice 等文档解析依赖后重试。');
 });
 
 test('toMobileFile sources type and retry state from shared presentation', () => {

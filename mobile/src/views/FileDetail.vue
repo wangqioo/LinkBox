@@ -87,6 +87,7 @@
             <div class="state-copy">
               <span class="state-title">处理失败</span>
               <span class="state-detail">{{ processingError }}</span>
+              <span v-if="processingHint" class="state-detail">建议：{{ processingHint }}</span>
             </div>
             <button class="action-link" @click="triggerAnalyze" :disabled="analyzing">重试</button>
           </div>
@@ -342,6 +343,7 @@ const typeLabel = computed(() => isBilibiliVideo.value ? fileLabel('video') : fi
 const statusLabel = computed(() => SLABELS[file.value?.status] || '')
 const processingLabel = computed(() => file.value?.processing?.label || '后台处理中')
 const processingError = computed(() => file.value?.error || file.value?.processing?.lastError || '请稍后重试')
+const processingHint = computed(() => file.value?.recovery_hint || file.value?.processing?.recoveryHint || '')
 const pendingActionLabel = computed(() => file.value?.processing?.activeJob ? '刷新' : '继续处理')
 
 const timeStr = computed(() => {

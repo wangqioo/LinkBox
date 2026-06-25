@@ -12,6 +12,7 @@ test('deriveProcessingDisplay prefers failed processing details and retry state'
       canRetry: true,
       failedJobId: 42,
       lastError: 'LibreOffice timed out',
+      recoveryHint: '检查文档解析依赖后重试',
       updatedAt: '2026-06-17T00:00:00.000Z',
     },
   });
@@ -19,6 +20,7 @@ test('deriveProcessingDisplay prefers failed processing details and retry state'
   assert.deepEqual(display, {
     kind: 'failed',
     text: 'LibreOffice timed out',
+    recoveryHint: '检查文档解析依赖后重试',
     step: 0,
     canRetry: true,
   });

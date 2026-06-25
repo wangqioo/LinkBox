@@ -53,6 +53,70 @@ function settingsSummary(settings: RetrievalDiagnosticsResponse['settings']) {
   }
 }
 
+function AgentDiagnostics({ agent }: { agent?: RetrievalDiagnosticsResponse['agent'] }) {
+  if (!agent) return null;
+  const tools = agent.plan?.tools || [];
+  const memories = agent.memory?.items || [];
+  const evidence = agent.evidence?.items || [];
+  const issues = agent.verification?.issues || [];
+  const steps = agent.run?.steps || [];
+
+  return (
+    <div className="rounded-lg border bg-gray-50 dark:bg-gray-800 px-3 py-3 space-y-3">
+      <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+        <span>Intent：{agent.plan?.intent || '—'}</span>
+        <span>Evidence：{agent.evidence?.status || '—'}</span>
+        <span>Support：{agent.verification?.support || '—'}</span>
+        <span>Run：{agent.run?.status || '—'}</span>
+      </div>
+
+      {!!tools.length && (
+        <div>
+          <div className="text-xs font-semibold mb-1">Tools</div>
+          <div className="flex flex-wrap gap-1.5">
+            {tools.map((tool, index) => (
+              <span key={`${tool.name || 'tool'}-${index}`} className="rounded-md border bg-white px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-gray-900 dark:border-gray-700">
+                {tool.name}{tool.reason ? ` · ${tool.reason}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!!memories.length && (
+        <div>
+          <div className="text-xs font-semibold mb-1">Memory</div>
+          <div className="space-y-1">
+            {memories.map((memory, index) => (
+              <div key={memory.id || index} className="text-xs text-gray-500">
+                {memory.memory_type || 'note'}：{memory.content}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!!evidence.length && (
+        <div>
+          <div className="text-xs font-semibold mb-1">Evidence Notebook</div>
+          <div className="space-y-1">
+            {evidence.slice(0, 4).map((item, index) => (
+              <div key={`${item.citation || 'evidence'}-${index}`} className="text-xs text-gray-500">
+                {item.citation || `[${index + 1}]`} {item.title || 'Untitled'}{item.supportReason ? ` · ${item.supportReason}` : ''}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500">
+        <div>Issues：{issues.length ? issues.join(', ') : '—'}</div>
+        <div>Steps：{steps.map(step => step.step_type).filter(Boolean).join(' → ') || '—'}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function RetrievalDiagnosticsPanel() {
   const [question, setQuestion] = useState('');
   const [task, setTask] = useState('ask');
@@ -176,6 +240,8 @@ export default function RetrievalDiagnosticsPanel() {
             Query：{result.query} · Task：{result.task} · Scope：{scopeSummary(result.scope)}
             {settingsSummary(result.settings) ? ` · Settings：${settingsSummary(result.settings)}` : ''}
           </div>
+
+          <AgentDiagnostics agent={result.agent} />
 
           <div className="space-y-2">
             {result.sources.length ? result.sources.map((source, index) => (

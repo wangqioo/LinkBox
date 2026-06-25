@@ -5,6 +5,7 @@ import { searchEmbeddedDocumentChunks, searchEmbeddedDocumentChunksAsync } from 
 import { rerankDocumentCandidates } from './documentRerank.js';
 import { sqlConditionForItemKind } from './itemKind.js';
 import { addTimeScopeConditions, normalizeTimeScope, resolveTimeScope } from './timeScope.js';
+import { searchItemUnderstanding } from './itemUnderstanding.js';
 
 const DEFAULT_MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
 const DEFAULT_MAX_FALLBACK_SOURCES = Number(process.env.ASSISTANT_MAX_FALLBACK_SOURCES || 2);
@@ -219,9 +220,14 @@ export function retrieveSources({
     if (chunks.length) {
       return chunks.map((item, index) => ({ ...item, source_index: index + 1 }));
     }
-  } else {
-    return [];
   }
+
+  const structuredRows = searchItemUnderstanding({ db, userId, query: question, limit: maxSources });
+  if (structuredRows.length) {
+    return structuredRows.map((item, index) => ({ ...item, source_index: index + 1 }));
+  }
+
+  if (!legacyChunkFallbackEnabled(includeLegacyFallback)) return [];
 
   const params = [userId];
   const scopedConditions = scopeWhere(scope, params);

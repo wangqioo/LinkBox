@@ -11,6 +11,7 @@ export interface ProcessingStatus {
   canRetry: boolean;
   failedJobId: number | null;
   lastError: string;
+  recoveryHint?: string;
   updatedAt: string;
   activeJob?: {
     id: number;
@@ -20,6 +21,7 @@ export interface ProcessingStatus {
     attempts: number;
     maxAttempts: number;
     lastError: string;
+    recoveryHint?: string;
     updatedAt: string;
   } | null;
 }

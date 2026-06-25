@@ -8,6 +8,10 @@ embedding/rerank pipeline have been implemented in the working tree. Remaining
 work is now product hardening and configuration polish, not a blocker for basic
 use.
 
+For current planning status and active architecture debt, start with
+[roadmap.md](./roadmap.md). This document is retained as Markdown-first
+knowledge-base design background.
+
 ## Goal
 
 Promote Markdown from an item field into LinkBox's canonical knowledge
@@ -201,7 +205,7 @@ original item and highlighted chunk.
 7. [x] Add optional embedding adapters after keyword retrieval is stable.
 8. [x] Add rerank adapters for keyword + embedding candidates.
 9. [x] Add admin operations for bulk document reindexing and embedding backfill.
-10. [ ] Add UI/config documentation for real embedding providers.
+10. [x] Add UI configuration for real embedding providers.
 11. [ ] Decide whether Markdown document history should be append-only or
     overwrite-in-place.
 
@@ -235,9 +239,9 @@ Supported embedding modes:
 
 - local deterministic hash embedding: no external dependency, useful for testing
   and keeping the pipeline operational
-- OpenAI-compatible `/embeddings`: configured through environment variables:
-  `EMBEDDING_PROVIDER=openai-compatible`, `EMBEDDING_BASE_URL`,
-  `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL`
+- OpenAI-compatible `/embeddings`: configured through the admin settings UI or
+  environment defaults such as `EMBEDDING_PROVIDER=openai-compatible`,
+  `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, and `EMBEDDING_MODEL`
 
 ## Remaining Development Plan
 
@@ -245,12 +249,16 @@ Supported embedding modes:
 
 Goal: make the feature maintainable on existing databases.
 
+Status: implemented. Admin system status reports document, chunk, embedding,
+and consistency counts; settings routes expose reindex and embedding backfill
+operations.
+
 Tasks:
 
-- add an admin API to reindex all missing/outdated documents
-- add an admin API to enqueue `document.embed` for missing embeddings
-- expose counts for documents, chunks, embeddings, and failed embedding jobs
-- add tests around ownership, idempotency, and job de-duplication
+- [x] add an admin API to reindex all missing/outdated documents
+- [x] add an admin API to enqueue `document.embed` for missing embeddings
+- [x] expose counts for documents, chunks, embeddings, and failed embedding jobs
+- [x] add tests around ownership, idempotency, and job de-duplication
 
 Suggested files:
 
@@ -279,8 +287,8 @@ Current behavior:
 - set `ASSISTANT_ENABLE_RERANK=0` to disable it
 - scoring boosts title/heading matches, phrase matches, token coverage,
   dual keyword+embedding hits, and recency tie-breaks
-- next retrieval tuning step: make embedding recall independent from keyword
-  recall so semantic vector matches are not hidden by zero keyword hits
+- embedding recall is independent from keyword recall, so semantic vector
+  matches are still considered when keyword search has no hits
 
 Suggested files:
 
@@ -293,12 +301,14 @@ Suggested files:
 Goal: make real embedding providers configurable without editing environment
 variables.
 
+Status: implemented for local and OpenAI-compatible embedding settings.
+
 Tasks:
 
-- add embedding provider fields to settings
-- keep embedding config separate from chat/vision model config
-- add a test endpoint for `/embeddings`
-- show embedding status and last error in system settings
+- [x] add embedding provider fields to settings
+- [x] keep embedding config separate from chat/vision model config
+- [x] add a test endpoint for `/embeddings`
+- [x] show embedding status and last error in system settings
 
 Suggested files:
 

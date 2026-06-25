@@ -1,6 +1,6 @@
 # LinkBox Development Guide
 
-Last updated: 2026-06-24
+Last updated: 2026-06-25
 
 This document records the current development state so future work can resume
 without rediscovering the architecture, commands, and validation steps.
@@ -10,7 +10,7 @@ without rediscovering the architecture, commands, and validation steps.
 The current architecture follow-up checkpoint is:
 
 ```bash
-main e1952e5 Polish mobile chat and group agent retrieval
+main 52fa19a Fix social message timestamps
 ```
 
 This includes the earlier 2026-06-15 item intake pass, the follow-up
@@ -20,7 +20,8 @@ shared route JSON error shaping, explicit database migrations, the
 2026-06-16/17 admin observability pass, and the 2026-06-17 processing/status
 and migration-hardening pass. It also includes the 2026-06-21 Bilibili video
 processing pass, normalized item kind pass, mobile detail/list behavior fixes,
-and the 2026-06-24 social collaboration/mobile chat polish pass.
+the 2026-06-24 social collaboration/mobile chat polish pass, Assistant
+conversation history, and social message timestamp fixes.
 
 At this checkpoint:
 
@@ -36,6 +37,10 @@ At this checkpoint:
 - Mobile assistant chat reuses a small Markdown/citation utility at
   `mobile/src/utils/markdownParser.js`, with tests covering unsafe HTML,
   citation normalization, image proxying, and table sanitization.
+- Mobile Assistant answer rendering also uses
+  `renderAssistantMarkdown` from `mobile/src/utils/markdownParser.js`, so
+  headings, lists, inline code, bold text, and bounded citations are tested
+  outside `ChatBox.vue`.
 - Backend unit tests, desktop build, mobile build, and `git diff --check` all
   passed before the item intake pass started.
 - Item acceptance and durable job scheduling live in
@@ -73,6 +78,12 @@ At this checkpoint:
 - Admin system status now includes a bounded failed-job list. The settings page
   shows individual failed jobs and supports retrying one failed job or all
   failed jobs through `POST /api/settings/system/retry-failed-jobs`.
+- Failed-job rows include user-facing stage labels and recovery hints so admins
+  can tell whether to check document parsers, AI settings, vision settings,
+  webpage access, or embedding configuration before retrying.
+- Item processing status uses the same recovery-hint mapping as the failed-job
+  admin list, so normal item cards can keep the raw error separate from the
+  suggested recovery action.
 - Embedding settings are stored separately from chat AI settings in
   `server/utils/embeddingConfig.js`. Document indexing, assistant retrieval,
   document maintenance, and background `document.embed` jobs use the same
@@ -91,18 +102,49 @@ At this checkpoint:
   chunks.
 - Assistant chat responses now expose normalized source metadata so the normal
   chat UI can show the retrieval path without calling the diagnostics endpoint.
+- Desktop and mobile Assistant citation panels now show compact source
+  inspection chips for source kind, retrieval modes, heading path, scores,
+  rerank mode, and chunk type. This makes normal chat answers debuggable without
+  opening the admin-only diagnostics panel.
 - Assistant chat history is persisted in `assistant_conversations` and
   `assistant_messages`. Personal and group conversations are separate, and
   saved history is used for UI restoration rather than prompt context.
+- Assistant now runs through an observable Smart Agent layer. The backend
+  planner classifies intent and retrieval tools, records `assistant_runs` and
+  `assistant_run_steps`, retries retrieval with planner rewrite queries, builds
+  an evidence notebook, verifies answer citations after generation, and returns
+  compatible `agent` metadata from chat, stream, and retrieval diagnostics.
+- Assistant messages include `agent_json` so restored history can show run and
+  verification summaries. Explicit user memory is stored in
+  `assistant_memories` only when the user asks LinkBox to remember a preference
+  or stable context; it is loaded as low-priority prompt context and kept
+  separate between personal and group scopes.
+- Structured item understanding is stored in `item_entities`, `item_topics`,
+  `item_todos`, and `item_claims`. `indexDocumentForItem` refreshes these rows,
+  and Assistant retrieval uses them as an explainable fallback before whole-row
+  legacy fallback.
 - Desktop item cards use a reusable processing banner derived from the shared
   `processing` contract. Mobile home/day views use the same processing labels
-  and last-error text through `mobileProcessingStatus`.
+  last-error text, and recovery hints through `mobileProcessingStatus`.
 - Create and update item write paths return the same item presentation contract
   used by list/detail responses, including tags and processing metadata.
-- The tags route now uses the shared route JSON error helper for expected
-  validation/not-found/conflict failures while preserving response messages.
+- The auth, tags, admin, and Assistant JSON endpoints now use the shared route
+  JSON error helper for expected validation/not-found/conflict/permission,
+  credential, and retrieval-access failures while preserving response messages.
 - Jobs and canonical document tables are created through explicit migrations
   recorded in `schema_migrations`.
+- Direct messages and social collaboration tables are created through
+  migrations `007_direct_messages_schema` and
+  `010_social_collaboration_schema`; `server/db.js` no longer duplicates those
+  feature table definitions at startup.
+- Base tables and legacy compatibility tables are also created through
+  migrations `000_base_schema` and `011_settings_and_legacy_chunks_schema`.
+  `server/db.js` now only opens SQLite, applies pragmas, creates required data
+  directories, and runs `runMigrations(db)`.
+- Smart Agent observability, message metadata, item understanding, and memory
+  are created through migrations `012_assistant_runs_schema`,
+  `013_assistant_message_agent_metadata`, `014_item_understanding_schema`, and
+  `015_assistant_memory_schema`.
 - Legacy `link_chunks` fallback can be disabled with
   `ASSISTANT_ENABLE_LEGACY_FALLBACK=0` while canonical `document_chunks`
   retrieval remains active.
@@ -149,6 +191,10 @@ At this checkpoint:
 - Social collaboration is available through `server/routes/social.js`,
   including friend requests, direct chats, group chats, group materials,
   chat-scoped uploads, material comments, and message deletion rules.
+- Shared social collaboration reads and payload shaping live in
+  `server/utils/socialService.js`, including accepted-friend checks,
+  group-membership checks, timestamp normalization, message payloads, and
+  material payloads.
 - Group Assistant retrieval is isolated from personal Assistant retrieval.
   Group mode reads only the active group's shared materials, chat-scoped group
   uploads, group material notes, material comments, and group text messages.
@@ -197,6 +243,7 @@ Important backend modules:
 server/routes/links.js              Wires HTTP routes to the item controller
 server/routes/assistant.js          Assistant HTTP/SSE adapter
 server/routes/social.js             Friends, direct chats, groups, and group materials
+server/utils/socialService.js       Social membership/friendship and payload helpers
 server/utils/itemController.js      Item HTTP handlers
 server/utils/itemRepository.js      Item lookup/list ownership helpers
 server/utils/itemProcessingStatus.js Derived processing contract
@@ -375,6 +422,11 @@ npm install
 npx playwright install chromium
 ```
 
+The Chromium install is required on a fresh machine or after a Playwright
+browser version update. If every browser E2E fails before page navigation with
+`Executable doesn't exist` under `~/Library/Caches/ms-playwright`, rerun the
+same install command and then rerun the suite.
+
 Run the browser suite:
 
 ```bash
@@ -382,17 +434,29 @@ cd client
 npm run test:e2e
 ```
 
-The Playwright config starts three isolated local services:
+At the 2026-06-25 checkpoint the full suite passes:
+
+```text
+13 passed
+```
+
+The Playwright config starts four isolated local services:
 
 - mock OpenAI-compatible endpoint on `127.0.0.1:3320`
 - backend API on `127.0.0.1:3310` with a temporary SQLite database and uploads directory
 - Vite desktop app on `127.0.0.1:5174` with `/api` proxied to the test backend
+- Vite mobile app on `127.0.0.1:5175/mobile/` with `/api` proxied to the test backend
 
 The backend wrapper seeds a fixed admin user for admin-only tests, writes AI
 settings to the mock endpoint, and seeds a failed background job for retry UI
 coverage. Browser tests should keep test-only logic in `client/e2e`,
 `client/playwright.config.ts`, or `server/scripts/playwright-*`; production
 routes should not gain test-only endpoints.
+
+Mobile image-batch E2E tests should follow the current feed interaction model:
+the batch card is only the stacked gallery, and comment/delete actions are
+opened from the row-level three-dot menu. Do not reintroduce an inline
+`.batch-delete` button just to satisfy older tests.
 
 ## Isolated Smoke Test
 
@@ -433,14 +497,18 @@ Stop the smoke server after testing and verify the test port no longer responds.
 
 ## Documentation Links
 
+- [roadmap.md](./roadmap.md): current planning status, active architecture
+  debt, decisions needed, and broad validation gates.
+- [validation.md](./validation.md): verification matrix by change type.
+- [../CONTEXT.md](../CONTEXT.md): project vocabulary and architectural terms.
 - [architecture-redesign.md](./architecture-redesign.md): target architecture,
-  phases, and success criteria.
+  phases, success criteria, and historical architecture background.
 - [deployment.md](./deployment.md): current home-server update commands,
   rollback steps, and verification checks.
 - [social-collaboration.md](./social-collaboration.md): friends, direct chats,
   groups, group materials, and group Assistant scope rules.
 - [markdown-knowledge-base-plan.md](./markdown-knowledge-base-plan.md):
-  Markdown-first knowledge base redesign plan for future AI retrieval work.
+  Markdown-first knowledge base redesign background and remaining decisions.
 - [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md):
   staged plan for splitting overloaded `links` rows into item content and asset
   tables, plus legacy `link_chunks` retirement gates.
@@ -461,8 +529,8 @@ The previous backlog is closed for this checkpoint:
 4. Create/update item write paths return presented items with tags and
    processing metadata. Delete remains the existing `{ ok: true }` command
    response.
-5. The tags route has been migrated to the shared JSON error helper as the
-   next route-helper slice.
+5. The auth, tags, admin, and Assistant JSON endpoints have been migrated to the
+   shared JSON error helper for expected route errors.
 6. Jobs and document schema initialization moved into explicit migrations.
 7. The future item/content/assets migration plan is documented in
    [item-content-assets-migration-plan.md](./item-content-assets-migration-plan.md).
@@ -474,5 +542,9 @@ The previous backlog is closed for this checkpoint:
 
 Recommended next work after this checkpoint:
 
-1. Continue route JSON error helper migration opportunistically in larger route
+1. Use [roadmap.md](./roadmap.md) as the planning entry point before starting a
+   new feature slice.
+2. Continue route JSON error helper migration opportunistically in larger route
    edits; avoid broad mechanical churn without behavior tests.
+3. Decompose the largest mobile views through workflow-specific composables
+   before adding more mobile social or Assistant behavior.

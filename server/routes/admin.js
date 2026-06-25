@@ -2,11 +2,12 @@ import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { emptyAdminTypeStats, presentAdminRecentItem, summarizeAdminItemRows } from '../utils/adminUserStats.js';
+import { httpError, jsonError } from '../utils/appError.js';
 
 const router = Router();
 
 function requireAdmin(req, res, next) {
-  if (req.userId !== 1) return res.status(403).json({ error: '仅管理员可操作' });
+  if (req.userId !== 1) return jsonError(res, httpError(403, '仅管理员可操作'), '管理员校验失败');
   next();
 }
 
@@ -60,11 +61,11 @@ router.get('/users', (req, res) => {
 router.get('/users/:id', (req, res) => {
   const userId = Number(req.params.id);
   if (!Number.isInteger(userId) || userId <= 0) {
-    return res.status(400).json({ error: '用户 ID 无效' });
+    return jsonError(res, httpError(400, '用户 ID 无效'), '读取用户失败');
   }
 
   const user = db.prepare('SELECT id, username, created_at FROM users WHERE id = ?').get(userId);
-  if (!user) return res.status(404).json({ error: '用户不存在' });
+  if (!user) return jsonError(res, httpError(404, '用户不存在'), '读取用户失败');
 
   const totals = db.prepare(`
     SELECT

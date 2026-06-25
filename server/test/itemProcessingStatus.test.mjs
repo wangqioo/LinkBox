@@ -44,6 +44,8 @@ test('buildProcessingStatus prefers failed jobs and exposes retry metadata', () 
   assert.equal(status.canRetry, true);
   assert.equal(status.failedJobId, 10);
   assert.equal(status.lastError, 'pdftotext missing');
+  assert.equal(status.recoveryHint, '确认文件格式受支持，检查 pdftotext/LibreOffice 等文档解析依赖后重试。');
+  assert.equal(status.activeJob.recoveryHint, '确认文件格式受支持，检查 pdftotext/LibreOffice 等文档解析依赖后重试。');
 });
 
 test('buildProcessingStatus reports active queued or running jobs', () => {

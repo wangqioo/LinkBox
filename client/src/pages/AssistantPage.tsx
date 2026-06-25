@@ -1,14 +1,16 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { api, type AssistantConversation, type AssistantSource } from '../api/client';
+import { api, type AssistantAgent, type AssistantConversation, type AssistantSource } from '../api/client';
 import { Bot, CalendarDays, CheckSquare, ChevronDown, FileText, Loader2, Plus, Search, Send, Tags, Trash2, UserRound } from 'lucide-react';
 import AutoGrowTextarea from '../components/AutoGrowTextarea';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import { assistantSourceInspectionRows } from '../components/assistantSourceInspection';
 
 interface Message {
   id: number;
   role: 'user' | 'assistant';
   content: string;
   sources?: AssistantSource[];
+  agent?: AssistantAgent;
   done?: boolean;
 }
 
@@ -64,7 +66,7 @@ function SourceList({ sources = [] }: { sources?: AssistantSource[] }) {
                           <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 mb-0.5">
                             片段 {chunk.index}
                           </div>
-                          <RetrievalInfo retrieval={chunk.retrieval} />
+                          <RetrievalInfo retrieval={chunk.retrieval} compact />
                           <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-3">
                             {chunk.text}
                           </div>
@@ -82,37 +84,53 @@ function SourceList({ sources = [] }: { sources?: AssistantSource[] }) {
   );
 }
 
-function formatScore(value: unknown) {
-  if (typeof value !== 'number' || Number.isNaN(value)) return '';
-  return value.toFixed(3);
-}
-
-function formatModes(value: unknown) {
-  return Array.isArray(value) && value.length ? value.join('+') : '';
-}
-
-function formatHeadingPath(value: unknown) {
-  if (Array.isArray(value)) return value.filter(Boolean).join(' > ');
-  return typeof value === 'string' ? value : '';
-}
-
-function RetrievalInfo({ retrieval }: { retrieval?: AssistantSource['retrieval'] }) {
-  if (!retrieval) return null;
-  const parts = [
-    retrieval.sourceKind,
-    formatModes(retrieval.retrieval_modes),
-    formatScore(retrieval.score) && `score ${formatScore(retrieval.score)}`,
-    formatScore(retrieval.combined_score) && `combined ${formatScore(retrieval.combined_score)}`,
-    formatScore(retrieval.embedding_score) && `embed ${formatScore(retrieval.embedding_score)}`,
-    retrieval.rerank_mode && `rerank ${retrieval.rerank_mode}${formatScore(retrieval.rerank_score) ? ` ${formatScore(retrieval.rerank_score)}` : ''}`,
-    formatHeadingPath(retrieval.heading_path) && `heading ${formatHeadingPath(retrieval.heading_path)}`,
-    retrieval.chunk_type && `type ${retrieval.chunk_type}`,
-  ].filter(Boolean);
-
-  if (!parts.length) return null;
+function RetrievalInfo({ retrieval, compact = false }: { retrieval?: AssistantSource['retrieval']; compact?: boolean }) {
+  const rows = assistantSourceInspectionRows(retrieval);
+  if (!rows.length) return null;
   return (
-    <div className="mt-1 text-[11px] leading-5 text-gray-500 dark:text-gray-400">
-      检索：{parts.join(' · ')}
+    <div className={`mt-1 flex flex-wrap gap-1.5 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+      {rows.map(row => (
+        <span key={`${row.label}:${row.value}`} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 text-gray-500 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-400">
+          <span className="shrink-0 font-medium text-gray-400 dark:text-gray-500">{row.label}</span>
+          <span className="truncate">{row.value}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function AgentStatus({ agent }: { agent?: AssistantAgent }) {
+  if (!agent) return null;
+  const tools = agent.plan?.tools?.length || 0;
+  const evidenceStatus = agent.evidence?.status || 'unknown';
+  const support = agent.verification?.support || 'unknown';
+  const memoryCount = agent.memory?.items?.length || 0;
+  const attempts = agent.run?.steps?.find(step => step.step_type === 'retrieval')?.metadata?.queryCount;
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+      <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
+        意图 <span className="font-medium text-gray-700 dark:text-gray-200">{agent.plan?.intent || 'unknown'}</span>
+      </span>
+      <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
+        工具 <span className="font-medium text-gray-700 dark:text-gray-200">{tools}</span>
+      </span>
+      {typeof attempts === 'number' && (
+        <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
+          检索 <span className="font-medium text-gray-700 dark:text-gray-200">{attempts}</span>
+        </span>
+      )}
+      <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
+        证据 <span className="font-medium text-gray-700 dark:text-gray-200">{evidenceStatus}</span>
+      </span>
+      <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
+        校验 <span className="font-medium text-gray-700 dark:text-gray-200">{support}</span>
+      </span>
+      {memoryCount > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white/70 px-1.5 py-0.5 dark:border-gray-700 dark:bg-gray-900/50">
+          记忆 <span className="font-medium text-gray-700 dark:text-gray-200">{memoryCount}</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -153,6 +171,11 @@ export default function AssistantPage() {
         onConversation: conversation => {
           setActiveConversationId(conversation.id);
           loadConversations().catch(() => undefined);
+        },
+        onAgent: agent => {
+          setMessages(prev => prev.map(message =>
+            message.id === assistantId ? { ...message, agent } : message
+          ));
         },
         onSources: sources => {
           setMessages(prev => prev.map(message =>
@@ -208,6 +231,7 @@ export default function AssistantPage() {
       role: message.role,
       content: message.error || message.content,
       sources: message.sources,
+      agent: message.agent,
       done: true,
     })));
     idRef.current = Math.max(1, ...data.messages.map(message => message.id)) + 1;
@@ -303,6 +327,7 @@ export default function AssistantPage() {
                   ) : (
                     <div className="whitespace-pre-wrap">{message.content}</div>
                   )}
+                  {message.role === 'assistant' && <AgentStatus agent={message.agent} />}
                   {message.role === 'assistant' && message.done && <SourceList sources={message.sources} />}
                 </div>
                 {message.role === 'user' && (

@@ -2,8 +2,12 @@
 
 Date: 2026-06-17
 
-Status: planning document. Do not start schema changes until the current
-`links`-compatible API contracts are covered by server and browser tests.
+Status: partially implemented migration background. Migrations for
+`item_content` and `item_assets`, backfills, dual-writes, read fallbacks, and
+admin consistency checks are implemented. Remaining work is compatibility
+retirement, not starting the schema split.
+
+For current planning status, start with [roadmap.md](./roadmap.md).
 
 ## Goal
 
@@ -71,18 +75,22 @@ export path can read through item presentation helpers.
 
 ## Migration Sequence
 
-1. Add explicit migrations for `item_content` and `item_assets`.
-2. Backfill `item_content` from existing `links.content`, `links.content_md`,
+1. [x] Add explicit migrations for `item_content` and `item_assets`.
+2. [x] Backfill `item_content` from existing `links.content`, `links.content_md`,
    `links.summary`, and `links.html_note`.
-3. Backfill `item_assets` from `links.image_path`, file upload descriptions,
+3. [x] Backfill `item_assets` from `links.image_path`, file upload descriptions,
    and existing thumbnail paths where the source is an owned upload.
-4. Add repository helpers that read from the new tables and fall back to
+4. [x] Add repository helpers that read from the new tables and fall back to
    `links` columns when a row has not been backfilled.
-5. Update write paths to dual-write `links` compatibility columns and the new
+5. [x] Update write paths to dual-write `links` compatibility columns and the new
    tables.
-6. Update item presentation, mobile file responses, exports, document indexing,
-   and assistant retrieval to read through the repository helpers.
-7. Add a consistency check script that reports missing content/assets rows for
+6. [~] Update item presentation, mobile file responses, exports, document
+   indexing, and assistant retrieval to read through the repository helpers.
+   Item presentation and mobile responses already prefer canonical content
+   helpers. Compatibility retirement still needs export, search, and Assistant
+   read paths to stop depending directly on legacy `links.content_md` where
+   practical.
+7. [x] Add a consistency check that reports missing content/assets rows for
    items that should have them.
 8. After one release cycle, narrow writes to `links.content*` and
    `links.image_path` to compatibility-only updates.

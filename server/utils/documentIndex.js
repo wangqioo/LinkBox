@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import { scoreTextFields, tokenizeQuery } from './textScoring.js';
 import { sqlConditionForItemKind } from './itemKind.js';
 import { addTimeScopeConditions } from './timeScope.js';
+import { upsertItemUnderstanding } from './itemUnderstanding.js';
 
 export const DOCUMENT_PARSER_VERSION = 'linkbox-canonical-v1';
 const TARGET_CHARS = 1400;
@@ -289,6 +290,11 @@ export function indexDocumentForItem(db, itemId) {
   const chunks = splitMarkdownIntoSemanticChunks(markdown);
 
   replaceDocumentChunks(db, document.id, chunks);
+  try {
+    upsertItemUnderstanding(db, item.id);
+  } catch (error) {
+    console.warn('Item understanding refresh failed:', error.message);
+  }
 
   return { documentId: document.id, chunkCount: chunks.length };
 }

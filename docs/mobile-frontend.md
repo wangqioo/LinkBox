@@ -130,6 +130,8 @@ Group assistant behavior:
 - Loading a conversation restores the visible messages and source cards.
 - Saved history is not currently injected into the next prompt; retrieval still
   depends on the current question and selected personal/group scope.
+- `mobile/src/utils/assistantConversations.js` owns saved-message normalization
+  and next local message id calculation for the chat UI.
 
 ## Auto-Growing Textareas
 
@@ -154,13 +156,8 @@ Run before shipping mobile UI changes:
 
 ```bash
 cd mobile
+npm test
 npm run build
-
-cd ..
-node --test \
-  mobile/src/utils/imageBatchGallery.test.mjs \
-  mobile/src/utils/groupChatDisplay.test.mjs \
-  mobile/src/utils/socialConversations.test.mjs
 
 git diff --check
 ```

@@ -11,3 +11,13 @@ export function mobileProcessingText(file) {
 
   return ''
 }
+
+export function mobileProcessingHint(file) {
+  if (!file) return ''
+
+  if (file.processing?.state === 'failed' || file.status === 'failed') {
+    return file.recovery_hint || file.processing?.recoveryHint || ''
+  }
+
+  return ''
+}

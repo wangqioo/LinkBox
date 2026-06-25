@@ -48,7 +48,7 @@
             <div v-if="msg.role === 'assistant' && !msg.content" class="typing">
               <span></span><span></span><span></span>
             </div>
-            <div v-else-if="msg.role === 'assistant'" class="md" v-html="renderMarkdown(msg.content, msg.sources || [])"></div>
+            <div v-else-if="msg.role === 'assistant'" class="md" v-html="renderAssistantMarkdown(msg.content, msg.sources || [])"></div>
             <div v-else class="user-text">{{ msg.content }}</div>
           </div>
 
@@ -71,6 +71,16 @@
                     <strong>{{ source.title }}</strong>
                     <em v-if="source.summary">{{ source.summary }}</em>
                     <small v-if="source.url">{{ source.url }}</small>
+                    <span v-if="inspectionRows(source.retrieval).length" class="source-inspection">
+                      <span
+                        v-for="row in inspectionRows(source.retrieval)"
+                        :key="`${row.label}:${row.value}`"
+                        class="inspection-chip"
+                      >
+                        <b>{{ row.label }}</b>
+                        <span>{{ row.value }}</span>
+                      </span>
+                    </span>
                   </span>
                 </button>
                 <span class="source-main">
@@ -81,6 +91,16 @@
                       class="source-chunk"
                     >
                       <b>片段 {{ chunk.index }}</b>
+                      <span v-if="inspectionRows(chunk.retrieval).length" class="source-inspection chunk">
+                        <span
+                          v-for="row in inspectionRows(chunk.retrieval)"
+                          :key="`${row.label}:${row.value}`"
+                          class="inspection-chip"
+                        >
+                          <b>{{ row.label }}</b>
+                          <span>{{ row.value }}</span>
+                        </span>
+                      </span>
                       <span>{{ chunk.text }}</span>
                     </span>
                   </span>
@@ -120,7 +140,13 @@ import {
   streamAssistant,
 } from '../api/files'
 import AutoGrowTextarea from './AutoGrowTextarea.vue'
-import { normalizeCitations } from '../utils/markdownParser'
+import {
+  nextAssistantMessageId,
+  normalizeAssistantMessages,
+  sourceOpenId,
+} from '../utils/assistantConversations'
+import { assistantSourceInspectionRows } from '../utils/assistantSourceInspection'
+import { renderAssistantMarkdown } from '../utils/markdownParser'
 
 const props = defineProps({
   date: { type: String, default: '' },
@@ -255,16 +281,13 @@ function send() {
   ask(input.value, task.value)
 }
 
-function sourceOpenId(source) {
-  const id = source?.link_id ?? source?.id
-  if (id === null || id === undefined || id === '') return ''
-  if (String(id).startsWith('group-message:')) return ''
-  return id
-}
-
 function openSource(source) {
   const id = sourceOpenId(source)
   if (id) emit('open-file', id)
+}
+
+function inspectionRows(retrieval) {
+  return assistantSourceInspectionRows(retrieval)
 }
 
 async function loadConversations() {
@@ -284,14 +307,8 @@ async function selectConversation(value) {
   try {
     const data = await getAssistantConversationMessages(id, { groupId: props.groupId || undefined })
     activeConversationId.value = id
-    messages.value = data.messages.map(message => ({
-      id: message.id,
-      role: message.role,
-      content: message.error || message.content,
-      sources: message.sources || [],
-      done: true,
-    }))
-    nextId = Math.max(1, ...messages.value.map(message => Number(message.id) || 0)) + 1
+    messages.value = normalizeAssistantMessages(data.messages)
+    nextId = nextAssistantMessageId(messages.value)
     await scrollBottom()
   } catch {
     startNewConversation()
@@ -318,77 +335,6 @@ async function scrollBottom() {
   if (msgEl.value) msgEl.value.scrollTop = msgEl.value.scrollHeight
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-}
-
-function renderInline(value) {
-  return escapeHtml(value)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[(资料\d+)\]/g, '<mark>[$1]</mark>')
-}
-
-function renderMarkdown(md, sources = []) {
-  const lines = normalizeCitations(md, sources.length).split(/\r?\n/)
-  const html = []
-  let listOpen = false
-  let orderedListOpen = false
-
-  function closeLists() {
-    if (listOpen) { html.push('</ul>'); listOpen = false }
-    if (orderedListOpen) { html.push('</ol>'); orderedListOpen = false }
-  }
-
-  function nextNonBlankLine(start) {
-    for (let i = start; i < lines.length; i += 1) {
-      const line = lines[i].trim()
-      if (line) return line
-    }
-    return ''
-  }
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const raw = lines[index]
-    const line = raw.trim()
-    if (!line) {
-      const nextLine = nextNonBlankLine(index + 1)
-      if (listOpen && /^[-*]\s+/.test(nextLine)) continue
-      if (orderedListOpen && /^\d+\.\s+/.test(nextLine)) continue
-      closeLists()
-      continue
-    }
-    if (line.startsWith('### ')) {
-      closeLists()
-      html.push(`<h3>${renderInline(line.slice(4))}</h3>`)
-    } else if (line.startsWith('## ')) {
-      closeLists()
-      html.push(`<h2>${renderInline(line.slice(3))}</h2>`)
-    } else if (line.startsWith('# ')) {
-      closeLists()
-      html.push(`<h2>${renderInline(line.slice(2))}</h2>`)
-    } else if (/^[-*]\s+/.test(line)) {
-      if (orderedListOpen) { html.push('</ol>'); orderedListOpen = false }
-      if (!listOpen) { html.push('<ul>'); listOpen = true }
-      html.push(`<li>${renderInline(line.replace(/^[-*]\s+/, ''))}</li>`)
-    } else if (/^\d+\.\s+/.test(line)) {
-      if (listOpen) { html.push('</ul>'); listOpen = false }
-      const start = Number(line.match(/^(\d+)\.\s+/)?.[1] || 1)
-      if (!orderedListOpen) { html.push(`<ol start="${Number.isFinite(start) ? start : 1}">`); orderedListOpen = true }
-      html.push(`<li>${renderInline(line.replace(/^\d+\.\s+/, ''))}</li>`)
-    } else {
-      closeLists()
-      html.push(`<p>${renderInline(line)}</p>`)
-    }
-  }
-  closeLists()
-  return html.join('')
-}
 </script>
 
 <style scoped>
@@ -606,6 +552,41 @@ function renderMarkdown(md, sources = []) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.source-inspection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+.source-inspection.chunk {
+  margin: 0 0 4px;
+}
+.inspection-chip {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--s2);
+  color: var(--text2);
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 16px;
+}
+.inspection-chip b {
+  color: var(--text3);
+  font-size: 10px;
+  margin: 0;
+  flex-shrink: 0;
+}
+.inspection-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .source-chunks {
   display: flex;
