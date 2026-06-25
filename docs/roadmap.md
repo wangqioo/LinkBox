@@ -28,11 +28,11 @@ The latest committed baseline is:
 main 52fa19a Fix social message timestamps
 ```
 
-The working tree also contains follow-up development for Assistant source
-inspection, failed-job recovery hints, item processing recovery hints,
-Assistant JSON error helper migration, and the Smart Agent layer. See
-`docs/development.md` for exact verification commands and current
-working-tree notes.
+The latest local development after that baseline adds Smart Agent
+productization: historical structured-understanding backfill, Assistant memory
+management, mobile Agent diagnostics, quality fixtures, and an opt-in
+LLM-assisted understanding annotation boundary. See `docs/development.md` for
+exact verification commands and current working-tree notes.
 
 ## Done
 
@@ -49,6 +49,9 @@ working-tree notes.
 - Smart Agent planner, persisted run steps, multi-pass retrieval, evidence
   notebooks, citation verification, structured item understanding, explicit
   memory, and desktop diagnostics.
+- Smart Agent productization: historical structured-understanding backfill,
+  desktop memory review/deletion, mobile Agent status chips, fixed quality
+  fixtures, and isolated LLM-assisted document annotations.
 - Personal and group Assistant conversation history.
 - Social collaboration: friends, direct chats, groups, group materials, scoped
   uploads, comments, and group Assistant isolation.
@@ -91,18 +94,10 @@ small slices rather than rewrites.
    explicit migrations.
 
 6. **Smart Agent quality loop**
-   The Agent is observable and deterministic around planning, retrieval,
-   evidence, verification, structured fallback, and explicit memory. Future
-   work should improve quality with measured retrieval fixtures before adding
-   heavier LLM-driven reasoning.
-
-7. **Smart Agent productization**
-   The first Smart Agent pass is implemented and validated, but follow-up work
-   remains: commit/release hygiene, historical item-understanding backfill,
-   memory management UI, mobile Agent diagnostics, an Assistant quality
-   evaluation set, and optional LLM-assisted understanding. The active task
-   queue lives in
-   `docs/superpowers/plans/2026-06-25-smart-agent.md#deferred-follow-up-plan`.
+   The Smart Agent product surface is now implemented. Future work should be
+   driven by `server/test/assistantQuality.test.mjs` and real failure cases:
+   expand fixtures first, then tune retrieval, rerank, memory, or LLM-assisted
+   reasoning.
 
 ## Decisions Needed
 
@@ -131,12 +126,9 @@ These need explicit decisions before implementation.
 ## Later
 
 - Document versions and rollback UI.
-- LLM-assisted annotations beyond deterministic entities, todos, claims, and
-  topics, such as questions, contradictions, and richer project timelines.
-- Historical structure backfill for existing items.
-- User-facing memory review and deletion controls.
-- Mobile Agent status and diagnostics.
-- Assistant retrieval/answer quality fixture suite.
+- Promote LLM-assisted understanding annotations from prototype storage to
+  user-facing rebuild/review workflows.
+- Broaden Assistant retrieval/answer quality fixtures with real project cases.
 - Promotion flow for chat-scoped materials into the personal library.
 - Legacy `link_chunks` write retirement after canonical-only confidence.
 - More granular validation scripts for focused backend and browser subsets.

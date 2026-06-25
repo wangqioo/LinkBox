@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { api, type AssistantAgent, type AssistantConversation, type AssistantSource } from '../api/client';
-import { Bot, CalendarDays, CheckSquare, ChevronDown, FileText, Loader2, Plus, Search, Send, Tags, Trash2, UserRound } from 'lucide-react';
+import { api, type AssistantAgent, type AssistantConversation, type AssistantMemory, type AssistantSource } from '../api/client';
+import { Bot, Brain, CalendarDays, CheckSquare, ChevronDown, FileText, Loader2, Plus, RefreshCw, Search, Send, Tags, Trash2, UserRound, X } from 'lucide-react';
 import AutoGrowTextarea from '../components/AutoGrowTextarea';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { assistantSourceInspectionRows } from '../components/assistantSourceInspection';
@@ -138,10 +138,14 @@ function AgentStatus({ agent }: { agent?: AssistantAgent }) {
 export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<AssistantConversation[]>([]);
+  const [memories, setMemories] = useState<AssistantMemory[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [question, setQuestion] = useState('');
   const [task, setTask] = useState('ask');
   const [loading, setLoading] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const [loadingMemories, setLoadingMemories] = useState(false);
+  const [deletingMemoryId, setDeletingMemoryId] = useState<number | null>(null);
   const idRef = useRef(1);
   const activeTask = TASKS.find(item => item.key === task) || TASKS[0];
 
@@ -150,8 +154,19 @@ export default function AssistantPage() {
     setConversations(data.conversations);
   };
 
+  const loadMemories = async () => {
+    setLoadingMemories(true);
+    try {
+      const data = await api.getAssistantMemories();
+      setMemories(data.memories || []);
+    } finally {
+      setLoadingMemories(false);
+    }
+  };
+
   useEffect(() => {
     loadConversations().catch(() => setConversations([]));
+    loadMemories().catch(() => setMemories([]));
   }, []);
 
   const ask = async (text: string, selectedTask = task) => {
@@ -204,6 +219,7 @@ export default function AssistantPage() {
       ));
       setLoading(false);
       loadConversations().catch(() => undefined);
+      loadMemories().catch(() => undefined);
     }
   };
 
@@ -244,6 +260,25 @@ export default function AssistantPage() {
     await loadConversations();
   };
 
+  const toggleMemoryPanel = () => {
+    setMemoryOpen(open => {
+      const next = !open;
+      if (next) loadMemories().catch(() => setMemories([]));
+      return next;
+    });
+  };
+
+  const deleteMemory = async (id: number) => {
+    if (deletingMemoryId) return;
+    setDeletingMemoryId(id);
+    try {
+      await api.deleteAssistantMemory(id);
+      setMemories(prev => prev.filter(memory => memory.id !== id));
+    } finally {
+      setDeletingMemoryId(null);
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-3rem)] md:h-[calc(100vh-3rem)] flex flex-col">
       <div className="mb-4">
@@ -270,7 +305,61 @@ export default function AssistantPage() {
           <button type="button" onClick={deleteConversation} className="btn-secondary shrink-0" disabled={!activeConversationId || loading}>
             <Trash2 className="w-4 h-4" />
           </button>
+          <button type="button" onClick={toggleMemoryPanel} className="btn-secondary shrink-0">
+            <Brain className="w-4 h-4" />
+            <span>记忆</span>
+            {memories.length > 0 && <span className="text-xs text-gray-500 dark:text-gray-400">{memories.length}</span>}
+          </button>
         </div>
+        {memoryOpen && (
+          <div className="border-b bg-gray-50/80 dark:bg-gray-900/40 px-3 py-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">助手记忆</div>
+                <div className="text-xs text-gray-500">长期偏好和明确要求会影响之后的回答。</div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => loadMemories().catch(() => setMemories([]))}
+                  className="btn-secondary px-2 py-1" disabled={loadingMemories}>
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingMemories ? 'animate-spin' : ''}`} />
+                </button>
+                <button type="button" onClick={() => setMemoryOpen(false)} className="btn-secondary px-2 py-1">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            {loadingMemories ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                正在加载记忆
+              </div>
+            ) : memories.length ? (
+              <div className="max-h-40 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-800 rounded-lg border bg-white dark:bg-gray-950">
+                {memories.map(memory => (
+                  <div key={memory.id} className="flex items-start gap-3 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                          {memory.memory_type}
+                        </span>
+                        <span className="text-[11px] text-gray-400">{memory.source}</span>
+                      </div>
+                      <div className="break-words text-sm text-gray-700 dark:text-gray-200">{memory.content}</div>
+                    </div>
+                    <button type="button" onClick={() => deleteMemory(memory.id)}
+                      className="btn-secondary px-2 py-1" disabled={deletingMemoryId === memory.id}>
+                      {deletingMemoryId === memory.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed px-3 py-3 text-xs text-gray-500">
+                暂无记忆。对助手说“记住：...”后会出现在这里。
+              </div>
+            )}
+          </div>
+        )}
         <div className="border-b p-3 flex gap-2 overflow-x-auto">
           {TASKS.map(item => (
             <button key={item.key} type="button" onClick={() => setTask(item.key)}

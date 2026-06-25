@@ -100,3 +100,49 @@ export function searchAssistantMemories({
     .sort((a, b) => b.score - a.score || String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
     .slice(0, limit);
 }
+
+function scopeConditions({ userId, groupId = null }) {
+  const params = [userId];
+  const conditions = ['user_id = ?'];
+  if (groupId) {
+    conditions.push("scope_type = 'group'", 'group_id = ?');
+    params.push(groupId);
+  } else {
+    conditions.push("scope_type = 'personal'", 'group_id IS NULL');
+  }
+  return { conditions, params };
+}
+
+export function listAssistantMemories({
+  db,
+  userId,
+  groupId = null,
+  limit = 100,
+} = {}) {
+  if (!db) throw new Error('listAssistantMemories requires a database');
+  initAssistantMemorySchema(db);
+  const { conditions, params } = scopeConditions({ userId, groupId });
+  params.push(Math.max(1, Math.min(200, Number(limit) || 100)));
+  return db.prepare(`
+    SELECT id, user_id, scope_type, group_id, memory_type, content, source, created_at, updated_at
+    FROM assistant_memories
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY updated_at DESC, id DESC
+    LIMIT ?
+  `).all(...params);
+}
+
+export function deleteAssistantMemory(db, {
+  userId,
+  groupId = null,
+  memoryId,
+} = {}) {
+  if (!db) throw new Error('deleteAssistantMemory requires a database');
+  initAssistantMemorySchema(db);
+  const { conditions, params } = scopeConditions({ userId, groupId });
+  const result = db.prepare(`
+    DELETE FROM assistant_memories
+    WHERE id = ? AND ${conditions.join(' AND ')}
+  `).run(memoryId, ...params);
+  return result.changes > 0;
+}

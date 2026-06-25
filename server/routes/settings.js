@@ -7,6 +7,7 @@ import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { UPLOADS_DIR } from '../utils/uploadMiddleware.js';
 import { getSystemHealth } from '../utils/systemHealth.js';
 import {
+  backfillItemUnderstanding,
   backfillMissingDocumentEmbeddings,
   getDocumentMaintenanceStats,
   reindexAllDocuments,
@@ -193,6 +194,18 @@ router.post('/system/backfill-embeddings', authMiddleware, requireAdmin, (req, r
       provider: embeddingConfig.provider,
       model: embeddingConfig.model,
     }),
+  });
+});
+
+// POST /api/settings/system/backfill-understanding - backfill deterministic item understanding
+router.post('/system/backfill-understanding', authMiddleware, requireAdmin, (req, res) => {
+  const result = backfillItemUnderstanding(database, {
+    limit: req.body?.limit,
+  });
+  res.json({
+    ok: true,
+    ...result,
+    stats: getDocumentMaintenanceStats(database),
   });
 });
 

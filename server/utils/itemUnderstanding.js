@@ -132,6 +132,18 @@ export function initItemUnderstandingSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_item_claims_user ON item_claims(user_id);
     CREATE INDEX IF NOT EXISTS idx_item_claims_item ON item_claims(item_id);
+
+    CREATE TABLE IF NOT EXISTS item_understanding_runs (
+      item_id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      entities_count INTEGER NOT NULL DEFAULT 0,
+      topics_count INTEGER NOT NULL DEFAULT 0,
+      todos_count INTEGER NOT NULL DEFAULT 0,
+      claims_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (item_id) REFERENCES links(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_item_understanding_runs_user ON item_understanding_runs(user_id, updated_at);
   `);
 }
 
@@ -167,6 +179,27 @@ export function upsertItemUnderstanding(db, itemId) {
 
     const insertClaim = db.prepare('INSERT INTO item_claims (item_id, user_id, text) VALUES (?, ?, ?)');
     for (const claim of understanding.claims) insertClaim.run(item.id, item.user_id, claim.text);
+
+    db.prepare(`
+      INSERT INTO item_understanding_runs (
+        item_id, user_id, entities_count, topics_count, todos_count, claims_count, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(item_id) DO UPDATE SET
+        user_id = excluded.user_id,
+        entities_count = excluded.entities_count,
+        topics_count = excluded.topics_count,
+        todos_count = excluded.todos_count,
+        claims_count = excluded.claims_count,
+        updated_at = excluded.updated_at
+    `).run(
+      item.id,
+      item.user_id,
+      understanding.entities.length,
+      understanding.topics.length,
+      understanding.todos.length,
+      understanding.claims.length,
+    );
   });
   tx();
   return understanding;

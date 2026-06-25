@@ -7,6 +7,7 @@ import { tmpdir } from 'os';
 import { initJobSchema } from '../utils/jobQueue.js';
 import { initDocumentSchema, indexDocumentForItem } from '../utils/documentIndex.js';
 import {
+  backfillItemUnderstanding,
   backfillMissingDocumentEmbeddings,
   getDocumentMaintenanceStats,
   reindexAllDocuments,
@@ -77,6 +78,7 @@ test('getDocumentMaintenanceStats reports document, chunk, embedding, and job co
   assert.equal(stats.embeddings, 0);
   assert.equal(stats.missing_embeddings, 1);
   assert.equal(stats.embedding_jobs.failed, 1);
+  assert.equal(stats.item_understanding.missing_items, 1);
 }));
 
 test('getDocumentMaintenanceStats reports missing canonical content and assets', () => withDb((db) => {
@@ -172,6 +174,27 @@ test('reindexAllDocuments builds documents for content-bearing links', () => wit
   assert.equal(result.chunks, 2);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM documents').get().count, 2);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM document_chunks').get().count, 2);
+}));
+
+test('backfillItemUnderstanding populates missing structures in bounded batches', () => withDb((db) => {
+  seedLinks(db);
+
+  const first = backfillItemUnderstanding(db, { limit: 1 });
+  assert.equal(first.items, 1);
+  assert.equal(first.todos, 0);
+  assert.equal(first.claims, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM item_topics').get().count, 0);
+
+  db.prepare("UPDATE links SET comment = 'TODO: add launch review', summary = 'Agent retrieval needs memory.' WHERE id = 1").run();
+  const second = backfillItemUnderstanding(db, { limit: 10 });
+  assert.equal(second.items, 1);
+  assert.equal(second.todos, 1);
+  assert.equal(second.topics >= 2, true);
+  assert.equal(getDocumentMaintenanceStats(db).item_understanding.missing_items, 0);
+
+  const third = backfillItemUnderstanding(db, { limit: 10 });
+  assert.equal(third.items, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM item_todos').get().count, 1);
 }));
 
 test('backfillMissingDocumentEmbeddings enqueues one document.embed job per link without duplicates', () => withDb((db) => {

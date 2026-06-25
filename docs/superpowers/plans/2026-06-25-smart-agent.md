@@ -146,13 +146,17 @@ git diff --check
 
 ---
 
-## Deferred Follow-Up Plan
+## Productization Follow-Up Plan
 
-These items are intentionally not implemented in the first Smart Agent pass.
-They are the next productization layer once the current working tree is
-committed and the user wants to continue.
+Status: completed for this checkpoint. These items were implemented after the
+initial Smart Agent pass to turn the architecture into an operable product
+surface with maintenance, UI control, mobile parity, quality gates, and a
+bounded LLM-assisted understanding prototype.
 
 ### Follow-Up 1: Commit And Release Hygiene
+
+Status: completed. The initial Smart Agent working tree was committed locally
+as `19502f9 Add smart assistant agent architecture`.
 
 **Goal:** Turn the current verified working tree into a reviewable change set.
 
@@ -168,6 +172,11 @@ committed and the user wants to continue.
 - The final verification commands are recorded in the commit/PR notes.
 
 ### Follow-Up 2: Historical Item Understanding Backfill
+
+Status: completed. `item_understanding_runs` tracks processed content-bearing
+items, document maintenance stats report structured understanding coverage, and
+`POST /api/settings/system/backfill-understanding` performs bounded idempotent
+backfills from the admin maintenance UI.
 
 **Goal:** Populate `item_entities`, `item_topics`, `item_todos`, and
 `item_claims` for existing items, not only newly indexed or reindexed items.
@@ -187,6 +196,10 @@ git diff --check
 ```
 
 ### Follow-Up 3: Assistant Memory Management UI
+
+Status: completed. Assistant memory list/delete endpoints are scoped by
+personal or group context, and the desktop Assistant page has a lightweight
+memory panel for review, refresh, and deletion.
 
 **Goal:** Let users inspect and control explicit memories.
 
@@ -208,6 +221,10 @@ git diff --check
 
 ### Follow-Up 4: Mobile Agent Diagnostics
 
+Status: completed. Mobile Assistant history preserves `agent` metadata, the
+SSE client handles `agent` events, and `ChatBox.vue` renders compact diagnostic
+chips for intent, tools, retrieval attempts, evidence, verification, and memory.
+
 **Goal:** Bring a compact version of Agent status to mobile chat without making
 the mobile UI dense.
 
@@ -226,6 +243,10 @@ git diff --check
 ```
 
 ### Follow-Up 5: Assistant Quality Evaluation Set
+
+Status: completed. `server/test/assistantQuality.test.mjs` exercises a fixed
+quality corpus covering canonical document evidence, structured todo fallback,
+explicit memory loading, and no-evidence insufficient support.
 
 **Goal:** Measure whether planner/retrieval/memory changes improve answer
 quality instead of only checking behavior mechanically.
@@ -248,6 +269,12 @@ git diff --check
 
 ### Follow-Up 6: Richer LLM-Assisted Understanding
 
+Status: completed as an opt-in prototype boundary.
+`server/utils/llmUnderstandingAnnotations.js` builds a strict JSON prompt,
+validates generated rich-understanding JSON, and stores questions,
+contradictions, timelines, project summaries, prompt version, model, and source
+hash in `document_annotations` with type `llm_understanding`.
+
 **Goal:** Add higher-level knowledge only after deterministic understanding and
 quality fixtures are stable.
 
@@ -260,7 +287,7 @@ quality fixtures are stable.
 
 **Validation:**
 ```bash
-node --test server/test/itemUnderstanding.test.mjs
+node --test server/test/llmUnderstandingAnnotations.test.mjs
 cd server && npm test
 cd client && npm run test:e2e:canonical
 git diff --check

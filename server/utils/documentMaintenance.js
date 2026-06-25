@@ -1,5 +1,6 @@
 import { indexDocumentForItem, initDocumentSchema } from './documentIndex.js';
 import { enqueueDocumentEmbedding } from './enrichmentJobs.js';
+import { initItemUnderstandingSchema, upsertItemUnderstanding } from './itemUnderstanding.js';
 
 function contentWhere() {
   return `(
@@ -168,6 +169,21 @@ function missingAssetRowsReport(db, limit) {
   return { count, samples };
 }
 
+function itemUnderstandingSummary(db) {
+  initItemUnderstandingSchema(db);
+  const itemsWithContent = countRow(db, `SELECT COUNT(*) AS count FROM links WHERE ${contentWhere()}`);
+  const processedItems = countRow(db, 'SELECT COUNT(*) AS count FROM item_understanding_runs');
+  return {
+    items_with_content: itemsWithContent,
+    processed_items: processedItems,
+    missing_items: Math.max(0, itemsWithContent - processedItems),
+    entities: countRow(db, 'SELECT COUNT(*) AS count FROM item_entities'),
+    topics: countRow(db, 'SELECT COUNT(*) AS count FROM item_topics'),
+    todos: countRow(db, 'SELECT COUNT(*) AS count FROM item_todos'),
+    claims: countRow(db, 'SELECT COUNT(*) AS count FROM item_claims'),
+  };
+}
+
 export function getStorageConsistencyReport(db, { sampleLimit = 5 } = {}) {
   initDocumentSchema(db);
   const limit = Math.max(1, Math.min(20, Number(sampleLimit) || 5));
@@ -216,8 +232,39 @@ export function getDocumentMaintenanceStats(db, {
       model,
     },
     embedding_jobs: embeddingJobCounts(db),
+    item_understanding: itemUnderstandingSummary(db),
     consistency: getStorageConsistencyReport(db),
   };
+}
+
+export function backfillItemUnderstanding(db, { limit = 500 } = {}) {
+  initItemUnderstandingSchema(db);
+  const rows = db.prepare(`
+    SELECT l.id
+    FROM links l
+    LEFT JOIN item_understanding_runs r ON r.item_id = l.id
+    WHERE r.item_id IS NULL
+      AND ${aliasedContentWhere('l')}
+    ORDER BY datetime(l.imported_at) DESC, l.id DESC
+    LIMIT ?
+  `).all(Math.max(1, Math.min(5000, Number(limit) || 500)));
+
+  const totals = {
+    items: 0,
+    entities: 0,
+    topics: 0,
+    todos: 0,
+    claims: 0,
+  };
+  for (const row of rows) {
+    const understanding = upsertItemUnderstanding(db, row.id);
+    totals.items += 1;
+    totals.entities += understanding.entities.length;
+    totals.topics += understanding.topics.length;
+    totals.todos += understanding.todos.length;
+    totals.claims += understanding.claims.length;
+  }
+  return totals;
 }
 
 export function reindexAllDocuments(db, { limit = 1000 } = {}) {

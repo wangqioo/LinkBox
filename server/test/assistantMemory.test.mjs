@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import {
   captureAssistantMemories,
+  deleteAssistantMemory,
   initAssistantMemorySchema,
+  listAssistantMemories,
   searchAssistantMemories,
 } from '../utils/assistantMemory.js';
 
@@ -56,6 +58,29 @@ test('searchAssistantMemories keeps group and personal memory separated', () => 
 
     assert.equal(searchAssistantMemories({ db, userId: 1, query: 'Launch 风险' }).length, 0);
     assert.equal(searchAssistantMemories({ db, userId: 1, groupId: 10, query: 'Launch 风险' }).length, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test('listAssistantMemories and deleteAssistantMemory respect scope ownership', () => {
+  const db = setupDb();
+  try {
+    const personal = captureAssistantMemories(db, {
+      userId: 1,
+      text: '记住：回答时先给结论。',
+    });
+    const group = captureAssistantMemories(db, {
+      userId: 1,
+      groupId: 10,
+      text: '以后这个群默认关注 Launch 风险。',
+    });
+
+    assert.deepEqual(listAssistantMemories({ db, userId: 1 }).map(memory => memory.id), personal.memories);
+    assert.deepEqual(listAssistantMemories({ db, userId: 1, groupId: 10 }).map(memory => memory.id), group.memories);
+    assert.equal(deleteAssistantMemory(db, { userId: 1, memoryId: group.memories[0] }), false);
+    assert.equal(deleteAssistantMemory(db, { userId: 1, groupId: 10, memoryId: group.memories[0] }), true);
+    assert.deepEqual(listAssistantMemories({ db, userId: 1, groupId: 10 }), []);
   } finally {
     db.close();
   }

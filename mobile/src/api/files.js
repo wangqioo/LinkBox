@@ -135,6 +135,7 @@ export async function streamAssistant(question, task = 'ask', handlers = {}, sco
     const data = JSON.parse(dataLine.slice(5).trim())
 
     if (event === 'conversation') handlers.onConversation?.(data.conversation || null)
+    if (event === 'agent') handlers.onAgent?.(data.agent || null)
     if (event === 'sources') handlers.onSources?.(data.sources || [])
     if (event === 'delta') handlers.onDelta?.(data.text || '')
     if (event === 'done') handlers.onDone?.()

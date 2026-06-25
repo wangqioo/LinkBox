@@ -166,6 +166,35 @@ test('GET /api/settings/system includes storage consistency report', async () =>
     type: 'file',
     title: 'Needs Canonical Rows',
   });
+  assert.equal(body.documents.item_understanding.missing_items, 1);
+}));
+
+test('POST /api/settings/system/backfill-understanding backfills structured item knowledge', async () => withSettingsApp(async ({ db, baseUrl, adminHeaders }) => {
+  db.prepare(`
+    INSERT INTO users (id, username, password_hash)
+    VALUES (1, 'admin', 'hash')
+    ON CONFLICT(id) DO NOTHING
+  `).run();
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, summary, comment, imported_at)
+    VALUES (301, 1, 'file', 'Agent Memory Notes', 'Agent retrieval needs memory.', 'TODO: add memory review', '2026-06-18T00:00:00.000Z')
+  `).run();
+
+  const response = await fetch(`${baseUrl}/api/settings/system/backfill-understanding`, {
+    method: 'POST',
+    headers: {
+      ...adminHeaders,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ limit: 10 }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.items, 1);
+  assert.equal(body.todos, 1);
+  assert.equal(body.stats.item_understanding.missing_items, 0);
 }));
 
 test('POST /api/settings/system/retry-failed-jobs retries only selected failed jobs when ids are provided', async () => withSettingsApp(async ({ db, baseUrl, adminHeaders }) => {

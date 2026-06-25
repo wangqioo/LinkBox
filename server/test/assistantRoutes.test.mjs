@@ -187,6 +187,27 @@ test('assistant conversation endpoints create, list, read, and delete personal h
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM assistant_messages').get().count, 0);
 }));
 
+test('assistant memory endpoints list and delete scoped memories', async () => withAssistantApp(async ({ db, baseUrl, headers }) => {
+  db.prepare(`
+    INSERT INTO assistant_memories (id, user_id, scope_type, group_id, memory_type, content, source)
+    VALUES (1, 1, 'personal', NULL, 'preference', '回答时先给结论', 'explicit')
+  `).run();
+
+  const list = await fetch(`${baseUrl}/api/assistant/memories`, { headers });
+  const listed = await list.json();
+  assert.equal(list.status, 200);
+  assert.equal(listed.memories.length, 1);
+  assert.equal(listed.memories[0].content, '回答时先给结论');
+
+  const deleted = await fetch(`${baseUrl}/api/assistant/memories/1`, {
+    method: 'DELETE',
+    headers,
+  });
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(await deleted.json(), { ok: true });
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM assistant_memories').get().count, 0);
+}));
+
 test('assistant conversations are separated by personal and group scope', async () => withAssistantApp(async ({ db, baseUrl, headers }) => {
   db.prepare("INSERT INTO users (id, username, password_hash) VALUES (2, 'member', 'hash')").run();
   db.prepare("INSERT INTO groups (id, name, owner_id) VALUES (10, 'Launch', 1)").run();

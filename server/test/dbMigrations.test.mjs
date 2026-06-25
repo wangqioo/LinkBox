@@ -329,7 +329,17 @@ test('runMigrations creates item understanding tables', () => withDb((db) => {
     'text',
     'created_at',
   ]);
+  assert.deepEqual(columnNames(db, 'item_understanding_runs'), [
+    'item_id',
+    'user_id',
+    'entities_count',
+    'topics_count',
+    'todos_count',
+    'claims_count',
+    'updated_at',
+  ]);
   assert.equal(indexNames(db, 'item_topics').includes('idx_item_topics_user_name'), true);
+  assert.equal(indexNames(db, 'item_understanding_runs').includes('idx_item_understanding_runs_user'), true);
 }));
 
 test('runMigrations creates assistant memory table', () => withDb((db) => {

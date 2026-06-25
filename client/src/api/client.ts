@@ -158,6 +158,15 @@ export interface DocumentMaintenanceStats {
     done: number;
     failed: number;
   };
+  item_understanding?: {
+    items_with_content: number;
+    processed_items: number;
+    missing_items: number;
+    entities: number;
+    topics: number;
+    todos: number;
+    claims: number;
+  };
   consistency?: StorageConsistencyReport;
 }
 
@@ -241,6 +250,18 @@ export interface AssistantMessage {
   agent?: AssistantAgent;
   error?: string;
   created_at: string;
+}
+
+export interface AssistantMemory {
+  id: number;
+  user_id: number;
+  scope_type: 'personal' | 'group' | string;
+  group_id: number | null;
+  memory_type: string;
+  content: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AssistantAgent {
@@ -600,6 +621,10 @@ export const api = {
     request(`/assistant/conversations/${id}/messages${groupId ? `?groupId=${groupId}` : ''}`),
   deleteAssistantConversation: (id: number, groupId?: number): Promise<{ ok: boolean }> =>
     request(`/assistant/conversations/${id}${groupId ? `?groupId=${groupId}` : ''}`, { method: 'DELETE' }),
+  getAssistantMemories: (groupId?: number): Promise<{ memories: AssistantMemory[] }> =>
+    request(`/assistant/memories${groupId ? `?groupId=${groupId}` : ''}`),
+  deleteAssistantMemory: (id: number, groupId?: number): Promise<{ ok: boolean }> =>
+    request(`/assistant/memories/${id}${groupId ? `?groupId=${groupId}` : ''}`, { method: 'DELETE' }),
   streamAssistant: async (question: string, task = 'ask', handlers: AssistantStreamHandlers = {}) => {
     const token = localStorage.getItem('linkbox_token');
     const res = await fetch(`${BASE}/assistant/chat/stream`, {
@@ -670,6 +695,8 @@ export const api = {
     request('/settings/system/reindex-documents', { method: 'POST' }),
   backfillDocumentEmbeddings: (): Promise<{ ok: boolean; enqueued: number; queue: QueueStats; stats: DocumentMaintenanceStats }> =>
     request('/settings/system/backfill-embeddings', { method: 'POST' }),
+  backfillItemUnderstanding: (): Promise<{ ok: boolean; items: number; entities: number; topics: number; todos: number; claims: number; stats: DocumentMaintenanceStats }> =>
+    request('/settings/system/backfill-understanding', { method: 'POST' }),
 
   // Admin
   getAdminUsers: (): Promise<AdminUserSummary[]> => request('/admin/users'),

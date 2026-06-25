@@ -38,6 +38,7 @@ export default function SettingsPage() {
   const [retryingJobId, setRetryingJobId] = useState<number | null>(null);
   const [reindexingDocuments, setReindexingDocuments] = useState(false);
   const [backfillingEmbeddings, setBackfillingEmbeddings] = useState(false);
+  const [backfillingUnderstanding, setBackfillingUnderstanding] = useState(false);
   const [queueMessage, setQueueMessage] = useState('');
   const [documentMessage, setDocumentMessage] = useState('');
   const [error, setError] = useState('');
@@ -112,6 +113,27 @@ export default function SettingsPage() {
       toast.error('补齐 Embeddings 失败', message);
     } finally {
       setBackfillingEmbeddings(false);
+    }
+  };
+
+  const handleBackfillUnderstanding = async () => {
+    setBackfillingUnderstanding(true);
+    setError('');
+    setDocumentMessage('');
+    try {
+      const result = await api.backfillItemUnderstanding();
+      setSystemStatus((prev) => prev ? { ...prev, documents: result.stats } : prev);
+      const message = result.items
+        ? `已补齐 ${result.items} 个资料：${result.entities} 个实体，${result.topics} 个主题，${result.todos} 个待办，${result.claims} 个主张`
+        : '没有缺失结构化理解需要补齐';
+      setDocumentMessage(message);
+      toast.success('结构化理解已更新', message);
+    } catch (e: any) {
+      const message = e.message || '补齐结构化理解失败';
+      setError(message);
+      toast.error('补齐结构化理解失败', message);
+    } finally {
+      setBackfillingUnderstanding(false);
     }
   };
 
@@ -310,10 +332,12 @@ export default function SettingsPage() {
         loading={loadingSystem}
         reindexing={reindexingDocuments}
         backfilling={backfillingEmbeddings}
+        backfillingUnderstanding={backfillingUnderstanding}
         message={documentMessage}
         onRefresh={refreshSystemStatus}
         onReindex={handleReindexDocuments}
         onBackfillEmbeddings={handleBackfillEmbeddings}
+        onBackfillUnderstanding={handleBackfillUnderstanding}
       />
       <RetrievalDiagnosticsPanel />
       <BackgroundJobsPanel

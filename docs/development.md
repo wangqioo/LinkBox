@@ -123,6 +123,27 @@ At this checkpoint:
   `item_todos`, and `item_claims`. `indexDocumentForItem` refreshes these rows,
   and Assistant retrieval uses them as an explainable fallback before whole-row
   legacy fallback.
+- Historical structured understanding can be backfilled from the admin system
+  maintenance panel. `item_understanding_runs` records processed
+  content-bearing items, `GET /api/settings/system` reports coverage, and
+  `POST /api/settings/system/backfill-understanding` performs bounded
+  idempotent backfills.
+- Assistant explicit memories can be reviewed and deleted from the desktop
+  Assistant page memory panel. The backing `GET /api/assistant/memories` and
+  `DELETE /api/assistant/memories/:id` endpoints preserve personal/group scope
+  isolation.
+- Mobile Assistant now preserves saved `agent` metadata, handles streaming
+  `agent` events, and shows compact diagnostic chips for intent, tools,
+  retrieval attempts, evidence, verification, and memory.
+- Assistant quality has a fixed backend fixture suite at
+  `server/test/assistantQuality.test.mjs`, covering canonical document hits,
+  structured todo fallback, memory loading, and no-evidence insufficient
+  support without depending on real LLM text.
+- LLM-assisted higher-level understanding has an opt-in prototype boundary in
+  `server/utils/llmUnderstandingAnnotations.js`. It builds a strict JSON prompt
+  for questions, contradictions, timelines, and project summaries, validates
+  the JSON, and stores generated output in `document_annotations` as
+  `llm_understanding` with model, prompt version, and source hash.
 - Desktop item cards use a reusable processing banner derived from the shared
   `processing` contract. Mobile home/day views use the same processing labels
   last-error text, and recovery hints through `mobileProcessingStatus`.
@@ -259,7 +280,12 @@ server/utils/uploadedAsset.js       Upload-derived asset normalization
 server/utils/assistantSourceRetrieval.js Assistant retrieval interface
 server/utils/assistantTurn.js       Assistant prompt/source/citation assembly
 server/utils/assistantRetrieval.js  Personal and group Assistant source retrieval
+server/utils/assistantAgent.js      Smart Agent planning, retrieval, evidence, and verification orchestration
+server/utils/assistantMemory.js     Explicit personal/group Assistant memory
 server/utils/assistantConversations.js Assistant conversation persistence
+server/utils/itemUnderstanding.js   Deterministic entities, topics, todos, and claims
+server/utils/documentMaintenance.js Admin document, embedding, and understanding maintenance
+server/utils/llmUnderstandingAnnotations.js Opt-in rich understanding annotations
 server/utils/itemIntake.js          Item acceptance, import, retry, and reschedule
 server/utils/extractedContentPersistence.js Extraction post-processing path
 server/utils/imageProxyService.js   Proxied image fetching and headers

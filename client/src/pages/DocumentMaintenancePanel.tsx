@@ -7,10 +7,12 @@ interface Props {
   loading: boolean;
   reindexing: boolean;
   backfilling: boolean;
+  backfillingUnderstanding: boolean;
   message: string;
   onRefresh: () => void;
   onReindex: () => void;
   onBackfillEmbeddings: () => void;
+  onBackfillUnderstanding: () => void;
 }
 
 function number(value: number | undefined) {
@@ -35,10 +37,12 @@ export default function DocumentMaintenancePanel({
   loading,
   reindexing,
   backfilling,
+  backfillingUnderstanding,
   message,
   onRefresh,
   onReindex,
   onBackfillEmbeddings,
+  onBackfillUnderstanding,
 }: Props) {
   const configuredEmbedding = embeddingConfigLabel(stats);
   const consistencyTotal = consistencyIssueTotal(stats);
@@ -95,6 +99,37 @@ export default function DocumentMaintenancePanel({
           <div className="text-lg font-semibold">{number(stats?.missing_embeddings)}</div>
         </div>
       </div>
+
+      {stats?.item_understanding && (
+        <div className="rounded-lg border px-3 py-3 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">结构化理解</div>
+              <div className="text-xs text-gray-500">
+                为 Assistant 生成实体、主题、待办和主张，用于可解释检索 fallback。
+              </div>
+            </div>
+            <div className={stats.item_understanding.missing_items ? 'text-sm font-semibold text-amber-600' : 'text-sm font-semibold text-green-600'}>
+              {stats.item_understanding.missing_items ? `${number(stats.item_understanding.missing_items)} 个待补齐` : '已补齐'}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {[
+              ['已处理', stats.item_understanding.processed_items],
+              ['实体', stats.item_understanding.entities],
+              ['主题', stats.item_understanding.topics],
+              ['待办', stats.item_understanding.todos],
+              ['主张', stats.item_understanding.claims],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2">
+                <div className="text-xs text-gray-500">{label}</div>
+                <div className="text-base font-semibold">{number(Number(value || 0))}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {stats && (
         <div className="space-y-1 text-xs text-gray-500">
@@ -167,6 +202,15 @@ export default function DocumentMaintenancePanel({
         >
           <Database className="w-4 h-4" />
           {backfilling ? '入队中…' : '补齐 Embeddings'}
+        </button>
+        <button
+          type="button"
+          onClick={onBackfillUnderstanding}
+          disabled={backfillingUnderstanding || !stats?.item_understanding?.missing_items}
+          className="btn-secondary flex items-center gap-2"
+        >
+          <Rows3 className="w-4 h-4" />
+          {backfillingUnderstanding ? '补齐中…' : '补齐结构化理解'}
         </button>
         {message && <span className="text-sm text-green-600">{message}</span>}
       </div>

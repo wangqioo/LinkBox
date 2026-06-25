@@ -52,6 +52,17 @@
             <div v-else class="user-text">{{ msg.content }}</div>
           </div>
 
+          <div v-if="msg.role === 'assistant' && agentStatusRows(msg.agent).length" class="agent-status">
+            <span
+              v-for="row in agentStatusRows(msg.agent)"
+              :key="`${msg.id}:${row.label}`"
+              class="agent-chip"
+            >
+              <b>{{ row.label }}</b>
+              <span>{{ row.value }}</span>
+            </span>
+          </div>
+
           <div v-if="msg.role === 'assistant' && msg.done && msg.sources?.length" class="sources">
             <details>
               <summary>引用资料 {{ msg.sources.length }} 条</summary>
@@ -141,6 +152,7 @@ import {
 } from '../api/files'
 import AutoGrowTextarea from './AutoGrowTextarea.vue'
 import {
+  assistantAgentStatusRows,
   nextAssistantMessageId,
   normalizeAssistantMessages,
   sourceOpenId,
@@ -241,6 +253,11 @@ async function ask(text, selectedTask = task.value) {
         if (conversation?.id) activeConversationId.value = conversation.id
         loadConversations()
       },
+      onAgent: agent => {
+        messages.value = messages.value.map(message =>
+          message.id === assistantId ? { ...message, agent } : message
+        )
+      },
       onSources: sources => {
         messages.value = messages.value.map(message =>
           message.id === assistantId ? { ...message, sources } : message
@@ -288,6 +305,10 @@ function openSource(source) {
 
 function inspectionRows(retrieval) {
   return assistantSourceInspectionRows(retrieval)
+}
+
+function agentStatusRows(agent) {
+  return assistantAgentStatusRows(agent)
 }
 
 async function loadConversations() {
@@ -457,6 +478,37 @@ async function scrollBottom() {
   color: #fff; border-bottom-right-radius: 5px;
 }
 .user-text { white-space: pre-wrap; }
+
+.agent-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.agent-chip {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--s2);
+  color: var(--text2);
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 16px;
+}
+.agent-chip b {
+  color: var(--text3);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.agent-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .typing { display: flex; align-items: center; gap: 4px; min-height: 20px; }
 .typing span {

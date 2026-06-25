@@ -23,7 +23,11 @@ import {
   maybeUpdateConversationTitle,
 } from '../utils/assistantConversations.js';
 import { completeAssistantAgentAnswer, prepareAssistantAgentTurn } from '../utils/assistantAgent.js';
-import { captureAssistantMemories } from '../utils/assistantMemory.js';
+import {
+  captureAssistantMemories,
+  deleteAssistantMemory,
+  listAssistantMemories,
+} from '../utils/assistantMemory.js';
 import { httpError, jsonError } from '../utils/appError.js';
 
 const MAX_SOURCES = Number(process.env.ASSISTANT_MAX_SOURCES || 8);
@@ -110,6 +114,38 @@ function requireConversationAccess(req, groupId) {
     throw httpError(403, 'Group conversation is not accessible');
   }
 }
+
+router.get('/memories', (req, res) => {
+  const groupId = groupIdFromRequest(req);
+  try {
+    requireConversationAccess(req, groupId);
+    res.json({
+      memories: listAssistantMemories({
+        db: database,
+        userId: req.userId,
+        groupId: groupId || null,
+      }),
+    });
+  } catch (error) {
+    jsonError(res, error, 'Failed to load assistant memories');
+  }
+});
+
+router.delete('/memories/:id', (req, res) => {
+  const groupId = groupIdFromRequest(req);
+  try {
+    requireConversationAccess(req, groupId);
+    const ok = deleteAssistantMemory(database, {
+      userId: req.userId,
+      groupId: groupId || null,
+      memoryId: Number(req.params.id),
+    });
+    if (!ok) return jsonError(res, httpError(404, 'Memory not found'), 'Failed to delete assistant memory');
+    res.json({ ok: true });
+  } catch (error) {
+    jsonError(res, error, 'Failed to delete assistant memory');
+  }
+});
 
 router.get('/conversations', (req, res) => {
   const groupId = groupIdFromRequest(req);
