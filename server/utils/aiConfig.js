@@ -91,6 +91,8 @@ const PROVIDER_PRESETS = [
 ];
 
 const PROVIDERS_BY_ID = new Map(PROVIDER_PRESETS.map(provider => [provider.id, provider]));
+const AI_PURPOSES = ['organize', 'agent', 'vision'];
+const DEFAULT_PURPOSE = 'organize';
 
 function envValue(name) {
   return name ? (process.env[name] || '') : '';
@@ -116,6 +118,24 @@ function getSetting(key) {
 
 function setSetting(key, value) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value ?? ''));
+}
+
+function normalizePurpose(purpose = DEFAULT_PURPOSE) {
+  const value = String(purpose || DEFAULT_PURPOSE).trim().toLowerCase();
+  return AI_PURPOSES.includes(value) ? value : DEFAULT_PURPOSE;
+}
+
+function purposeKey(purpose, key) {
+  const legacy = SETTINGS_KEYS[key] || `ai:${key}`;
+  return `ai:${normalizePurpose(purpose)}:${legacy.replace(/^ai:/, '')}`;
+}
+
+function getPurposeSetting(purpose, key) {
+  return getSetting(purposeKey(purpose, key)) ?? getSetting(SETTINGS_KEYS[key]);
+}
+
+function setPurposeSetting(purpose, key, value) {
+  setSetting(purposeKey(purpose, key), value);
 }
 
 function normalizeBaseUrl(baseUrl) {
@@ -195,18 +215,26 @@ export function getAIProviders() {
   return PROVIDER_PRESETS.map(providerPublic);
 }
 
-export function getAIConfig({ includeSecret = false } = {}) {
-  const provider = normalizeProvider(getSetting(SETTINGS_KEYS.provider) ?? DEFAULTS.provider);
+export function getAIConfig({ purpose = DEFAULT_PURPOSE, includeSecret = false } = {}) {
+  const resolvedPurpose = normalizePurpose(purpose);
+  const provider = normalizeProvider(getPurposeSetting(resolvedPurpose, 'provider') ?? DEFAULTS.provider);
   const preset = getPreset(provider);
-  const configuredApiKey = getSetting(SETTINGS_KEYS.apiKey);
+  const configuredApiKey = getPurposeSetting(resolvedPurpose, 'apiKey');
+  const configuredVisionModel = getPurposeSetting(resolvedPurpose, 'visionModel');
+  const organizeVisionModel = getPurposeSetting(DEFAULT_PURPOSE, 'visionModel');
+  const purposeModel = getPurposeSetting(resolvedPurpose, 'model');
+  const visionFallbackModel = resolvedPurpose === 'vision'
+    ? (organizeVisionModel || getPurposeSetting(DEFAULT_PURPOSE, 'model'))
+    : undefined;
   const config = {
+    purpose: resolvedPurpose,
     provider,
     providerName: preset.name,
-    baseUrl: normalizeBaseUrl(getSetting(SETTINGS_KEYS.baseUrl) ?? preset.baseUrl ?? DEFAULTS.baseUrl),
-    model: String(getSetting(SETTINGS_KEYS.model) ?? preset.model ?? DEFAULTS.model).trim(),
-    visionModel: String(getSetting(SETTINGS_KEYS.visionModel) ?? preset.visionModel ?? '').trim(),
-    temperature: parseTemperature(getSetting(SETTINGS_KEYS.temperature), DEFAULTS.temperature),
-    enableThinking: parseBool(getSetting(SETTINGS_KEYS.enableThinking), DEFAULTS.enableThinking),
+    baseUrl: normalizeBaseUrl(getPurposeSetting(resolvedPurpose, 'baseUrl') ?? preset.baseUrl ?? DEFAULTS.baseUrl),
+    model: String(purposeModel ?? visionFallbackModel ?? preset.model ?? DEFAULTS.model).trim(),
+    visionModel: String(configuredVisionModel ?? preset.visionModel ?? '').trim(),
+    temperature: parseTemperature(getPurposeSetting(resolvedPurpose, 'temperature'), DEFAULTS.temperature),
+    enableThinking: parseBool(getPurposeSetting(resolvedPurpose, 'enableThinking'), DEFAULTS.enableThinking),
     apiKeyConfigured: Boolean(configuredApiKey || getDefaultApiKey(provider)),
     providers: getAIProviders(),
   };
@@ -215,6 +243,12 @@ export function getAIConfig({ includeSecret = false } = {}) {
     config.supportsThinkingParam = Boolean(preset.supportsThinkingParam);
   }
   return config;
+}
+
+export function getAIPurposeConfigs({ includeSecret = false } = {}) {
+  return Object.fromEntries(
+    AI_PURPOSES.map(purpose => [purpose, getAIConfig({ purpose, includeSecret })]),
+  );
 }
 
 export function sanitizeAIConfig(config) {
@@ -226,8 +260,9 @@ export function sanitizeAIConfig(config) {
   };
 }
 
-export function updateAIConfig(input = {}) {
-  const current = getAIConfig({ includeSecret: true });
+export function updateAIConfig(input = {}, { purpose = DEFAULT_PURPOSE } = {}) {
+  const resolvedPurpose = normalizePurpose(purpose);
+  const current = getAIConfig({ purpose: resolvedPurpose, includeSecret: true });
   const nextProvider = input.provider !== undefined ? normalizeProvider(input.provider) : current.provider;
   const preset = getPreset(nextProvider);
   const providerChanged = nextProvider !== current.provider;
@@ -240,6 +275,7 @@ export function updateAIConfig(input = {}) {
   });
   const next = {
     ...current,
+    purpose: resolvedPurpose,
     provider: nextProvider,
     providerName: preset.name,
     baseUrl: input.baseUrl !== undefined ? normalizeBaseUrl(input.baseUrl) : baseForProvider.baseUrl,
@@ -254,17 +290,17 @@ export function updateAIConfig(input = {}) {
   assertValidConfig(next);
 
   const tx = db.transaction(() => {
-    setSetting(SETTINGS_KEYS.provider, next.provider);
-    setSetting(SETTINGS_KEYS.baseUrl, next.baseUrl);
-    setSetting(SETTINGS_KEYS.model, next.model);
-    setSetting(SETTINGS_KEYS.visionModel, next.visionModel);
-    setSetting(SETTINGS_KEYS.temperature, String(next.temperature));
-    setSetting(SETTINGS_KEYS.enableThinking, next.enableThinking ? '1' : '0');
-    if (input.apiKey !== undefined || providerChanged) setSetting(SETTINGS_KEYS.apiKey, next.apiKey);
+    setPurposeSetting(resolvedPurpose, 'provider', next.provider);
+    setPurposeSetting(resolvedPurpose, 'baseUrl', next.baseUrl);
+    setPurposeSetting(resolvedPurpose, 'model', next.model);
+    setPurposeSetting(resolvedPurpose, 'visionModel', next.visionModel);
+    setPurposeSetting(resolvedPurpose, 'temperature', String(next.temperature));
+    setPurposeSetting(resolvedPurpose, 'enableThinking', next.enableThinking ? '1' : '0');
+    if (input.apiKey !== undefined || providerChanged) setPurposeSetting(resolvedPurpose, 'apiKey', next.apiKey);
   });
   tx();
 
-  return sanitizeAIConfig(getAIConfig({ includeSecret: true }));
+  return sanitizeAIConfig(getAIConfig({ purpose: resolvedPurpose, includeSecret: true }));
 }
 
 function buildProviderSpecificPayload(payload, config) {
@@ -277,8 +313,8 @@ function buildProviderSpecificPayload(payload, config) {
   return payload;
 }
 
-export function buildChatCompletionPayload({ messages, model, maxTokens = 200, temperature, enableThinking }) {
-  const config = getAIConfig({ includeSecret: true });
+export function buildChatCompletionPayload({ purpose = DEFAULT_PURPOSE, messages, model, maxTokens = 200, temperature, enableThinking }) {
+  const config = getAIConfig({ purpose, includeSecret: true });
   const effectiveConfig = {
     ...config,
     enableThinking: enableThinking !== undefined ? parseBool(enableThinking, config.enableThinking) : config.enableThinking,
@@ -291,8 +327,8 @@ export function buildChatCompletionPayload({ messages, model, maxTokens = 200, t
   }, effectiveConfig);
 }
 
-export async function callAIChat({ messages, model, maxTokens = 200, temperature, timeoutMs = 60000 }) {
-  const config = getAIConfig({ includeSecret: true });
+export async function callAIChat({ purpose = DEFAULT_PURPOSE, messages, model, maxTokens = 200, temperature, timeoutMs = 60000 }) {
+  const config = getAIConfig({ purpose, includeSecret: true });
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -315,8 +351,8 @@ export async function callAIChat({ messages, model, maxTokens = 200, temperature
   return (data.choices?.[0]?.message?.content || '').trim();
 }
 
-export async function streamAIChat({ messages, model, maxTokens = 200, temperature, enableThinking, timeoutMs = 90000, onToken }) {
-  const config = getAIConfig({ includeSecret: true });
+export async function streamAIChat({ purpose = DEFAULT_PURPOSE, messages, model, maxTokens = 200, temperature, enableThinking, timeoutMs = 90000, onToken }) {
+  const config = getAIConfig({ purpose, includeSecret: true });
   const effectiveConfig = {
     ...config,
     enableThinking: enableThinking !== undefined ? parseBool(enableThinking, config.enableThinking) : config.enableThinking,
@@ -383,8 +419,8 @@ export async function streamAIChat({ messages, model, maxTokens = 200, temperatu
   return fullText.trim();
 }
 
-export async function testAIConfig(input = {}) {
-  const saved = getAIConfig({ includeSecret: true });
+export async function testAIConfig(input = {}, { purpose = DEFAULT_PURPOSE } = {}) {
+  const saved = getAIConfig({ purpose, includeSecret: true });
   const provider = input.provider !== undefined ? normalizeProvider(input.provider) : saved.provider;
   const providerChanged = provider !== saved.provider;
   const preset = getPreset(provider);
