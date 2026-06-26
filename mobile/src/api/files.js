@@ -148,7 +148,7 @@ export async function streamAssistant(question, task = 'ask', handlers = {}, sco
     buffer += decoder.decode(value, { stream: true })
     const events = buffer.split('\n\n')
     buffer = events.pop() || ''
-    events.filter(Boolean).forEach(handleEvent)
+    for (const event of events.filter(Boolean)) handleEvent(event)
   }
 
   if (buffer.trim()) handleEvent(buffer)

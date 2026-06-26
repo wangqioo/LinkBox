@@ -59,6 +59,41 @@ async function withAssistantApp(fn) {
   }
 }
 
+async function withMockEmptyLlmStream(fn) {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  try {
+    globalThis.fetch = async (url, options = {}) => {
+      if (String(url).includes('/chat/completions')) {
+        requests.push(JSON.parse(String(options.body || '{}')));
+        return new Response('data: {"choices":[{"delta":{}}]}\n\ndata: [DONE]\n\n', {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        });
+      }
+      return originalFetch(url, options);
+    };
+
+    return await fn({ requests });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function readSse(response) {
+  const text = await response.text();
+  return text
+    .split('\n\n')
+    .filter(Boolean)
+    .map(raw => {
+      const lines = raw.split('\n');
+      return {
+        event: lines.find(line => line.startsWith('event:'))?.slice(6).trim() || 'message',
+        data: lines.find(line => line.startsWith('data:'))?.slice(5).trim() || '',
+      };
+    });
+}
+
 test('assistant route uses centralized JSON error helpers', () => {
   const routeSource = readFileSync(join(__dirname, '../routes/assistant.js'), 'utf8');
 
@@ -143,6 +178,44 @@ test('POST /api/assistant/chat returns agent metadata when evidence is empty', a
   assert.equal(body.agent.run.steps.some(step => step.step_type === 'answer_verification'), true);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM assistant_runs').get().count, 1);
 }));
+
+test('POST /api/assistant/chat/stream returns an error when LLM stream has no answer tokens', async () => withMockEmptyLlmStream(async (mockLlm) => withAssistantApp(async ({ db, baseUrl, headers }) => {
+  db.prepare(`
+    INSERT OR REPLACE INTO settings (key, value)
+    VALUES
+      ('ai:provider', 'custom'),
+      ('ai:base_url', 'http://127.0.0.1:9/v1'),
+      ('ai:model', 'mock-empty-stream'),
+      ('ai:temperature', '0.3'),
+      ('ai:enable_thinking', '0')
+  `).run();
+  db.prepare(`
+    INSERT INTO links (id, user_id, type, title, imported_at, content_md)
+    VALUES (1, 1, 'file', 'Local Model Notes', '2026-06-11T00:00:00.000Z', ?)
+  `).run(`# Local Model Notes
+
+RK3576 本地大模型部署需要控制上下文长度。`);
+
+  const response = await fetch(`${baseUrl}/api/assistant/chat/stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      question: '本地大模型部署',
+      task: 'ask',
+    }),
+  });
+  const events = await readSse(response);
+
+  assert.equal(response.status, 200);
+  assert.equal(mockLlm.requests.length, 1);
+  assert.equal(events.some(event => event.event === 'sources'), true);
+  assert.equal(events.some(event => event.event === 'done'), false);
+  assert.equal(events.at(-1).event, 'error');
+  assert.match(JSON.parse(events.at(-1).data).error, /没有生成有效回答/);
+  const saved = db.prepare("SELECT content, error FROM assistant_messages WHERE role = 'assistant' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(saved.content, '');
+  assert.match(saved.error, /没有生成有效回答/);
+})));
 
 test('assistant conversation endpoints create, list, read, and delete personal history', async () => withAssistantApp(async ({ db, baseUrl, headers }) => {
   const create = await fetch(`${baseUrl}/api/assistant/conversations`, {

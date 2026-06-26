@@ -424,6 +424,10 @@ export default function AssistantPage() {
                   {message.role === 'assistant' ? (
                     message.content
                       ? <MarkdownRenderer content={message.content} />
+                      : message.done
+                      ? <div className="text-gray-500 dark:text-gray-400">
+                          资料助理没有生成有效回答，请稍后重试。
+                        </div>
                       : <div className="flex items-center gap-2 text-gray-500">
                           <Loader2 className="w-4 h-4 animate-spin" />
                           正在生成回答

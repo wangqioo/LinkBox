@@ -45,8 +45,11 @@
         <div v-if="msg.role === 'assistant'" class="msg-av">🤖</div>
         <div class="msg-body">
           <div class="bubble" :class="msg.role">
-            <div v-if="msg.role === 'assistant' && !msg.content" class="typing">
+            <div v-if="msg.role === 'assistant' && !msg.content && !msg.done" class="typing">
               <span></span><span></span><span></span>
+            </div>
+            <div v-else-if="msg.role === 'assistant' && !msg.content" class="assistant-empty">
+              资料助理没有生成有效回答，请稍后重试。
             </div>
             <div v-else-if="msg.role === 'assistant'" class="md" v-html="renderAssistantMarkdown(msg.content, msg.sources || [])"></div>
             <div v-else class="user-text">{{ msg.content }}</div>
@@ -418,6 +421,7 @@ async function scrollBottom() {
 .typing span:nth-child(2) { animation-delay: .18s; }
 .typing span:nth-child(3) { animation-delay: .36s; }
 @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+.assistant-empty { color: var(--text3); line-height: 1.6; }
 
 .md :deep(h2), .md :deep(h3) {
   font-size: 14px;

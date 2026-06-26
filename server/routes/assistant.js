@@ -355,6 +355,9 @@ router.post('/chat/stream', async (req, res) => {
         writeSse(res, 'delta', { text: normalized });
       },
     });
+    if (!answer.trim()) {
+      throw new Error('本地模型没有生成有效回答，请稍后重试或切换更稳定的 AI 模型。');
+    }
     const normalizedAnswer = normalizeCitationText(answer, sources.length);
     agentTurn = completeAssistantAgentAnswer({
       db: database,
