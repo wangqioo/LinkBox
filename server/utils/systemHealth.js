@@ -156,18 +156,32 @@ export async function checkAiEndpointHealth(localLlmUrl, {
   }
 }
 
+export async function checkAiPurposeHealth(config, {
+  fetch = globalThis.fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+} = {}) {
+  return checkAiEndpointHealth(config?.baseUrl || '', { fetch, timeoutMs });
+}
+
 export async function getSystemHealth({
   db,
   queue,
   uploadsDir,
   localLlmUrl = process.env.LOCAL_LLM_URL || '',
+  aiConfigs = null,
   execFile = execFileCallback,
   fetch = globalThis.fetch,
   fs = { accessSync, constants: fsConstants },
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
-  const [ai, pdftotext, libreoffice] = await Promise.all([
-    checkAiEndpointHealth(localLlmUrl, { fetch, timeoutMs }),
+  const [aiChecks, pdftotext, libreoffice] = await Promise.all([
+    aiConfigs
+      ? Promise.all([
+          checkAiPurposeHealth(aiConfigs.organize, { fetch, timeoutMs }),
+          checkAiPurposeHealth(aiConfigs.agent, { fetch, timeoutMs }),
+          checkAiPurposeHealth(aiConfigs.vision, { fetch, timeoutMs }),
+        ]).then(([aiOrganize, aiAgent, aiVision]) => ({ aiOrganize, aiAgent, aiVision }))
+      : checkAiEndpointHealth(localLlmUrl, { fetch, timeoutMs }).then(ai => ({ ai })),
     checkCommandHealth('pdftotext', process.env.PDFTOTEXT_BIN || 'pdftotext', ['-v'], { execFile, timeoutMs }),
     checkCommandHealth('LibreOffice', process.env.LIBREOFFICE_BIN || 'libreoffice', ['--version'], { execFile, timeoutMs }),
   ]);
@@ -176,7 +190,7 @@ export async function getSystemHealth({
     sqlite: checkSqliteHealth(db),
     uploads: checkUploadsHealth(uploadsDir, fs),
     queue: checkQueueHealth(queue),
-    ai,
+    ...aiChecks,
     pdftotext,
     libreoffice,
   };

@@ -167,6 +167,10 @@ test('GET /api/settings/system includes storage consistency report', async () =>
     title: 'Needs Canonical Rows',
   });
   assert.equal(body.documents.item_understanding.missing_items, 1);
+  assert.equal(Boolean(body.health.checks.aiOrganize), true);
+  assert.equal(Boolean(body.health.checks.aiAgent), true);
+  assert.equal(Boolean(body.health.checks.aiVision), true);
+  assert.equal(Boolean(body.health.checks.ai), false);
 }));
 
 test('POST /api/settings/system/backfill-understanding backfills structured item knowledge', async () => withSettingsApp(async ({ db, baseUrl, adminHeaders }) => {

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { getAIConfig, updateAIConfig, testAIConfig } from '../utils/aiConfig.js';
+import { getAIConfig, getAIPurposeConfigs, updateAIConfig, testAIConfig } from '../utils/aiConfig.js';
 import { getEmbeddingConfig, updateEmbeddingConfig, testEmbeddingConfig } from '../utils/embeddingConfig.js';
 import { getRuntimeQueue } from '../utils/runtimeQueue.js';
 import { UPLOADS_DIR } from '../utils/uploadMiddleware.js';
@@ -74,7 +74,12 @@ export function createSettingsRouter({
 
 // GET /api/settings/ai - return AI config without secrets
 router.get('/ai', authMiddleware, requireAdmin, (req, res) => {
-  res.json(getAIConfig());
+  const purposes = getAIPurposeConfigs();
+  res.json({
+    ...purposes.organize,
+    purposes,
+    providers: purposes.organize.providers,
+  });
 });
 
 // PUT /api/settings/ai - update AI config
@@ -91,6 +96,32 @@ router.put('/ai', authMiddleware, requireAdmin, (req, res) => {
 router.post('/ai/test', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const result = await testAIConfig(req.body || {});
+    res.json(result);
+  } catch (e) {
+    const payload = errorPayload(httpError(400, e.message || 'AI 接口测试失败'), 'AI 接口测试失败');
+    res.status(payload.status).json({ ok: false, ...payload.body });
+  }
+});
+
+// GET /api/settings/ai/:purpose - return purpose-specific AI config
+router.get('/ai/:purpose', authMiddleware, requireAdmin, (req, res) => {
+  res.json(getAIConfig({ purpose: req.params.purpose }));
+});
+
+// PUT /api/settings/ai/:purpose - update purpose-specific AI config
+router.put('/ai/:purpose', authMiddleware, requireAdmin, (req, res) => {
+  try {
+    const config = updateAIConfig(req.body || {}, { purpose: req.params.purpose });
+    res.json({ ok: true, config });
+  } catch (e) {
+    jsonError(res, httpError(400, e.message || 'AI 配置无效'), 'AI 配置无效');
+  }
+});
+
+// POST /api/settings/ai/:purpose/test - verify purpose-specific AI endpoint/model
+router.post('/ai/:purpose/test', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const result = await testAIConfig(req.body || {}, { purpose: req.params.purpose });
     res.json(result);
   } catch (e) {
     const payload = errorPayload(httpError(400, e.message || 'AI 接口测试失败'), 'AI 接口测试失败');
@@ -135,10 +166,12 @@ router.get('/', authMiddleware, requireAdmin, (req, res) => {
 router.get('/system', authMiddleware, requireAdmin, async (req, res) => {
   const queue = getQueue();
   const embeddingConfig = getEmbeddingConfig({ includeSecret: true });
+  const aiConfigs = getAIPurposeConfigs({ includeSecret: true });
   const health = await getSystemHealth({
     db: database,
     queue,
     uploadsDir,
+    aiConfigs,
   });
   const queueStats = queue.stats();
 

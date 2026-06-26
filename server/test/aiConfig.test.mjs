@@ -1,8 +1,10 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import express from 'express';
 import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { generateToken } from '../middleware/auth.js';
 
 const testDir = mkdtempSync(join(tmpdir(), 'linkbox-ai-config-test-'));
 process.env.DB_PATH = join(testDir, 'test.db');
@@ -72,4 +74,54 @@ test('getAIPurposeConfigs exposes organize, agent, and vision configs', async ()
   assert.equal(configs.agent.model, 'agent-model');
   assert.equal(configs.vision.model.length > 0, true);
   assert.equal(Object.hasOwn(configs.agent, 'apiKey'), false);
+}));
+
+test('settings AI endpoints read and update a specific purpose', async () => withAiConfig(async ({ db }) => {
+  db.prepare("INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hash')").run();
+  const token = `${Date.now()}-${Math.random()}`;
+  const settingsModule = await import(`../routes/settings.js?ai-config-route-test=${token}`);
+  const app = express();
+  app.use(express.json());
+  app.use('/api/settings', settingsModule.default);
+  const server = await new Promise((resolve, reject) => {
+    const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
+    listening.on('error', reject);
+  });
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const headers = {
+      Authorization: `Bearer ${generateToken(1)}`,
+      'Content-Type': 'application/json',
+    };
+    const put = await fetch(`${baseUrl}/api/settings/ai/agent`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        provider: 'custom',
+        baseUrl: 'http://agent.example/v1',
+        model: 'agent-model',
+        apiKey: 'agent-secret',
+      }),
+    });
+    const putBody = await put.json();
+    assert.equal(put.status, 200);
+    assert.equal(putBody.config.purpose, 'agent');
+    assert.equal(putBody.config.model, 'agent-model');
+    assert.equal(Object.hasOwn(putBody.config, 'apiKey'), false);
+
+    const getAgent = await fetch(`${baseUrl}/api/settings/ai/agent`, { headers });
+    const agentBody = await getAgent.json();
+    assert.equal(getAgent.status, 200);
+    assert.equal(agentBody.model, 'agent-model');
+    assert.equal(agentBody.apiKeyConfigured, true);
+
+    const get = await fetch(`${baseUrl}/api/settings/ai`, { headers });
+    const getBody = await get.json();
+    assert.equal(get.status, 200);
+    assert.equal(getBody.purposes.agent.model, 'agent-model');
+    assert.equal(getBody.purposes.organize.providers.length > 0, true);
+    assert.equal(getBody.providers.length > 0, true);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 }));
