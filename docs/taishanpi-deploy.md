@@ -1,8 +1,9 @@
 # LinkBox on TaishanPi RK3576
 
-This deployment runs LinkBox natively with systemd and connects AI features to
-the board-local Qwen3-VL-2B RKLLM/RKNN demo through a small OpenAI-compatible
-adapter.
+This deployment runs LinkBox natively with systemd. Background organization and
+vision tasks can use the board-local Qwen3-VL-2B RKLLM/RKNN demo through a small
+OpenAI-compatible adapter, while the interactive Assistant Agent can use an
+independent cloud model.
 
 ## Why native instead of Docker
 
@@ -41,6 +42,28 @@ ASSISTANT_MAX_TOKENS=400
 BACKGROUND_QUEUE_CONCURRENCY=1
 JWT_SECRET=<generate a local random secret>
 ```
+
+## Recommended model split
+
+The RK3576 board is useful for low-cost background work, but its local RKLLM
+adapter can be slow and may occasionally return an empty stream. LinkBox now
+stores chat AI settings by purpose:
+
+- `organize`: summaries, learning notes, transcript punctuation cleanup, and
+  other background enrichment. Recommended default: board-local adapter.
+- `vision`: image and screenshot description. Recommended default: board-local
+  adapter if the local vision model is stable.
+- `agent`: Assistant chat final answer generation. Recommended default: a
+  stronger cloud OpenAI-compatible model.
+
+Purpose keys live in the SQLite `settings` table as `ai:<purpose>:provider`,
+`ai:<purpose>:base_url`, `ai:<purpose>:model`, `ai:<purpose>:vision_model`,
+`ai:<purpose>:temperature`, `ai:<purpose>:enable_thinking`, and
+`ai:<purpose>:api_key`. If a purpose key is missing, LinkBox falls back to the
+legacy `ai:*` key so older deployments continue to work.
+
+The same split is editable from the admin Web settings page under the three AI
+tabs: 资料整理模型, 资料助理模型, and 图片理解模型.
 
 ## Adapter limits
 

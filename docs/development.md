@@ -1,6 +1,6 @@
 # LinkBox Development Guide
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 This document records the current development state so future work can resume
 without rediscovering the architecture, commands, and validation steps.
@@ -154,6 +154,14 @@ At this checkpoint:
   for questions, contradictions, timelines, and project summaries, validates
   the JSON, and stores generated output in `document_annotations` as
   `llm_understanding` with model, prompt version, and source hash.
+- Chat AI settings are now purpose-scoped. `server/utils/aiConfig.js` resolves
+  `organize`, `agent`, and `vision` configs from `ai:<purpose>:*` keys with
+  legacy `ai:*` fallback. Background summaries, learning notes, and transcript
+  cleanup call `purpose: 'organize'`; Assistant final answer generation calls
+  `purpose: 'agent'`; image description calls `purpose: 'vision'`. Admin
+  settings expose three model tabs and system health reports each purpose
+  separately, so RK3576 deployments can keep cheap/local processing for
+  organization while using a stronger cloud model for interactive answers.
 - Desktop item cards use a reusable processing banner derived from the shared
   `processing` contract. Mobile home/day views use the same processing labels
   last-error text, and recovery hints through `mobileProcessingStatus`.

@@ -71,6 +71,8 @@ LinkBox 支持保存多种内容：
 
 处理状态会按内容类型展示，例如 Bilibili 会显示视频处理阶段，而不是泛化成“抓取网页”。
 
+AI 模型配置按用途分层：资料整理、资料助理和图片理解可以分别配置供应商、接口地址、模型和 API Key。资料整理适合使用本地或低成本模型，资料助理可以独立使用更强的云端模型，旧的单一 `ai:*` 配置会作为兼容 fallback。
+
 ### 类型归一
 
 数据库中仍兼容历史 `links.type` 值，但 UI、筛选、检索和统计使用归一后的展示类型：
@@ -293,7 +295,7 @@ docker compose up -d --build
 | `FFMPEG_BIN` | `ffmpeg` | `ffmpeg` 命令路径 |
 | `BILIBILI_COOKIE_FILE` | 空 | Bilibili cookies 文件路径，Docker 示例为 `/data/cookies/bilibili.txt` |
 
-AI 配置也可以在 Web 管理端的系统设置中修改，支持 DeepSeek、OpenAI、OpenRouter、Kimi、DashScope、智谱和自定义 OpenAI 兼容服务。
+AI 配置也可以在 Web 管理端的系统设置中修改，支持 DeepSeek、OpenAI、OpenRouter、Kimi、DashScope、智谱和自定义 OpenAI 兼容服务，并可按资料整理、资料助理、图片理解三类用途分别保存。
 
 ## HTTPS
 
