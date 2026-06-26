@@ -236,6 +236,7 @@ router.post('/chat', async (req, res) => {
   }
 
   const answer = await callAIChat({
+    purpose: 'agent',
     messages: buildMessages(question, ranked, task, {
       memoryItems: agentTurn.memory.items,
       plan: agentTurn.plan,
@@ -340,6 +341,7 @@ router.post('/chat/stream', async (req, res) => {
   try {
     let answer = '';
     await streamAIChat({
+      purpose: 'agent',
       messages: buildMessages(question, ranked, task, {
         memoryItems: agentTurn.memory.items,
         plan: agentTurn.plan,

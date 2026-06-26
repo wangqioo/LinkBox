@@ -5,6 +5,7 @@ import { callAIChat, getAIConfig } from './aiConfig.js';
 
 async function callLLM(prompt, maxTokens = 800) {
   return callAIChat({
+    purpose: 'organize',
     messages: [{ role: 'user', content: prompt }],
     maxTokens,
     timeoutMs: 90000,
@@ -136,7 +137,7 @@ export async function generateLearningNote(markdown, title = '', summary = '') {
     <div id="mindmap-container"></div>
   </div>
 
-  <div class="footer">由 ${escapeHtml(getAIConfig().model)} 生成 · LinkBox</div>
+  <div class="footer">由 ${escapeHtml(getAIConfig({ purpose: 'organize' }).model)} 生成 · LinkBox</div>
 </div>
 <script>
 (function() {

@@ -119,7 +119,7 @@ async function describeWebImage(imageUrl, referer) {
   const img = await fetchImageAsBase64(imageUrl, referer);
   if (!img) return null;
   try {
-    const aiConfig = getAIConfig({ includeSecret: true });
+    const aiConfig = getAIConfig({ purpose: 'vision', includeSecret: true });
     const payload = {
       model: aiConfig.visionModel || aiConfig.model,
       messages: [{

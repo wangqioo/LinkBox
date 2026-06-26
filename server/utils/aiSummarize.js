@@ -3,6 +3,7 @@ import { callAIChat } from './aiConfig.js';
 
 async function callLLM(systemPrompt, userPrompt, maxTokens = 200) {
   return callAIChat({
+    purpose: 'organize',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },

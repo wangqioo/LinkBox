@@ -242,7 +242,7 @@ export async function describeImage(localPath, {
 
   const runtime = await getRuntimeDeps();
   const activeDb = database || runtime.database;
-  const aiConfig = runtime.getAIConfig({ includeSecret: true });
+  const aiConfig = runtime.getAIConfig({ purpose: 'vision', includeSecret: true });
   const useLocalOptimizations = isLocalVisionConfig(aiConfig);
   const model = aiConfig.visionModel || aiConfig.model;
   const imageHash = hashFile(localPath);

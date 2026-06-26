@@ -186,6 +186,7 @@ export async function punctuateTranscriptText(text, {
   for (const [index, chunk] of chunks.entries()) {
     try {
       const result = await callChat({
+        purpose: 'organize',
         messages: [
           {
             role: 'system',
