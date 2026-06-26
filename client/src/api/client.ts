@@ -33,10 +33,20 @@ export interface AIProvider {
   description?: string;
 }
 
+export type AIPurpose = 'organize' | 'agent' | 'vision';
+
+export interface AIPurposeConfigs {
+  organize: AIConfig;
+  agent: AIConfig;
+  vision: AIConfig;
+}
+
 export interface AIConfig {
+  purpose?: AIPurpose | string;
   provider: string;
   providerName?: string;
   providers?: AIProvider[];
+  purposes?: AIPurposeConfigs;
   baseUrl: string;
   model: string;
   visionModel: string;
@@ -688,6 +698,14 @@ export const api = {
     request('/settings/ai', { method: 'PUT', body: JSON.stringify(data) }),
   testAIConfig: (data: Partial<AIConfig>) =>
     request('/settings/ai/test', { method: 'POST', body: JSON.stringify(data) }),
+  getAIPurposeConfig: (purpose: AIPurpose): Promise<AIConfig> => request(`/settings/ai/${purpose}`),
+  updateAIPurposeConfig: (
+    purpose: AIPurpose,
+    data: Partial<AIConfig>,
+  ): Promise<{ ok: boolean; config: AIConfig }> =>
+    request(`/settings/ai/${purpose}`, { method: 'PUT', body: JSON.stringify(data) }),
+  testAIPurposeConfig: (purpose: AIPurpose, data: Partial<AIConfig>) =>
+    request(`/settings/ai/${purpose}/test`, { method: 'POST', body: JSON.stringify(data) }),
   getEmbeddingConfig: (): Promise<EmbeddingConfig> => request('/settings/embeddings'),
   updateEmbeddingConfig: (data: Partial<EmbeddingConfig>): Promise<{ ok: boolean; config: EmbeddingConfig }> =>
     request('/settings/embeddings', { method: 'PUT', body: JSON.stringify(data) }),

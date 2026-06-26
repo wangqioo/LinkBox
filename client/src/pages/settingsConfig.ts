@@ -1,4 +1,4 @@
-import type { AIConfig, EmbeddingConfig, EmbeddingProvider } from '../api/client';
+import type { AIConfig, AIPurpose, EmbeddingConfig, EmbeddingProvider } from '../api/client';
 
 export interface SiteCookieEntry {
   domain: string;
@@ -29,6 +29,23 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   enableThinking: false,
   apiKeyConfigured: false,
   apiKey: '',
+};
+
+export const AI_PURPOSES: AIPurpose[] = ['organize', 'agent', 'vision'];
+
+export const AI_PURPOSE_LABELS: Record<AIPurpose, { title: string; description: string }> = {
+  organize: {
+    title: '资料整理模型',
+    description: '用于摘要、学习笔记、转写整理和后台结构化处理，适合本地或低成本模型。',
+  },
+  agent: {
+    title: '资料助理模型',
+    description: '用于聊天问答、证据综合和最终回答，建议配置更强的云端模型。',
+  },
+  vision: {
+    title: '图片理解模型',
+    description: '用于图片、截图和网页图片描述，可与资料整理模型共用本地视觉接口。',
+  },
 };
 
 export const EMBEDDING_PROVIDERS: EmbeddingProvider[] = [
@@ -65,6 +82,27 @@ export function applyProviderPreset(config: AIConfig, providerId: string): AICon
     model: provider.model,
     visionModel: provider.visionModel || '',
   };
+}
+
+export function normalizeAIPurposeConfigs(config: AIConfig): Record<AIPurpose, AIConfig> {
+  const fallback = {
+    ...DEFAULT_AI_CONFIG,
+    ...config,
+    purposes: undefined,
+    apiKey: '',
+  };
+
+  return AI_PURPOSES.reduce((result, purpose) => {
+    const purposeConfig = config.purposes?.[purpose];
+    result[purpose] = {
+      ...fallback,
+      ...(purposeConfig || {}),
+      purpose,
+      providers: purposeConfig?.providers?.length ? purposeConfig.providers : fallback.providers,
+      apiKey: '',
+    };
+    return result;
+  }, {} as Record<AIPurpose, AIConfig>);
 }
 
 export function applyEmbeddingProviderPreset(config: EmbeddingConfig, providerId: string): EmbeddingConfig {

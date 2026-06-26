@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api, type AIConfig, type AIProvider, type EmbeddingConfig, type SystemStatus } from '../api/client';
+import { api, type AIConfig, type AIProvider, type AIPurpose, type EmbeddingConfig, type SystemStatus } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Save } from 'lucide-react';
 import AISettingsPanel from './AISettingsPanel';
@@ -12,9 +12,12 @@ import SystemHealthPanel from './SystemHealthPanel';
 import {
   applyEmbeddingProviderPreset,
   applyProviderPreset,
+  AI_PURPOSE_LABELS,
+  AI_PURPOSES,
   DEFAULT_AI_CONFIG,
   DEFAULT_EMBEDDING_CONFIG,
   EMBEDDING_PROVIDERS,
+  normalizeAIPurposeConfigs,
 } from './settingsConfig';
 import { useToast } from '../context/ToastContext';
 
@@ -22,7 +25,8 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const toast = useToast();
   const [settings, setSettings] = useState<Record<string, string>>({});
-  const [aiConfig, setAIConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
+  const [aiConfigs, setAIConfigs] = useState<Record<AIPurpose, AIConfig>>(() => normalizeAIPurposeConfigs(DEFAULT_AI_CONFIG));
+  const [activeAIPurpose, setActiveAIPurpose] = useState<AIPurpose>('organize');
   const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig>(DEFAULT_EMBEDDING_CONFIG);
   const [saving, setSaving] = useState(false);
   const [savingEmbeddings, setSavingEmbeddings] = useState(false);
@@ -30,7 +34,11 @@ export default function SettingsPage() {
   const [testingEmbeddings, setTestingEmbeddings] = useState(false);
   const [saved, setSaved] = useState(false);
   const [embeddingsSaved, setEmbeddingsSaved] = useState(false);
-  const [aiTestResult, setAITestResult] = useState('');
+  const [aiTestResults, setAITestResults] = useState<Record<AIPurpose, string>>({
+    organize: '',
+    agent: '',
+    vision: '',
+  });
   const [embeddingTestResult, setEmbeddingTestResult] = useState('');
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [loadingSystem, setLoadingSystem] = useState(false);
@@ -49,7 +57,7 @@ export default function SettingsPage() {
     if (!isAdmin) return;
     api.getSettings().then(setSettings).catch(() => {});
     api.getAIConfig()
-      .then((config) => setAIConfig({ ...DEFAULT_AI_CONFIG, ...config, apiKey: '' }))
+      .then((config) => setAIConfigs(normalizeAIPurposeConfigs(config)))
       .catch(() => {});
     api.getEmbeddingConfig()
       .then((config) => setEmbeddingConfig({
@@ -178,15 +186,25 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     setError('');
-    setAITestResult('');
+    setAITestResults({ organize: '', agent: '', vision: '' });
     try {
       await api.updateSettings(settings);
-      const payload: Partial<AIConfig> = { ...aiConfig };
-      if (!payload.apiKey) delete payload.apiKey;
-      const result = await api.updateAIConfig(payload);
-      setAIConfig({ ...DEFAULT_AI_CONFIG, ...result.config, apiKey: '' });
+      const results = await Promise.all(AI_PURPOSES.map(async (purpose) => {
+        const payload: Partial<AIConfig> = { ...aiConfigs[purpose], purposes: undefined };
+        if (!payload.apiKey) delete payload.apiKey;
+        const result = await api.updateAIPurposeConfig(purpose, payload);
+        return [purpose, result.config] as const;
+      }));
+      setAIConfigs((prev) => {
+        const next = { ...prev };
+        results.forEach(([purpose, config]) => {
+          next[purpose] = { ...DEFAULT_AI_CONFIG, ...config, apiKey: '' };
+        });
+        return next;
+      });
       setSaved(true);
       toast.success('设置已保存');
+      refreshSystemStatus();
       setTimeout(() => setSaved(false), 2000);
     } catch (e: any) {
       const message = e.message || '保存失败';
@@ -227,14 +245,16 @@ export default function SettingsPage() {
   const handleTestAI = async () => {
     setTestingAI(true);
     setError('');
-    setAITestResult('');
+    setAITestResults((prev) => ({ ...prev, [activeAIPurpose]: '' }));
     try {
-      const payload: Partial<AIConfig> = { ...aiConfig };
+      const aiConfig = aiConfigs[activeAIPurpose];
+      const payload: Partial<AIConfig> = { ...aiConfig, purposes: undefined };
       if (!payload.apiKey) delete payload.apiKey;
-      const result = await api.testAIConfig(payload);
+      const result = await api.testAIPurposeConfig(activeAIPurpose, payload);
       const count = result.models?.length ? `，发现 ${result.models.length} 个模型` : '';
-      setAITestResult(`连接成功：${result.provider || aiConfig.provider} / ${result.model}${count}`);
-      toast.success('AI 接口连接成功', `${result.provider || aiConfig.provider} / ${result.model}${count}`);
+      const message = `连接成功：${result.provider || aiConfig.provider} / ${result.model}${count}`;
+      setAITestResults((prev) => ({ ...prev, [activeAIPurpose]: message }));
+      toast.success(`${AI_PURPOSE_LABELS[activeAIPurpose].title}连接成功`, `${result.provider || aiConfig.provider} / ${result.model}${count}`);
     } catch (e: any) {
       const message = e.message || 'AI 接口测试失败';
       setError(message);
@@ -265,7 +285,10 @@ export default function SettingsPage() {
   };
 
   const updateAIField = <K extends keyof AIConfig>(key: K, value: AIConfig[K]) => {
-    setAIConfig((prev) => ({ ...prev, [key]: value }));
+    setAIConfigs((prev) => ({
+      ...prev,
+      [activeAIPurpose]: { ...prev[activeAIPurpose], [key]: value },
+    }));
   };
 
   const updateEmbeddingField = <K extends keyof EmbeddingConfig>(key: K, value: EmbeddingConfig[K]) => {
@@ -273,8 +296,11 @@ export default function SettingsPage() {
   };
 
   const handleProviderChange = (providerId: string) => {
-    setAIConfig((prev) => applyProviderPreset(prev, providerId));
-    setAITestResult('');
+    setAIConfigs((prev) => ({
+      ...prev,
+      [activeAIPurpose]: applyProviderPreset(prev[activeAIPurpose], providerId),
+    }));
+    setAITestResults((prev) => ({ ...prev, [activeAIPurpose]: '' }));
   };
 
   const handleEmbeddingProviderChange = (providerId: string) => {
@@ -282,7 +308,8 @@ export default function SettingsPage() {
     setEmbeddingTestResult('');
   };
 
-  const selectedProvider = aiConfig.providers?.find((item: AIProvider) => item.id === aiConfig.provider);
+  const activeAIConfig = aiConfigs[activeAIPurpose];
+  const selectedProvider = activeAIConfig.providers?.find((item: AIProvider) => item.id === activeAIConfig.provider);
   const selectedEmbeddingProvider = embeddingConfig.providers?.find((item) => item.id === embeddingConfig.provider);
 
   if (!isAdmin) {
@@ -301,11 +328,35 @@ export default function SettingsPage() {
       </div>
 
       <SiteCookiesSettings settings={settings} onChange={setSettings} />
+      <div className="rounded-xl border p-1 grid grid-cols-3 gap-1 bg-gray-50 dark:bg-gray-900">
+        {AI_PURPOSES.map((purpose) => {
+          const active = activeAIPurpose === purpose;
+          return (
+            <button
+              key={purpose}
+              type="button"
+              onClick={() => {
+                setActiveAIPurpose(purpose);
+                setError('');
+              }}
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                active
+                  ? 'bg-white text-indigo-700 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
+                  : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'
+              }`}
+            >
+              {AI_PURPOSE_LABELS[purpose].title}
+            </button>
+          );
+        })}
+      </div>
       <AISettingsPanel
-        aiConfig={aiConfig}
+        title={AI_PURPOSE_LABELS[activeAIPurpose].title}
+        description={AI_PURPOSE_LABELS[activeAIPurpose].description}
+        aiConfig={activeAIConfig}
         selectedProvider={selectedProvider}
         testingAI={testingAI}
-        aiTestResult={aiTestResult}
+        aiTestResult={aiTestResults[activeAIPurpose]}
         onProviderChange={handleProviderChange}
         onFieldChange={updateAIField}
         onTestAI={handleTestAI}

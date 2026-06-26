@@ -2,6 +2,8 @@ import { PlugZap } from 'lucide-react';
 import type { AIConfig, AIProvider } from '../api/client';
 
 interface Props {
+  title?: string;
+  description?: string;
   aiConfig: AIConfig;
   selectedProvider?: AIProvider;
   testingAI: boolean;
@@ -12,6 +14,8 @@ interface Props {
 }
 
 export default function AISettingsPanel({
+  title = 'AI 配置',
+  description = '像 Hermes 一样先选供应商，LinkBox 会自动填接口地址和默认模型；多数情况下你只需要粘贴 API Key 后保存。',
   aiConfig,
   selectedProvider,
   testingAI,
@@ -23,9 +27,9 @@ export default function AISettingsPanel({
   return (
     <div className="rounded-xl border p-5 space-y-4">
       <div>
-        <h2 className="font-semibold">AI 配置</h2>
+        <h2 className="font-semibold">{title}</h2>
         <p className="text-sm text-gray-500 mt-0.5">
-          像 Hermes 一样先选供应商，LinkBox 会自动填接口地址和默认模型；多数情况下你只需要粘贴 API Key 后保存。
+          {description}
         </p>
       </div>
 
