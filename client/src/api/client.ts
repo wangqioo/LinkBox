@@ -143,6 +143,63 @@ export interface SystemStatus {
   uptimeSeconds: number;
 }
 
+export interface LocalAgentCoverage {
+  total: number;
+  states: Record<string, number>;
+  reviewNeeded: number;
+  ready: number;
+}
+
+export interface LocalAgentReport {
+  id?: number;
+  reportType: string;
+  content: {
+    headline?: string;
+    library?: {
+      total?: number;
+      states?: Record<string, number>;
+      ready?: number;
+      reviewNeeded?: number;
+    };
+    jobs?: Record<string, number>;
+    suggestions?: { pending?: number };
+    rules?: { active?: number };
+    generatedAt?: string;
+  };
+  createdAt?: string;
+}
+
+export interface LocalAgentSuggestion {
+  id: number;
+  item_id?: number | null;
+  suggestion_type: string;
+  status: string;
+  proposal?: Record<string, unknown>;
+  reason?: string;
+  confidence?: number;
+  evidence?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+  resolved_at?: string;
+}
+
+export interface LocalAgentRule {
+  id: number;
+  rule_type: string;
+  status: string;
+  title: string;
+  condition?: Record<string, unknown>;
+  action?: Record<string, unknown>;
+  created_at?: string;
+}
+
+export interface LocalAgentStatus {
+  coverage: LocalAgentCoverage;
+  latestReport: LocalAgentReport | null;
+  suggestions: LocalAgentSuggestion[];
+  rules: LocalAgentRule[];
+}
+
 export interface DocumentMaintenanceStats {
   items_with_content: number;
   documents: number;
@@ -712,6 +769,13 @@ export const api = {
   testEmbeddingConfig: (data: Partial<EmbeddingConfig>): Promise<EmbeddingTestResult> =>
     request('/settings/embeddings/test', { method: 'POST', body: JSON.stringify(data) }),
   getSystemStatus: (): Promise<SystemStatus> => request('/settings/system'),
+  getLocalAgentStatus: (): Promise<LocalAgentStatus> => request('/settings/local-agent'),
+  generateLocalAgentReport: (reportType = 'daily'): Promise<{ ok: boolean; report: LocalAgentReport; status: LocalAgentStatus }> =>
+    request('/settings/local-agent/report', { method: 'POST', body: JSON.stringify({ reportType }) }),
+  generateLocalAgentSuggestions: (): Promise<{ ok: boolean; created: number; status: LocalAgentStatus }> =>
+    request('/settings/local-agent/suggestions/generate', { method: 'POST', body: JSON.stringify({}) }),
+  resolveLocalAgentSuggestion: (id: number, action: 'accept' | 'reject'): Promise<{ ok: boolean; suggestion: LocalAgentSuggestion; status: LocalAgentStatus }> =>
+    request(`/settings/local-agent/suggestions/${id}/resolve`, { method: 'POST', body: JSON.stringify({ action }) }),
   retryFailedJobs: (ids?: number[]): Promise<{ ok: boolean; retried: number; queue: QueueStats }> =>
     request('/settings/system/retry-failed-jobs', {
       method: 'POST',
