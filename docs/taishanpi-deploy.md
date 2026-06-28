@@ -95,6 +95,10 @@ RKLLM runtime process.
   lost just because the service restarts.
 - Admin users can inspect LinkBox queue counts and the latest failed job through
   `/api/settings/system`.
+- The admin Local Agent workbench shows whether the box is actually doing
+  useful work: maturity coverage, latest local report, pending suggestions,
+  learned rules, and failed jobs. This is the primary operational view for the
+  "plug it in and let it work" model.
 - The adapter exposes `/health` and `/v1/health` with resident demo PID,
   currently bound image, cache counts, request counters, last latency, and last
   error.

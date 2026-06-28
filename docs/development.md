@@ -162,6 +162,12 @@ At this checkpoint:
   settings expose three model tabs and system health reports each purpose
   separately, so RK3576 deployments can keep cheap/local processing for
   organization while using a stronger cloud model for interactive answers.
+- Local Agent Knowledge Factory first milestone is available through the admin
+  settings workbench. It derives item maturity from existing content,
+  documents, chunks, understanding rows, jobs, and suggestions; stores local
+  factory runs/reports/suggestions/rules in additive tables; and can generate
+  topic suggestions from deterministic `item_topics` without requiring cloud
+  APIs.
 - Desktop item cards use a reusable processing banner derived from the shared
   `processing` contract. Mobile home/day views use the same processing labels
   last-error text, and recovery hints through `mobileProcessingStatus`.
