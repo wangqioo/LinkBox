@@ -17,6 +17,12 @@ import {
   labelForEnrichmentJob,
   recoveryHintForEnrichmentJob,
 } from '../utils/itemEnrichmentPlan.js';
+import {
+  createTopicSuggestions,
+  generateLocalAgentReport,
+  getLocalAgentStatus,
+  resolveLocalAgentSuggestion,
+} from '../utils/localAgentFactory.js';
 
 // Only admin (user id=1) can manage settings
 function requireAdmin(req, res, next) {
@@ -263,6 +269,55 @@ router.post('/system/retry-failed-jobs', authMiddleware, requireAdmin, (req, res
     retried,
     queue: queue.stats(),
   });
+});
+
+// GET /api/settings/local-agent - local Agent factory workbench payload
+router.get('/local-agent', authMiddleware, requireAdmin, (req, res) => {
+  res.json(getLocalAgentStatus(database, { userId: req.userId }));
+});
+
+// POST /api/settings/local-agent/report - generate local Agent report
+router.post('/local-agent/report', authMiddleware, requireAdmin, (req, res) => {
+  const report = generateLocalAgentReport(database, {
+    userId: req.userId,
+    reportType: req.body?.reportType || 'daily',
+  });
+  res.json({
+    ok: true,
+    report,
+    status: getLocalAgentStatus(database, { userId: req.userId }),
+  });
+});
+
+// POST /api/settings/local-agent/suggestions/generate - create topic suggestions
+router.post('/local-agent/suggestions/generate', authMiddleware, requireAdmin, (req, res) => {
+  const result = createTopicSuggestions(database, {
+    userId: req.userId,
+    limit: req.body?.limit,
+  });
+  res.json({
+    ok: true,
+    ...result,
+    status: getLocalAgentStatus(database, { userId: req.userId }),
+  });
+});
+
+// POST /api/settings/local-agent/suggestions/:id/resolve - accept/reject suggestion
+router.post('/local-agent/suggestions/:id/resolve', authMiddleware, requireAdmin, (req, res) => {
+  try {
+    const suggestion = resolveLocalAgentSuggestion(database, {
+      userId: req.userId,
+      suggestionId: Number(req.params.id),
+      action: req.body?.action,
+    });
+    res.json({
+      ok: true,
+      suggestion,
+      status: getLocalAgentStatus(database, { userId: req.userId }),
+    });
+  } catch (e) {
+    jsonError(res, httpError(400, e.message || 'Agent 建议处理失败'), 'Agent 建议处理失败');
+  }
 });
 
 // PUT /api/settings - update one or more settings
