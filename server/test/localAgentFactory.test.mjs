@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 
 import { initLocalAgentSchema } from '../utils/localAgentSchema.js';
+import { deriveItemMaturity, getMaturityCoverage } from '../utils/itemMaturity.js';
 
 function withDb(fn) {
   const db = new Database(':memory:');
@@ -53,4 +54,71 @@ test('initLocalAgentSchema creates local Agent factory tables', () => withDb((db
     'agent_suggestions',
     'item_maturity_events',
   ]);
+}));
+
+function seedItem(db, fields = {}) {
+  const result = db.prepare(`
+    INSERT INTO links (user_id, type, title, summary, content, content_md, description, status, imported_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    fields.userId || 1,
+    fields.type || 'link',
+    fields.title || 'Example item',
+    fields.summary || '',
+    fields.content || '',
+    fields.contentMd || '',
+    fields.description || '',
+    fields.status || '',
+    fields.importedAt || '2026-06-26T00:00:00.000Z',
+  );
+  return result.lastInsertRowid;
+}
+
+test('deriveItemMaturity reports raw converted indexed understood summarized and review states', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, link_id INTEGER, status TEXT NOT NULL, last_error TEXT DEFAULT '');
+  `);
+  const rawId = seedItem(db);
+  const summarizedId = seedItem(db, { contentMd: '# Body', summary: 'Useful summary' });
+  const documentId = db.prepare('INSERT INTO documents (item_id, user_id) VALUES (?, 1)').run(summarizedId).lastInsertRowid;
+  db.prepare('INSERT INTO document_chunks (document_id, chunk_index, content) VALUES (?, 0, ?)').run(documentId, 'Body chunk');
+  db.prepare('INSERT INTO item_understanding_runs (item_id, user_id) VALUES (?, 1)').run(summarizedId);
+  db.prepare("INSERT INTO agent_suggestions (user_id, item_id, suggestion_type, status, proposal_json) VALUES (1, ?, 'topic_suggestion', 'pending', '{}')").run(summarizedId);
+
+  assert.equal(deriveItemMaturity(db, rawId).state, 'raw');
+  const maturity = deriveItemMaturity(db, summarizedId);
+  assert.equal(maturity.state, 'review_needed');
+  assert.deepEqual(maturity.flags, {
+    hasContent: true,
+    hasDocument: true,
+    hasChunks: true,
+    hasUnderstanding: true,
+    hasSummary: true,
+    hasPendingSuggestion: true,
+    hasFailedJob: false,
+  });
+}));
+
+test('getMaturityCoverage counts states for a user library', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, link_id INTEGER, status TEXT NOT NULL, last_error TEXT DEFAULT '');
+  `);
+  seedItem(db);
+  const convertedId = seedItem(db, { contentMd: 'Converted markdown' });
+  const documentId = db.prepare('INSERT INTO documents (item_id, user_id) VALUES (?, 1)').run(convertedId).lastInsertRowid;
+  db.prepare('INSERT INTO document_chunks (document_id, chunk_index, content) VALUES (?, 0, ?)').run(documentId, 'Chunk');
+
+  const coverage = getMaturityCoverage(db, { userId: 1 });
+  assert.equal(coverage.total, 2);
+  assert.equal(coverage.states.raw, 1);
+  assert.equal(coverage.states.indexed, 1);
+  assert.equal(coverage.reviewNeeded, 0);
 }));
