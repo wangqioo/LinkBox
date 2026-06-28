@@ -6,6 +6,7 @@ import { initAssistantConversationSchema } from './assistantConversations.js';
 import { initAssistantRunSchema } from './assistantRuns.js';
 import { initItemUnderstandingSchema } from './itemUnderstanding.js';
 import { initAssistantMemorySchema } from './assistantMemory.js';
+import { initLocalAgentSchema } from './localAgentSchema.js';
 
 const MIGRATIONS = [
   {
@@ -256,6 +257,12 @@ const MIGRATIONS = [
     name: '015_assistant_memory_schema',
     up(db) {
       initAssistantMemorySchema(db);
+    },
+  },
+  {
+    name: '016_local_agent_factory_schema',
+    up(db) {
+      initLocalAgentSchema(db);
     },
   },
 ];

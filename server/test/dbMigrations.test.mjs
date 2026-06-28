@@ -23,6 +23,7 @@ const EXPECTED_MIGRATIONS = [
   '013_assistant_message_agent_metadata',
   '014_item_understanding_schema',
   '015_assistant_memory_schema',
+  '016_local_agent_factory_schema',
 ];
 
 function withDb(fn) {
@@ -360,6 +361,73 @@ test('runMigrations creates assistant memory table', () => withDb((db) => {
     'updated_at',
   ]);
   assert.equal(indexNames(db, 'assistant_memories').includes('idx_assistant_memories_user'), true);
+}));
+
+test('runMigrations creates local Agent factory tables', () => withDb((db) => {
+  createLegacyLinksTable(db);
+
+  const result = runMigrations(db);
+
+  assert.equal(result.names.includes('016_local_agent_factory_schema'), true);
+  assert.deepEqual(columnNames(db, 'agent_runs'), [
+    'id',
+    'user_id',
+    'run_type',
+    'status',
+    'plan_json',
+    'summary_json',
+    'started_at',
+    'completed_at',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'agent_reports'), [
+    'id',
+    'user_id',
+    'scope_type',
+    'scope_id',
+    'report_type',
+    'content_json',
+    'created_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'agent_suggestions'), [
+    'id',
+    'user_id',
+    'item_id',
+    'suggestion_type',
+    'status',
+    'proposal_json',
+    'reason',
+    'confidence',
+    'evidence_json',
+    'created_at',
+    'updated_at',
+    'resolved_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'agent_rules'), [
+    'id',
+    'user_id',
+    'rule_type',
+    'status',
+    'title',
+    'condition_json',
+    'action_json',
+    'source_suggestion_id',
+    'created_at',
+    'updated_at',
+  ]);
+  assert.deepEqual(columnNames(db, 'item_maturity_events'), [
+    'id',
+    'item_id',
+    'user_id',
+    'from_state',
+    'to_state',
+    'reason',
+    'metadata_json',
+    'created_at',
+  ]);
+  assert.equal(indexNames(db, 'agent_suggestions').includes('idx_agent_suggestions_user_status'), true);
+  assert.equal(indexNames(db, 'agent_rules').includes('idx_agent_rules_user_status'), true);
+  assert.equal(indexNames(db, 'item_maturity_events').includes('idx_item_maturity_events_item'), true);
 }));
 
 test('runMigrations creates social collaboration tables and indexes', () => withDb((db) => {
