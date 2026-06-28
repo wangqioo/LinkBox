@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { api, type AIConfig, type AIProvider, type AIPurpose, type EmbeddingConfig, type SystemStatus } from '../api/client';
+import { api, type AIConfig, type AIProvider, type AIPurpose, type EmbeddingConfig, type LocalAgentStatus, type SystemStatus } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Save } from 'lucide-react';
 import AISettingsPanel from './AISettingsPanel';
 import BackgroundJobsPanel from './BackgroundJobsPanel';
 import DocumentMaintenancePanel from './DocumentMaintenancePanel';
 import EmbeddingSettingsPanel from './EmbeddingSettingsPanel';
+import LocalAgentWorkbenchPanel from './LocalAgentWorkbenchPanel';
 import RetrievalDiagnosticsPanel from './RetrievalDiagnosticsPanel';
 import SiteCookiesSettings from './SiteCookiesSettings';
 import SystemHealthPanel from './SystemHealthPanel';
@@ -41,7 +42,12 @@ export default function SettingsPage() {
   });
   const [embeddingTestResult, setEmbeddingTestResult] = useState('');
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [localAgentStatus, setLocalAgentStatus] = useState<LocalAgentStatus | null>(null);
   const [loadingSystem, setLoadingSystem] = useState(false);
+  const [loadingLocalAgent, setLoadingLocalAgent] = useState(false);
+  const [generatingAgentReport, setGeneratingAgentReport] = useState(false);
+  const [generatingAgentSuggestions, setGeneratingAgentSuggestions] = useState(false);
+  const [resolvingSuggestionId, setResolvingSuggestionId] = useState<number | null>(null);
   const [retryingJobs, setRetryingJobs] = useState(false);
   const [retryingJobId, setRetryingJobId] = useState<number | null>(null);
   const [reindexingDocuments, setReindexingDocuments] = useState(false);
@@ -49,6 +55,7 @@ export default function SettingsPage() {
   const [backfillingUnderstanding, setBackfillingUnderstanding] = useState(false);
   const [queueMessage, setQueueMessage] = useState('');
   const [documentMessage, setDocumentMessage] = useState('');
+  const [localAgentMessage, setLocalAgentMessage] = useState('');
   const [error, setError] = useState('');
 
   const isAdmin = user?.id === 1;
@@ -68,6 +75,7 @@ export default function SettingsPage() {
       }))
       .catch(() => {});
     refreshSystemStatus();
+    refreshLocalAgentStatus();
   }, [isAdmin]);
 
   const refreshSystemStatus = async () => {
@@ -83,6 +91,71 @@ export default function SettingsPage() {
       toast.error('系统状态加载失败', message);
     } finally {
       setLoadingSystem(false);
+    }
+  };
+
+  const refreshLocalAgentStatus = async () => {
+    setLoadingLocalAgent(true);
+    setLocalAgentMessage('');
+    try {
+      setLocalAgentStatus(await api.getLocalAgentStatus());
+    } catch (e: any) {
+      const message = e.message || '本地 Agent 状态加载失败';
+      setError(message);
+      toast.error('本地 Agent 状态加载失败', message);
+    } finally {
+      setLoadingLocalAgent(false);
+    }
+  };
+
+  const handleGenerateAgentReport = async () => {
+    setGeneratingAgentReport(true);
+    setLocalAgentMessage('');
+    try {
+      const result = await api.generateLocalAgentReport();
+      setLocalAgentStatus(result.status);
+      setLocalAgentMessage('本地 Agent 报告已生成');
+      toast.success('本地 Agent 报告已生成');
+    } catch (e: any) {
+      const message = e.message || '生成本地 Agent 报告失败';
+      setError(message);
+      toast.error('生成本地 Agent 报告失败', message);
+    } finally {
+      setGeneratingAgentReport(false);
+    }
+  };
+
+  const handleGenerateAgentSuggestions = async () => {
+    setGeneratingAgentSuggestions(true);
+    setLocalAgentMessage('');
+    try {
+      const result = await api.generateLocalAgentSuggestions();
+      setLocalAgentStatus(result.status);
+      setLocalAgentMessage(result.created ? `已生成 ${result.created} 条建议` : '没有新的建议');
+      toast.success('本地 Agent 建议已更新');
+    } catch (e: any) {
+      const message = e.message || '生成本地 Agent 建议失败';
+      setError(message);
+      toast.error('生成本地 Agent 建议失败', message);
+    } finally {
+      setGeneratingAgentSuggestions(false);
+    }
+  };
+
+  const handleResolveAgentSuggestion = async (id: number, action: 'accept' | 'reject') => {
+    setResolvingSuggestionId(id);
+    setLocalAgentMessage('');
+    try {
+      const result = await api.resolveLocalAgentSuggestion(id, action);
+      setLocalAgentStatus(result.status);
+      setLocalAgentMessage(action === 'accept' ? '建议已接受并沉淀为规则' : '建议已拒绝');
+      toast.success(action === 'accept' ? '建议已接受' : '建议已拒绝');
+    } catch (e: any) {
+      const message = e.message || '处理本地 Agent 建议失败';
+      setError(message);
+      toast.error('处理本地 Agent 建议失败', message);
+    } finally {
+      setResolvingSuggestionId(null);
     }
   };
 
@@ -377,6 +450,18 @@ export default function SettingsPage() {
         health={systemStatus?.health || null}
         loading={loadingSystem}
         onRefresh={refreshSystemStatus}
+      />
+      <LocalAgentWorkbenchPanel
+        status={localAgentStatus}
+        loading={loadingLocalAgent}
+        generatingReport={generatingAgentReport}
+        generatingSuggestions={generatingAgentSuggestions}
+        resolvingSuggestionId={resolvingSuggestionId}
+        message={localAgentMessage}
+        onRefresh={refreshLocalAgentStatus}
+        onGenerateReport={handleGenerateAgentReport}
+        onGenerateSuggestions={handleGenerateAgentSuggestions}
+        onResolveSuggestion={handleResolveAgentSuggestion}
       />
       <DocumentMaintenancePanel
         stats={systemStatus?.documents || null}
