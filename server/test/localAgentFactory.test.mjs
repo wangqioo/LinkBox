@@ -4,6 +4,10 @@ import Database from 'better-sqlite3';
 
 import { initLocalAgentSchema } from '../utils/localAgentSchema.js';
 import { deriveItemMaturity, getMaturityCoverage } from '../utils/itemMaturity.js';
+import {
+  generateLocalAgentReport,
+  getLocalAgentStatus,
+} from '../utils/localAgentFactory.js';
 
 function withDb(fn) {
   const db = new Database(':memory:');
@@ -121,4 +125,44 @@ test('getMaturityCoverage counts states for a user library', () => withDb((db) =
   assert.equal(coverage.states.raw, 1);
   assert.equal(coverage.states.indexed, 1);
   assert.equal(coverage.reviewNeeded, 0);
+}));
+
+test('generateLocalAgentReport records a local factory run and report', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, link_id INTEGER, status TEXT NOT NULL, last_error TEXT DEFAULT '');
+  `);
+  seedItem(db, { contentMd: 'Ready article', summary: 'Summary' });
+  db.prepare("INSERT INTO jobs (type, link_id, status, last_error) VALUES ('image.describe', 1, 'failed', 'empty output')").run();
+
+  const report = generateLocalAgentReport(db, { userId: 1 });
+
+  assert.equal(report.reportType, 'daily');
+  assert.equal(report.content.library.total, 1);
+  assert.equal(report.content.jobs.failed, 1);
+  assert.equal(report.content.headline.includes('本地 Agent'), true);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agent_reports').get().count, 1);
+  assert.equal(db.prepare('SELECT status FROM agent_runs ORDER BY id DESC LIMIT 1').get().status, 'completed');
+}));
+
+test('getLocalAgentStatus returns coverage latest report suggestions and rules', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, link_id INTEGER, status TEXT NOT NULL, last_error TEXT DEFAULT '');
+  `);
+  seedItem(db);
+  generateLocalAgentReport(db, { userId: 1 });
+
+  const status = getLocalAgentStatus(db, { userId: 1 });
+
+  assert.equal(status.coverage.total, 1);
+  assert.equal(status.latestReport.reportType, 'daily');
+  assert.deepEqual(status.suggestions, []);
+  assert.deepEqual(status.rules, []);
 }));
