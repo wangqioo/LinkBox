@@ -8,6 +8,13 @@
 
 **Tech Stack:** Node.js ESM, Express, better-sqlite3, existing migration runner, React/Vite settings UI, Node test runner.
 
+**Execution status:** Complete on `main` through commit `cc25df8`.
+Verification passed with `git diff --check`, backend tests, client tests/build,
+and mobile tests/build. RK3576 deployment was attempted after completion, but
+all known LAN/FRP SSH entrypoints rejected or closed the current credentials, so
+the production box still needs a reachable SSH entrypoint before this build can
+be installed there.
+
 ---
 
 ## File Map
@@ -36,7 +43,7 @@
 - Modify: `server/utils/dbMigrations.js`
 - Create: `server/test/localAgentFactory.test.mjs`
 
-- [ ] **Step 1: Write the failing schema test**
+- [x] **Step 1: Write the failing schema test**
 
 Create `server/test/localAgentFactory.test.mjs`:
 
@@ -99,7 +106,7 @@ test('initLocalAgentSchema creates local Agent factory tables', () => withDb((db
 }));
 ```
 
-- [ ] **Step 2: Run the schema test and verify it fails**
+- [x] **Step 2: Run the schema test and verify it fails**
 
 Run:
 
@@ -110,7 +117,7 @@ node --test test/localAgentFactory.test.mjs
 
 Expected: fail with `Cannot find module '../utils/localAgentSchema.js'`.
 
-- [ ] **Step 3: Implement `initLocalAgentSchema`**
+- [x] **Step 3: Implement `initLocalAgentSchema`**
 
 Create `server/utils/localAgentSchema.js`:
 
@@ -199,7 +206,7 @@ export function initLocalAgentSchema(db) {
 }
 ```
 
-- [ ] **Step 4: Add migration `016_local_agent_factory_schema`**
+- [x] **Step 4: Add migration `016_local_agent_factory_schema`**
 
 Modify `server/utils/dbMigrations.js`:
 
@@ -218,7 +225,7 @@ Add after migration `015_assistant_memory_schema`:
   },
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -230,7 +237,7 @@ node --test test/dbMigrations.test.mjs
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server/utils/localAgentSchema.js server/utils/dbMigrations.js server/test/localAgentFactory.test.mjs
@@ -245,7 +252,7 @@ git commit -m "Add local agent factory schema"
 - Create: `server/utils/itemMaturity.js`
 - Modify: `server/test/localAgentFactory.test.mjs`
 
-- [ ] **Step 1: Add failing maturity tests**
+- [x] **Step 1: Add failing maturity tests**
 
 Append to `server/test/localAgentFactory.test.mjs`:
 
@@ -320,7 +327,7 @@ test('getMaturityCoverage counts states for a user library', () => withDb((db) =
 }));
 ```
 
-- [ ] **Step 2: Run the maturity tests and verify they fail**
+- [x] **Step 2: Run the maturity tests and verify they fail**
 
 Run:
 
@@ -331,7 +338,7 @@ node --test test/localAgentFactory.test.mjs
 
 Expected: fail with missing `server/utils/itemMaturity.js`.
 
-- [ ] **Step 3: Implement `itemMaturity.js`**
+- [x] **Step 3: Implement `itemMaturity.js`**
 
 Create `server/utils/itemMaturity.js`:
 
@@ -429,7 +436,7 @@ export function getMaturityCoverage(db, { userId = 1, limit = 5000 } = {}) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -440,7 +447,7 @@ node --test test/localAgentFactory.test.mjs
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/utils/itemMaturity.js server/test/localAgentFactory.test.mjs
@@ -455,7 +462,7 @@ git commit -m "Derive local agent item maturity"
 - Create: `server/utils/localAgentFactory.js`
 - Modify: `server/test/localAgentFactory.test.mjs`
 
-- [ ] **Step 1: Add failing report tests**
+- [x] **Step 1: Add failing report tests**
 
 Append to `server/test/localAgentFactory.test.mjs`:
 
@@ -506,7 +513,7 @@ test('getLocalAgentStatus returns coverage latest report suggestions and rules',
 }));
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -517,7 +524,7 @@ node --test test/localAgentFactory.test.mjs
 
 Expected: fail with missing exports from `localAgentFactory.js`.
 
-- [ ] **Step 3: Implement report generation**
+- [x] **Step 3: Implement report generation**
 
 Create `server/utils/localAgentFactory.js`:
 
@@ -692,7 +699,7 @@ export function getLocalAgentStatus(db, { userId = 1 } = {}) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -703,7 +710,7 @@ node --test test/localAgentFactory.test.mjs
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/utils/localAgentFactory.js server/test/localAgentFactory.test.mjs
@@ -718,7 +725,7 @@ git commit -m "Generate local agent reports"
 - Modify: `server/utils/localAgentFactory.js`
 - Modify: `server/test/localAgentFactory.test.mjs`
 
-- [ ] **Step 1: Add failing suggestion lifecycle tests**
+- [x] **Step 1: Add failing suggestion lifecycle tests**
 
 Append to `server/test/localAgentFactory.test.mjs`:
 
@@ -792,7 +799,7 @@ test('resolveLocalAgentSuggestion rejects a suggestion without creating a rule',
 }));
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -803,7 +810,7 @@ node --test test/localAgentFactory.test.mjs
 
 Expected: fail with missing `createTopicSuggestions` and `resolveLocalAgentSuggestion`.
 
-- [ ] **Step 3: Implement suggestions and rules**
+- [x] **Step 3: Implement suggestions and rules**
 
 Add to `server/utils/localAgentFactory.js`:
 
@@ -912,7 +919,7 @@ export function resolveLocalAgentSuggestion(db, { userId = 1, suggestionId, acti
 
 Update `listLocalAgentSuggestions` to use `suggestionFromRow(row)` instead of duplicating mapping.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -923,7 +930,7 @@ node --test test/localAgentFactory.test.mjs
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/utils/localAgentFactory.js server/test/localAgentFactory.test.mjs
@@ -938,7 +945,7 @@ git commit -m "Add local agent suggestion lifecycle"
 - Modify: `server/routes/settings.js`
 - Create: `server/test/settingsLocalAgent.test.mjs`
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Create `server/test/settingsLocalAgent.test.mjs`:
 
@@ -1084,7 +1091,7 @@ test('local Agent endpoints require admin', async () => {
 });
 ```
 
-- [ ] **Step 2: Run route tests and verify failure**
+- [x] **Step 2: Run route tests and verify failure**
 
 Run:
 
@@ -1095,7 +1102,7 @@ node --test test/settingsLocalAgent.test.mjs
 
 Expected: fail with 404 responses for local Agent endpoints.
 
-- [ ] **Step 3: Add settings routes**
+- [x] **Step 3: Add settings routes**
 
 Modify `server/routes/settings.js` imports:
 
@@ -1161,7 +1168,7 @@ router.post('/local-agent/suggestions/:id/resolve', authMiddleware, requireAdmin
 });
 ```
 
-- [ ] **Step 4: Run route tests**
+- [x] **Step 4: Run route tests**
 
 Run:
 
@@ -1173,7 +1180,7 @@ node --test test/settingsSystem.test.mjs
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/routes/settings.js server/test/settingsLocalAgent.test.mjs
@@ -1189,7 +1196,7 @@ git commit -m "Expose local agent workbench API"
 - Create: `client/src/pages/localAgentWorkbenchUtils.ts`
 - Create: `client/src/pages/localAgentWorkbenchUtils.test.js`
 
-- [ ] **Step 1: Write failing display helper tests**
+- [x] **Step 1: Write failing display helper tests**
 
 Create `client/src/pages/localAgentWorkbenchUtils.test.js`:
 
@@ -1236,7 +1243,7 @@ test('suggestionActionLabel maps suggestion types to user-facing commands', () =
 });
 ```
 
-- [ ] **Step 2: Run client tests and verify failure**
+- [x] **Step 2: Run client tests and verify failure**
 
 Run:
 
@@ -1247,7 +1254,7 @@ node --test src/pages/localAgentWorkbenchUtils.test.js
 
 Expected: fail with missing `localAgentWorkbenchUtils.ts`.
 
-- [ ] **Step 3: Add API types and methods**
+- [x] **Step 3: Add API types and methods**
 
 Modify `client/src/api/client.ts` near settings types:
 
@@ -1322,7 +1329,7 @@ Add API methods near settings API:
     request(`/settings/local-agent/suggestions/${id}/resolve`, { method: 'POST', body: JSON.stringify({ action }) }),
 ```
 
-- [ ] **Step 4: Add display helpers**
+- [x] **Step 4: Add display helpers**
 
 Create `client/src/pages/localAgentWorkbenchUtils.ts`:
 
@@ -1367,7 +1374,7 @@ export function formatPercent(value: number) {
 }
 ```
 
-- [ ] **Step 5: Run client tests**
+- [x] **Step 5: Run client tests**
 
 Run:
 
@@ -1379,7 +1386,7 @@ npm test
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add client/src/api/client.ts client/src/pages/localAgentWorkbenchUtils.ts client/src/pages/localAgentWorkbenchUtils.test.js
@@ -1394,7 +1401,7 @@ git commit -m "Add local agent client helpers"
 - Create: `client/src/pages/LocalAgentWorkbenchPanel.tsx`
 - Modify: `client/src/pages/SettingsPage.tsx`
 
-- [ ] **Step 1: Create `LocalAgentWorkbenchPanel.tsx`**
+- [x] **Step 1: Create `LocalAgentWorkbenchPanel.tsx`**
 
 Create `client/src/pages/LocalAgentWorkbenchPanel.tsx`:
 
@@ -1593,7 +1600,7 @@ export default function LocalAgentWorkbenchPanel({
 }
 ```
 
-- [ ] **Step 2: Wire panel into `SettingsPage.tsx`**
+- [x] **Step 2: Wire panel into `SettingsPage.tsx`**
 
 Modify imports:
 
@@ -1705,7 +1712,7 @@ Render after `SystemHealthPanel` or before `DocumentMaintenancePanel`:
       />
 ```
 
-- [ ] **Step 3: Run client verification**
+- [x] **Step 3: Run client verification**
 
 Run:
 
@@ -1717,7 +1724,7 @@ npm run build
 
 Expected: pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add client/src/pages/LocalAgentWorkbenchPanel.tsx client/src/pages/SettingsPage.tsx
@@ -1732,7 +1739,7 @@ git commit -m "Add local agent workbench UI"
 - Modify: `docs/development.md`
 - Modify: `docs/taishanpi-deploy.md`
 
-- [ ] **Step 1: Update development docs**
+- [x] **Step 1: Update development docs**
 
 Add to `docs/development.md` checkpoint bullets:
 
@@ -1745,7 +1752,7 @@ Add to `docs/development.md` checkpoint bullets:
   APIs.
 ```
 
-- [ ] **Step 2: Update RK3576 docs**
+- [x] **Step 2: Update RK3576 docs**
 
 Add to `docs/taishanpi-deploy.md` under Current runtime improvements:
 
@@ -1756,7 +1763,7 @@ Add to `docs/taishanpi-deploy.md` under Current runtime improvements:
   "plug it in and let it work" model.
 ```
 
-- [ ] **Step 3: Run full verification**
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -1769,14 +1776,14 @@ cd ../mobile && npm test && npm run build
 
 Expected: all pass.
 
-- [ ] **Step 4: Commit docs**
+- [x] **Step 4: Commit docs**
 
 ```bash
 git add docs/development.md docs/taishanpi-deploy.md
 git commit -m "Document local agent factory milestone"
 ```
 
-- [ ] **Step 5: Push**
+- [x] **Step 5: Push**
 
 Run:
 
