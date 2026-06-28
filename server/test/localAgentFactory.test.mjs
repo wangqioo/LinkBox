@@ -5,8 +5,10 @@ import Database from 'better-sqlite3';
 import { initLocalAgentSchema } from '../utils/localAgentSchema.js';
 import { deriveItemMaturity, getMaturityCoverage } from '../utils/itemMaturity.js';
 import {
+  createTopicSuggestions,
   generateLocalAgentReport,
   getLocalAgentStatus,
+  resolveLocalAgentSuggestion,
 } from '../utils/localAgentFactory.js';
 
 function withDb(fn) {
@@ -165,4 +167,67 @@ test('getLocalAgentStatus returns coverage latest report suggestions and rules',
   assert.equal(status.latestReport.reportType, 'daily');
   assert.deepEqual(status.suggestions, []);
   assert.deepEqual(status.rules, []);
+}));
+
+test('createTopicSuggestions creates pending suggestions from item topics', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE item_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL, name TEXT NOT NULL, weight REAL DEFAULT 1);
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, link_id INTEGER, status TEXT NOT NULL, last_error TEXT DEFAULT '');
+  `);
+  const itemId = seedItem(db, { title: 'Codex Agent note', contentMd: 'Codex can automate local work.' });
+  db.prepare("INSERT INTO item_topics (item_id, user_id, name, weight) VALUES (?, 1, 'AI Agent', 0.92)").run(itemId);
+
+  const result = createTopicSuggestions(db, { userId: 1 });
+
+  assert.equal(result.created, 1);
+  const suggestion = db.prepare('SELECT * FROM agent_suggestions').get();
+  assert.equal(suggestion.suggestion_type, 'topic_suggestion');
+  assert.equal(suggestion.status, 'pending');
+  assert.equal(JSON.parse(suggestion.proposal_json).topic, 'AI Agent');
+}));
+
+test('resolveLocalAgentSuggestion accepts a suggestion and creates an active rule', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  const itemId = seedItem(db, { title: 'Codex Agent note' });
+  const suggestionId = db.prepare(`
+    INSERT INTO agent_suggestions (user_id, item_id, suggestion_type, status, proposal_json, reason, confidence, evidence_json)
+    VALUES (1, ?, 'topic_suggestion', 'pending', ?, 'Topic appears repeatedly', 0.9, ?)
+  `).run(
+    itemId,
+    JSON.stringify({ topic: 'AI Agent', title: '把类似资料归到 AI Agent' }),
+    JSON.stringify({ topic: 'AI Agent' }),
+  ).lastInsertRowid;
+
+  const result = resolveLocalAgentSuggestion(db, {
+    userId: 1,
+    suggestionId,
+    action: 'accept',
+  });
+
+  assert.equal(result.status, 'accepted');
+  const rule = db.prepare('SELECT * FROM agent_rules WHERE source_suggestion_id = ?').get(suggestionId);
+  assert.equal(rule.status, 'active');
+  assert.equal(rule.rule_type, 'topic_preference');
+  assert.equal(JSON.parse(rule.action_json).topic, 'AI Agent');
+}));
+
+test('resolveLocalAgentSuggestion rejects a suggestion without creating a rule', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  const suggestionId = db.prepare(`
+    INSERT INTO agent_suggestions (user_id, suggestion_type, status, proposal_json)
+    VALUES (1, 'topic_suggestion', 'pending', ?)
+  `).run(JSON.stringify({ topic: 'Noise' })).lastInsertRowid;
+
+  const result = resolveLocalAgentSuggestion(db, {
+    userId: 1,
+    suggestionId,
+    action: 'reject',
+  });
+
+  assert.equal(result.status, 'rejected');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agent_rules').get().count, 0);
 }));

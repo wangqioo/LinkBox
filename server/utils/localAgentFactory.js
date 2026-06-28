@@ -13,6 +13,20 @@ function parseJson(raw, fallback) {
   }
 }
 
+function tableExists(db, table) {
+  return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
+}
+
+function suggestionFromRow(row) {
+  return {
+    ...row,
+    proposal: parseJson(row.proposal_json, {}),
+    evidence: parseJson(row.evidence_json, {}),
+    proposal_json: undefined,
+    evidence_json: undefined,
+  };
+}
+
 function jobCounts(db) {
   const exists = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get();
   if (!exists) return { queued: 0, running: 0, done: 0, failed: 0 };
@@ -112,13 +126,7 @@ export function listLocalAgentSuggestions(db, { userId = 1, status = 'pending', 
     WHERE user_id = ? AND status = ?
     ORDER BY datetime(created_at) DESC, id DESC
     LIMIT ?
-  `).all(userId, status, Math.max(1, Math.min(100, Number(limit) || 20))).map(row => ({
-    ...row,
-    proposal: parseJson(row.proposal_json, {}),
-    evidence: parseJson(row.evidence_json, {}),
-    proposal_json: undefined,
-    evidence_json: undefined,
-  }));
+  `).all(userId, status, Math.max(1, Math.min(100, Number(limit) || 20))).map(suggestionFromRow);
 }
 
 export function listLocalAgentRules(db, { userId = 1, limit = 20 } = {}) {
@@ -165,4 +173,91 @@ export function getLocalAgentStatus(db, { userId = 1 } = {}) {
     suggestions: listLocalAgentSuggestions(db, { userId }),
     rules: listLocalAgentRules(db, { userId }),
   };
+}
+
+export function createTopicSuggestions(db, { userId = 1, limit = 20 } = {}) {
+  initLocalAgentSchema(db);
+  if (!tableExists(db, 'item_topics')) return { created: 0 };
+  const rows = db.prepare(`
+    SELECT t.item_id, t.name, MAX(t.weight) AS weight, l.title
+    FROM item_topics t
+    JOIN links l ON l.id = t.item_id
+    LEFT JOIN agent_suggestions s
+      ON s.item_id = t.item_id
+      AND s.suggestion_type = 'topic_suggestion'
+      AND s.status IN ('pending', 'accepted')
+    WHERE t.user_id = ?
+      AND s.id IS NULL
+    GROUP BY t.item_id, t.name, l.title
+    ORDER BY weight DESC, t.item_id DESC
+    LIMIT ?
+  `).all(userId, Math.max(1, Math.min(100, Number(limit) || 20)));
+
+  const insert = db.prepare(`
+    INSERT INTO agent_suggestions (
+      user_id, item_id, suggestion_type, status, proposal_json, reason, confidence, evidence_json
+    ) VALUES (?, ?, 'topic_suggestion', 'pending', ?, ?, ?, ?)
+  `);
+  let created = 0;
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      insert.run(
+        userId,
+        row.item_id,
+        JSON.stringify({ topic: row.name, title: `将资料归入主题：${row.name}` }),
+        `本地结构化理解识别出主题「${row.name}」。`,
+        Math.max(0, Math.min(1, Number(row.weight || 0.7))),
+        JSON.stringify({ itemTitle: row.title || '', topic: row.name }),
+      );
+      created += 1;
+    }
+  });
+  tx();
+  return { created };
+}
+
+function createRuleForSuggestion(db, suggestion) {
+  const proposal = parseJson(suggestion.proposal_json, {});
+  if (suggestion.suggestion_type !== 'topic_suggestion') return null;
+  const result = db.prepare(`
+    INSERT INTO agent_rules (
+      user_id, rule_type, status, title, condition_json, action_json, source_suggestion_id
+    ) VALUES (?, 'topic_preference', 'active', ?, ?, ?, ?)
+  `).run(
+    suggestion.user_id,
+    proposal.title || `主题偏好：${proposal.topic || '未命名主题'}`,
+    JSON.stringify({ source: 'accepted_topic_suggestion' }),
+    JSON.stringify({ topic: proposal.topic || '' }),
+    suggestion.id,
+  );
+  return result.lastInsertRowid;
+}
+
+export function resolveLocalAgentSuggestion(db, { userId = 1, suggestionId, action } = {}) {
+  initLocalAgentSchema(db);
+  if (!Number.isInteger(Number(suggestionId))) throw new Error('Invalid suggestion id');
+  if (!['accept', 'reject'].includes(action)) throw new Error('Invalid suggestion action');
+
+  const suggestion = db.prepare(`
+    SELECT *
+    FROM agent_suggestions
+    WHERE id = ? AND user_id = ?
+  `).get(Number(suggestionId), userId);
+  if (!suggestion) throw new Error('Suggestion not found');
+  if (suggestion.status !== 'pending') throw new Error('Suggestion is already resolved');
+
+  const status = action === 'accept' ? 'accepted' : 'rejected';
+  const resolvedAt = nowIso();
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE agent_suggestions
+      SET status = ?, updated_at = ?, resolved_at = ?
+      WHERE id = ?
+    `).run(status, resolvedAt, resolvedAt, suggestion.id);
+    if (action === 'accept') createRuleForSuggestion(db, suggestion);
+  });
+  tx();
+
+  const updated = db.prepare('SELECT * FROM agent_suggestions WHERE id = ?').get(suggestion.id);
+  return suggestionFromRow(updated);
 }
