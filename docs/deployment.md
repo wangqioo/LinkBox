@@ -180,9 +180,81 @@ docker compose restart linkbox
 '
 ```
 
-## Historical Targets
+## Agent Update Target
 
-Older notes referenced a cpolar endpoint and an RK3576/TaishanPi native
-systemd deployment. Those are not the current production path. If they are
-reactivated, verify host, SSH port, app path, data path, and service manager
-before using any old commands.
+Assistant, Smart Agent, Local Agent, model-routing, and RK3576 adapter updates
+must also be deployed to the RK3576/NanoPi-R76S LinkBox node unless the user
+explicitly says not to deploy. This node is the live small-box Agent runtime.
+
+| Item | Value |
+| --- | --- |
+| Jump host | `ssh -p 6004 wq@150.158.146.192` |
+| Target | `root@192.168.1.50` via the jump host |
+| App path | `/opt/linkbox` |
+| Data path | `/var/lib/linkbox` |
+| Service | `linkbox` via systemd |
+| Local URL | `http://127.0.0.1:3100/` |
+| Public URL | `http://150.158.146.192:7130/` |
+| Rollback directory | `/opt/linkbox-prev-<timestamp>` |
+
+Build before switching, then replace the release with a rollback point:
+
+```bash
+tar \
+  --exclude='.git' \
+  --exclude='node_modules' \
+  --exclude='client/node_modules' \
+  --exclude='mobile/node_modules' \
+  --exclude='server/node_modules' \
+  --exclude='data' \
+  --exclude='uploads' \
+  --exclude='certs' \
+  --exclude='server/uploads' \
+  -czf /tmp/linkbox-r76s-update.tar.gz \
+  -C /Users/wq LinkBox
+
+scp -o ProxyJump=wq@150.158.146.192:6004 \
+  /tmp/linkbox-r76s-update.tar.gz \
+  root@192.168.1.50:/tmp/linkbox-r76s-update.tar.gz
+
+ssh -J wq@150.158.146.192:6004 root@192.168.1.50 '
+set -e
+stamp=$(date +%Y%m%d-%H%M%S)
+backup=/opt/linkbox-prev-$stamp
+rm -rf /opt/linkbox-new
+mkdir -p /opt/linkbox-new
+tar -xzf /tmp/linkbox-r76s-update.tar.gz -C /opt/linkbox-new --strip-components=1
+cd /opt/linkbox-new/server && npm ci --omit=dev
+cd /opt/linkbox-new/client && npm ci && npm run build
+cd /opt/linkbox-new/mobile && npm ci && npm run build
+systemctl stop linkbox
+mv /opt/linkbox "$backup"
+mv /opt/linkbox-new /opt/linkbox
+ln -sfn /var/lib/linkbox/linkbox.db /opt/linkbox/server/linkbox.db
+rm -rf /opt/linkbox/server/uploads
+ln -sfn /var/lib/linkbox/uploads /opt/linkbox/server/uploads
+systemctl start linkbox
+echo rollback=$backup
+systemctl is-active linkbox
+'
+```
+
+Required checks before reporting success:
+
+```bash
+ssh -J wq@150.158.146.192:6004 root@192.168.1.50 '
+curl -s -o /tmp/linkbox-root.html -w "root=%{http_code}\n" http://127.0.0.1:3100/
+curl -s -o /tmp/linkbox-mobile.html -w "mobile=%{http_code}\n" http://127.0.0.1:3100/mobile/
+curl -s -o /tmp/linkbox-local-agent.json -w "local_agent_no_auth=%{http_code}\n" http://127.0.0.1:3100/api/settings/local-agent
+systemctl is-active linkbox rkllm-openai-adapter frpc
+'
+
+curl -s -o /tmp/linkbox-r76s-public-root.html -w 'public_root=%{http_code}\n' \
+  http://150.158.146.192:7130/
+
+curl -s -o /tmp/linkbox-r76s-public-mobile.html -w 'public_mobile=%{http_code}\n' \
+  http://150.158.146.192:7130/mobile/
+```
+
+The root and mobile checks should return `200`. Auth-protected Agent endpoints
+should return `401` without a token and `200` with a valid admin token.
