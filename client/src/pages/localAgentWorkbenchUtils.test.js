@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  actionSeverityLabel,
   autopilotSummary,
+  formatJobCounts,
   maturityPercent,
   maturityRows,
+  ruleActionSummary,
+  suggestionEvidenceSummary,
   suggestionActionLabel,
   timelineEventLabel,
 } from './localAgentWorkbenchUtils.ts';
@@ -63,4 +67,28 @@ test('autopilotSummary describes latest completed run actions', () => {
 
   assert.equal(summary, '上次运行：排队 2 个任务，重试 1 个失败任务，生成 3 条建议');
   assert.equal(autopilotSummary(null), '尚未运行 Autopilot');
+});
+
+test('actionSeverityLabel maps action severity to concise labels', () => {
+  assert.deepEqual(actionSeverityLabel('high'), { label: '优先', tone: 'red' });
+  assert.deepEqual(actionSeverityLabel('medium'), { label: '建议', tone: 'amber' });
+  assert.deepEqual(actionSeverityLabel('low'), { label: '可选', tone: 'gray' });
+});
+
+test('suggestionEvidenceSummary prefers topic and item evidence', () => {
+  assert.equal(
+    suggestionEvidenceSummary({ topic: 'AI Agent', itemTitle: 'Agent note' }),
+    'Agent note · AI Agent',
+  );
+  assert.equal(suggestionEvidenceSummary({}), '暂无证据摘要');
+});
+
+test('ruleActionSummary describes topic preference actions', () => {
+  assert.equal(ruleActionSummary({ topic: 'AI Agent' }), '归入主题：AI Agent');
+  assert.equal(ruleActionSummary({}), '本地整理规则');
+});
+
+test('formatJobCounts summarizes active queue blockers', () => {
+  assert.equal(formatJobCounts({ queued: 2, running: 1, done: 4, failed: 3 }), '3 失败 · 2 排队 · 1 运行');
+  assert.equal(formatJobCounts({ queued: 0, running: 0, done: 4, failed: 0 }), '队列空闲');
 });

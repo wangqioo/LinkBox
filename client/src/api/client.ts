@@ -150,6 +150,44 @@ export interface LocalAgentCoverage {
   ready: number;
 }
 
+export interface LocalAgentJobs {
+  counts: {
+    queued: number;
+    running: number;
+    done: number;
+    failed: number;
+  };
+  failed: Array<{
+    id: number;
+    type: string;
+    itemId?: number | null;
+    itemTitle?: string;
+    attempts?: number;
+    maxAttempts?: number;
+    lastError?: string;
+    updatedAt?: string;
+  }>;
+}
+
+export interface LocalAgentNextAction {
+  kind: string;
+  severity: 'high' | 'medium' | 'low' | string;
+  title: string;
+  detail: string;
+  action: string;
+}
+
+export interface LocalAgentRun {
+  id: number;
+  runType: string;
+  status: string;
+  plan?: Record<string, unknown>;
+  summary?: Record<string, unknown>;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt?: string;
+}
+
 export interface LocalAgentReport {
   id?: number;
   reportType: string;
@@ -172,6 +210,8 @@ export interface LocalAgentReport {
 export interface LocalAgentSuggestion {
   id: number;
   item_id?: number | null;
+  itemTitle?: string;
+  itemType?: string;
   suggestion_type: string;
   status: string;
   proposal?: Record<string, unknown>;
@@ -190,7 +230,15 @@ export interface LocalAgentRule {
   title: string;
   condition?: Record<string, unknown>;
   action?: Record<string, unknown>;
+  sourceSuggestion?: {
+    id: number;
+    type?: string;
+    proposal?: Record<string, unknown>;
+    itemId?: number | null;
+  } | null;
+  sourceItemTitle?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface LocalAgentTimelineEvent {
@@ -200,17 +248,6 @@ export interface LocalAgentTimelineEvent {
   detail?: string;
   itemId?: number | null;
   metadata?: Record<string, unknown>;
-  createdAt?: string;
-}
-
-export interface LocalAgentRun {
-  id: number;
-  runType?: string;
-  status: string;
-  plan?: Record<string, unknown>;
-  summary?: Record<string, any>;
-  startedAt?: string;
-  completedAt?: string;
   createdAt?: string;
 }
 
@@ -226,6 +263,9 @@ export interface LocalAgentStatus {
   latestReport: LocalAgentReport | null;
   suggestions: LocalAgentSuggestion[];
   rules: LocalAgentRule[];
+  jobs?: LocalAgentJobs;
+  nextActions?: LocalAgentNextAction[];
+  runs?: LocalAgentRun[];
   autopilot?: LocalAgentAutopilotStatus;
 }
 

@@ -48,6 +48,35 @@ export function timelineEventLabel(type: string) {
   return labels[type] || 'Agent 事件';
 }
 
+export function actionSeverityLabel(severity: string) {
+  if (severity === 'high') return { label: '优先', tone: 'red' };
+  if (severity === 'medium') return { label: '建议', tone: 'amber' };
+  return { label: '可选', tone: 'gray' };
+}
+
+export function suggestionEvidenceSummary(evidence: Record<string, unknown> = {}) {
+  const itemTitle = String(evidence.itemTitle || '').trim();
+  const topic = String(evidence.topic || '').trim();
+  if (itemTitle && topic) return `${itemTitle} · ${topic}`;
+  if (itemTitle) return itemTitle;
+  if (topic) return topic;
+  return '暂无证据摘要';
+}
+
+export function ruleActionSummary(action: Record<string, unknown> = {}) {
+  const topic = String(action.topic || '').trim();
+  if (topic) return `归入主题：${topic}`;
+  return '本地整理规则';
+}
+
+export function formatJobCounts(counts: { queued?: number; running?: number; done?: number; failed?: number } = {}) {
+  const parts = [];
+  if (counts.failed) parts.push(`${counts.failed} 失败`);
+  if (counts.queued) parts.push(`${counts.queued} 排队`);
+  if (counts.running) parts.push(`${counts.running} 运行`);
+  return parts.length ? parts.join(' · ') : '队列空闲';
+}
+
 export function autopilotSummary(autopilot: any) {
   const lastRun = autopilot?.lastRun;
   if (!lastRun) return '尚未运行 Autopilot';
