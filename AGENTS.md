@@ -30,9 +30,14 @@ Required behavior:
 
 ## Deployment Rule
 
-When changing LinkBox Assistant, Smart Agent, Local Agent, model routing, or
-RK3576 adapter behavior, treat deployment as part of the task unless the user
-explicitly says not to deploy.
+For future LinkBox optimization work, treat the home-server deployment as the
+primary completion target. Do not push to GitHub unless the user explicitly
+asks for a GitHub upload, push, or repository sync.
+
+When changing LinkBox Assistant, Smart Agent, Local Agent, model routing,
+RK3576 adapter behavior, or other production behavior, deploy the updated
+version to the home server as part of the task unless the user explicitly says
+not to deploy.
 
 Default release target for Agent-related work:
 
