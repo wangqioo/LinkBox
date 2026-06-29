@@ -75,9 +75,9 @@ export default function LocalAgentWorkbenchPanel({
   onGenerateSuggestions,
   onResolveSuggestion,
 }: Props) {
-  const total = status?.coverage.total || 0;
-  const rows = maturityRows(status?.coverage.states || {});
-  const readyPercent = maturityPercent(status?.coverage.ready || 0, total);
+  const total = status?.coverage?.total || 0;
+  const rows = maturityRows(status?.coverage?.states || {});
+  const readyPercent = maturityPercent(status?.coverage?.ready || 0, total);
   const jobs = status?.jobs;
   const failedJobs = jobs?.failed || [];
   const nextActions = status?.nextActions || [];
@@ -126,9 +126,9 @@ export default function LocalAgentWorkbenchPanel({
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {metric('可调用资料', status?.coverage.ready, `${number(total)} 条总资料`)}
-        {metric('待确认', status?.coverage.reviewNeeded, `${number(status?.suggestions?.length)} 条建议`)}
-        {metric('失败任务', jobs?.counts.failed, formatJobCounts(jobs?.counts))}
+        {metric('可调用资料', status?.coverage?.ready, `${number(total)} 条总资料`)}
+        {metric('待确认', status?.coverage?.reviewNeeded, `${number(status?.suggestions?.length)} 条建议`)}
+        {metric('失败任务', jobs?.counts?.failed, formatJobCounts(jobs?.counts))}
         {metric('活跃规则', status?.rules?.length, '已沉淀的本地偏好')}
       </div>
 
@@ -166,7 +166,7 @@ export default function LocalAgentWorkbenchPanel({
             <div className="text-2xl font-semibold">{formatPercent(readyPercent)}</div>
           </div>
           <div className="text-right text-sm text-gray-500">
-            <div>{number(status?.coverage.ready)} 条可调用</div>
+            <div>{number(status?.coverage?.ready)} 条可调用</div>
             <div>{number(total)} 条总资料</div>
           </div>
         </div>
@@ -252,7 +252,7 @@ export default function LocalAgentWorkbenchPanel({
             disabled={generatingSuggestions}
             className="btn-secondary"
           >
-            {generatingSuggestions ? '生成中…' : '生成主题建议'}
+            {generatingSuggestions ? '生成中...' : '生成主题建议'}
           </button>
         </div>
         {(status?.suggestions || []).length ? (
@@ -273,6 +273,7 @@ export default function LocalAgentWorkbenchPanel({
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
+                      aria-label="拒绝建议"
                       className="btn-secondary px-2 py-1"
                       disabled={resolvingSuggestionId === suggestion.id}
                       onClick={() => onResolveSuggestion(suggestion.id, 'reject')}
@@ -281,6 +282,7 @@ export default function LocalAgentWorkbenchPanel({
                     </button>
                     <button
                       type="button"
+                      aria-label="接受建议"
                       className="btn-primary px-2 py-1"
                       disabled={resolvingSuggestionId === suggestion.id}
                       onClick={() => onResolveSuggestion(suggestion.id, 'accept')}
