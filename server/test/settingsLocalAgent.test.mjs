@@ -68,6 +68,11 @@ test('GET /api/settings/local-agent returns local factory status for admin', asy
     assert.equal(response.status, 200);
     assert.equal(body.coverage.total, 1);
     assert.equal(body.suggestions.length, 1);
+    assert.equal(body.jobs.counts.failed, 0);
+    assert.equal(Array.isArray(body.jobs.failed), true);
+    assert.equal(Array.isArray(body.nextActions), true);
+    assert.equal(Array.isArray(body.runs), true);
+    assert.equal(body.suggestions[0].itemTitle, 'Agent note');
   } finally {
     await new Promise(resolve => server.close(resolve));
     db.close();
@@ -91,6 +96,9 @@ test('POST /api/settings/local-agent/report creates a local factory report', asy
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.report.reportType, 'daily');
+    assert.equal(body.status.latestReport.reportType, 'daily');
+    assert.equal(Array.isArray(body.status.nextActions), true);
+    assert.equal(Array.isArray(body.status.runs), true);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agent_reports').get().count, 1);
   } finally {
     await new Promise(resolve => server.close(resolve));
