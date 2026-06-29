@@ -2,6 +2,7 @@ import { AlertTriangle, Bot, Check, ClipboardList, RefreshCw, Sparkles, X } from
 import type { LocalAgentNextAction, LocalAgentRule, LocalAgentStatus, LocalAgentSuggestion } from '../api/client';
 import {
   actionSeverityLabel,
+  autopilotSummary,
   formatJobCounts,
   formatPercent,
   maturityPercent,
@@ -9,6 +10,7 @@ import {
   ruleActionSummary,
   suggestionActionLabel,
   suggestionEvidenceSummary,
+  timelineEventLabel,
 } from './localAgentWorkbenchUtils';
 
 interface Props {
@@ -68,11 +70,13 @@ export default function LocalAgentWorkbenchPanel({
   loading,
   generatingReport,
   generatingSuggestions,
+  runningAutopilot,
   resolvingSuggestionId,
   message,
   onRefresh,
   onGenerateReport,
   onGenerateSuggestions,
+  onRunAutopilot,
   onResolveSuggestion,
 }: Props) {
   const total = status?.coverage?.total || 0;
@@ -82,6 +86,8 @@ export default function LocalAgentWorkbenchPanel({
   const failedJobs = jobs?.failed || [];
   const nextActions = status?.nextActions || [];
   const runs = status?.runs || [];
+  const autopilot = status?.autopilot || null;
+  const timeline = autopilot?.timeline || [];
 
   return (
     <div className="rounded-xl border p-5 space-y-4">
@@ -96,6 +102,15 @@ export default function LocalAgentWorkbenchPanel({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onRunAutopilot}
+            disabled={runningAutopilot}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Bot className="w-4 h-4" />
+            {runningAutopilot ? '运行中...' : '运行 Autopilot'}
+          </button>
           <button
             type="button"
             onClick={onGenerateSuggestions}
@@ -130,6 +145,37 @@ export default function LocalAgentWorkbenchPanel({
         {metric('待确认', status?.coverage?.reviewNeeded, `${number(status?.suggestions?.length)} 条建议`)}
         {metric('失败任务', jobs?.counts?.failed, formatJobCounts(jobs?.counts))}
         {metric('活跃规则', status?.rules?.length, '已沉淀的本地偏好')}
+      </div>
+
+      <div className="rounded-lg border px-3 py-3 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium">Autopilot</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {autopilotSummary(autopilot)}
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 shrink-0">
+            {autopilot?.mode ? `模式：${autopilot.mode}` : '手动模式'}
+          </div>
+        </div>
+        {timeline.length ? (
+          <div className="grid gap-2 md:grid-cols-2">
+            {timeline.slice(0, 4).map((event) => (
+              <div key={event.id} className="rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{event.title}</div>
+                    {event.detail && <div className="text-xs text-gray-500 mt-0.5 truncate">{event.detail}</div>}
+                  </div>
+                  <span className="text-xs text-gray-500 shrink-0">{timelineEventLabel(event.eventType)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-500">暂无 Autopilot 时间线。</div>
+        )}
       </div>
 
       <div className="rounded-lg border px-3 py-3 space-y-3">
