@@ -35,6 +35,15 @@ function subQuestionsFor(question) {
   ];
 }
 
+function isLatestItemQuestion(question) {
+  const text = String(question || '').replace(/\s+/g, '');
+  if (!text) return false;
+  const hasLatest = /最新|最近|刚刚|刚才|最后|上一条|新发|新传|新上传/.test(text);
+  const hasItem = /发的|上传|传的|保存|资料|文件|图片|照片|视频|音频|文章|链接|内容|材料/.test(text);
+  const asksIdentity = /是啥|是什么|哪个|哪一个|哪条|发了什么|传了什么|保存了什么|有啥|有什么/.test(text);
+  return hasLatest && hasItem && asksIdentity;
+}
+
 function retrievalTools({ intent, scopeType, question }) {
   if (intent === 'insufficient_input') return [];
   const tools = [];
@@ -42,6 +51,12 @@ function retrievalTools({ intent, scopeType, question }) {
     tools.push({
       name: 'group_context',
       reason: 'search shared group materials and group messages',
+    });
+  }
+  if (isLatestItemQuestion(question)) {
+    tools.push({
+      name: 'latest_item',
+      reason: 'answer newest uploaded/saved item identity questions by time order',
     });
   }
   if (intent === 'recent_summary') {

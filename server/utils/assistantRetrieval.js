@@ -118,6 +118,26 @@ function shouldUseFallbackSources(task, question) {
   return tokenize(question).length < 2;
 }
 
+function isLatestItemQuestion(question) {
+  const text = String(question || '').replace(/\s+/g, '');
+  if (!text) return false;
+  const hasLatest = /最新|最近|刚刚|刚才|最后|上一条|新发|新传|新上传/.test(text);
+  const hasItem = /发的|上传|传的|保存|资料|文件|图片|照片|视频|音频|文章|链接|内容|材料/.test(text);
+  const asksIdentity = /是啥|是什么|哪个|哪一个|哪条|发了什么|传了什么|保存了什么|有啥|有什么/.test(text);
+  return hasLatest && hasItem && asksIdentity;
+}
+
+function latestItemScopeFromQuestion(question) {
+  const text = String(question || '').replace(/\s+/g, '');
+  if (/文件|文档|pdf|PDF/.test(text)) return 'document';
+  if (/图片|照片|图像/.test(text)) return 'image';
+  if (/视频/.test(text)) return 'video';
+  if (/音频|录音/.test(text)) return 'audio';
+  if (/文章/.test(text)) return 'article';
+  if (/链接/.test(text)) return 'link';
+  return '';
+}
+
 function normalizeScope(scope = {}) {
   const type = String(scope.type || '').trim();
   return {
@@ -135,6 +155,42 @@ function scopeWhere(scope, params) {
     params.push(...condition.params);
   }
   return conditions;
+}
+
+function latestItemRows({ db, userId, scope, maxSources }) {
+  const params = [userId];
+  const scopedConditions = scopeWhere(scope, params);
+  const rows = db.prepare(`
+    SELECT
+      l.id, l.type, l.url, l.title, l.description, l.comment, l.content, l.content_md,
+      l.summary, l.imported_at, l.created_at, l.status, l.image_path,
+      'latest_item' AS source_kind,
+      'latest_item' AS retrieval_mode,
+      1000 AS score
+    FROM links l
+    WHERE l.user_id = ?
+      ${scopedConditions.length ? `AND ${scopedConditions.join(' AND ')}` : ''}
+    ORDER BY datetime(COALESCE(NULLIF(l.imported_at, ''), l.created_at)) DESC, l.id DESC
+    LIMIT ?
+  `).all(...params, maxSources);
+
+  return rows.map((item, index) => ({
+    ...item,
+    source_index: index + 1,
+    retrieval_modes: ['latest_item'],
+    summary: item.summary || item.description || item.comment || item.content_md || item.content || latestItemSummary(item),
+  }));
+}
+
+function latestItemSummary(item) {
+  const parts = [
+    item.title ? `标题：${item.title}` : '',
+    item.type ? `类型：${item.type}` : '',
+    item.url ? `链接：${item.url}` : '',
+    item.imported_at ? `保存时间：${item.imported_at}` : (item.created_at ? `创建时间：${item.created_at}` : ''),
+    item.status ? `处理状态：${item.status}` : '',
+  ].filter(Boolean);
+  return parts.join('\n');
 }
 
 function chunkDedupeKey(item) {
@@ -199,7 +255,14 @@ export function retrieveSources({
     ...rawScope,
     ...resolveTimeScope({ question, scope: rawScope, now }),
   });
+  const inferredLatestType = isLatestItemQuestion(question) && !scope.type
+    ? latestItemScopeFromQuestion(question)
+    : '';
+  if (inferredLatestType) scope.type = inferredLatestType;
   scope.hasScopeColumn = hasScopeColumn;
+  if (isLatestItemQuestion(question)) {
+    return latestItemRows({ db, userId, scope, maxSources: 1 });
+  }
   const documentChunks = searchDocumentChunks({ db, userId, query: question, task, limit: maxSources, scope });
   const embeddingChunks = enableEmbeddings
     ? searchEmbeddedDocumentChunks({ db, userId, query: question, limit: maxSources, scope })
@@ -281,11 +344,20 @@ export async function retrieveSourcesAsync({
   if (groupId) {
     return retrieveGroupSources({ db, groupId, question, task, scope: rawScope, maxSources, maxFallbackSources, now });
   }
-  indexAllMissingDocuments(db);
+  const hasScopeColumn = db.prepare('PRAGMA table_info(links)').all().some(column => column.name === 'scope');
   const scope = normalizeScope({
     ...rawScope,
     ...resolveTimeScope({ question, scope: rawScope, now }),
   });
+  const inferredLatestType = isLatestItemQuestion(question) && !scope.type
+    ? latestItemScopeFromQuestion(question)
+    : '';
+  if (inferredLatestType) scope.type = inferredLatestType;
+  scope.hasScopeColumn = hasScopeColumn;
+  if (isLatestItemQuestion(question)) {
+    return latestItemRows({ db, userId, scope, maxSources: 1 });
+  }
+  indexAllMissingDocuments(db);
   const documentChunks = searchDocumentChunks({ db, userId, query: question, task, limit: maxSources, scope });
   const embeddingChunks = enableEmbeddings
     ? await searchEmbeddedDocumentChunksAsync({

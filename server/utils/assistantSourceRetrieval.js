@@ -1,6 +1,7 @@
 import { retrieveSources, retrieveSourcesAsync } from './assistantRetrieval.js';
 
 function sourceKind(source) {
+  if (source.sourceKind || source.source_kind) return source.sourceKind || source.source_kind;
   return source.document_id ? 'document' : 'legacy';
 }
 

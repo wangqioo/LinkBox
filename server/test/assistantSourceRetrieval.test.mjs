@@ -5,11 +5,15 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { initDocumentSchema, indexDocumentForItem } from '../utils/documentIndex.js';
-import { buildRetrievalDiagnostics, retrieveAssistantSources } from '../utils/assistantSourceRetrieval.js';
+import { buildRetrievalDiagnostics, retrieveAssistantSources, retrieveAssistantSourcesAsync } from '../utils/assistantSourceRetrieval.js';
 
 function withDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'linkbox-assistant-source-retrieval-test-'));
   const db = new Database(join(dir, 'test.db'));
+  const cleanup = () => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  };
   try {
     db.exec(`
       CREATE TABLE links (
@@ -39,10 +43,15 @@ function withDb(fn) {
       );
     `);
     initDocumentSchema(db);
-    return fn(db);
-  } finally {
-    db.close();
-    rmSync(dir, { recursive: true, force: true });
+    const result = fn(db);
+    if (result && typeof result.then === 'function') {
+      return result.finally(cleanup);
+    }
+    cleanup();
+    return result;
+  } catch (error) {
+    cleanup();
+    throw error;
   }
 }
 
@@ -200,6 +209,69 @@ test('retrieveAssistantSources respects environment config that disables legacy 
       process.env.ASSISTANT_ENABLE_LEGACY_FALLBACK = previous;
     }
   }
+}));
+
+test('retrieveAssistantSources answers latest uploaded file questions from newest item metadata', () => withDb((db) => {
+  insertItem(db, {
+    id: 1,
+    type: 'file',
+    title: '旧的项目资料.pdf',
+    importedAt: '2026-06-20T08:00:00.000Z',
+    summary: '旧文件内容',
+  });
+  insertItem(db, {
+    id: 2,
+    type: 'file',
+    title: '最新融资需求.pdf',
+    importedAt: '2026-06-30T08:30:00.000Z',
+    summary: '',
+    contentMd: '',
+  });
+
+  const sources = retrieveAssistantSources(db, {
+    userId: 5,
+    question: '我最新发的文件是啥',
+    limit: 3,
+  });
+
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].sourceKind, 'latest_item');
+  assert.equal(sources[0].id, 2);
+  assert.equal(sources[0].title, '最新融资需求.pdf');
+  assert.deepEqual(sources[0].retrieval_modes, ['latest_item']);
+}));
+
+test('retrieveAssistantSourcesAsync answers latest uploaded file questions before keyword embeddings', async () => withDb(async (db) => {
+  insertItem(db, {
+    id: 1,
+    type: 'image',
+    title: 'IMG_6980.jpeg',
+    importedAt: '2026-06-30T08:00:00.000Z',
+    contentMd: '我最新发的文件是啥 这几个关键词出现在旧图片里',
+  });
+  insertItem(db, {
+    id: 2,
+    type: 'file',
+    title: '最新融资需求.pdf',
+    importedAt: '2026-06-30T08:30:00.000Z',
+    summary: '',
+    contentMd: '',
+  });
+
+  const sources = await retrieveAssistantSourcesAsync(db, {
+    userId: 5,
+    question: '我最新发的文件是啥',
+    limit: 3,
+    enableEmbeddings: true,
+    embeddingOptions: {
+      embedQuery: async () => [0.1, 0.2],
+    },
+  });
+
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].sourceKind, 'latest_item');
+  assert.equal(sources[0].id, 2);
+  assert.equal(sources[0].title, '最新融资需求.pdf');
 }));
 
 test('buildRetrievalDiagnostics preserves retrieval metadata and snippets', () => {

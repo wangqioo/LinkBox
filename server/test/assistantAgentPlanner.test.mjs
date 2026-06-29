@@ -48,6 +48,17 @@ test('planAssistantTurn creates sub questions for broad project status questions
   assert.ok(plan.rewriteQueries.includes('LinkBox Agent 已经完成了哪些能力？'));
 });
 
+test('planAssistantTurn exposes latest item lookup for newest upload questions', () => {
+  const plan = planAssistantTurn({
+    question: '我最新发的文件是啥',
+    task: 'ask',
+  });
+
+  assert.equal(plan.intent, 'question_answering');
+  assert.ok(plan.tools.some(tool => tool.name === 'latest_item'));
+  assert.match(summarizeRetrievalPlan(plan), /latest_item/);
+});
+
 test('planAssistantTurn treats empty questions as insufficient input', () => {
   const plan = planAssistantTurn({ question: '   ', task: 'ask' });
 
