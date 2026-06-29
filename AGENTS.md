@@ -1,5 +1,33 @@
 # LinkBox Agent Instructions
 
+## Evidence And Recency Protocol
+
+When answering status, file-content, timing, deployment, or "latest" questions,
+prefer current evidence over conversation memory.
+
+Priority order:
+
+1. Latest user message.
+2. Facts just checked in this turn with tools.
+3. Current Git, filesystem, server, and HTTP state.
+4. Current project docs.
+5. Older conversation context.
+
+Required behavior:
+
+- If the user asks to search, inspect, find, verify, or check a file, run
+  `rg`, `sed`, `git grep`, or an equivalent read command before answering.
+- If the user asks about time, "latest", "previous", "deployed", "done", or
+  "current", check concrete state first: `date`, `git log`, `git status`,
+  server paths, systemd status, logs, or HTTP probes as appropriate.
+- Answers about project state should include anchors when available: file path,
+  line number, commit hash, timestamp, deployment directory, rollback directory,
+  or HTTP status.
+- If old docs or old conversation conflict with current evidence, say so and
+  use the current evidence as the answer.
+- Do not answer explicit search or timing questions from memory unless the user
+  explicitly asks for a rough recollection instead of verification.
+
 ## Deployment Rule
 
 When changing LinkBox Assistant, Smart Agent, Local Agent, model routing, or
