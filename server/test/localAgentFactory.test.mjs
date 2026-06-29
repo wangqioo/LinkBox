@@ -169,6 +169,61 @@ test('getLocalAgentStatus returns coverage latest report suggestions and rules',
   assert.deepEqual(status.rules, []);
 }));
 
+test('getLocalAgentStatus returns jobs next actions runs and enriched review context', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      link_id INTEGER,
+      status TEXT NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      max_attempts INTEGER DEFAULT 3,
+      last_error TEXT DEFAULT '',
+      updated_at TEXT DEFAULT ''
+    );
+  `);
+  const itemId = seedItem(db, { title: 'Agent note', type: 'file', contentMd: 'Markdown body' });
+  db.prepare(`
+    INSERT INTO jobs (type, link_id, status, attempts, max_attempts, last_error, updated_at)
+    VALUES ('document.embed', ?, 'failed', 3, 3, 'embedding timeout', '2026-06-29T10:00:00.000Z')
+  `).run(itemId);
+  const suggestionId = db.prepare(`
+    INSERT INTO agent_suggestions (user_id, item_id, suggestion_type, status, proposal_json, reason, confidence, evidence_json)
+    VALUES (1, ?, 'topic_suggestion', 'pending', ?, 'Topic appears repeatedly', 0.91, ?)
+  `).run(
+    itemId,
+    JSON.stringify({ topic: 'AI Agent', title: '将资料归入主题：AI Agent' }),
+    JSON.stringify({ itemTitle: 'Agent note', topic: 'AI Agent' }),
+  ).lastInsertRowid;
+  db.prepare(`
+    INSERT INTO agent_rules (user_id, rule_type, status, title, condition_json, action_json, source_suggestion_id)
+    VALUES (1, 'topic_preference', 'active', '主题偏好：AI Agent', ?, ?, ?)
+  `).run(
+    JSON.stringify({ source: 'accepted_topic_suggestion' }),
+    JSON.stringify({ topic: 'AI Agent' }),
+    suggestionId,
+  );
+  generateLocalAgentReport(db, { userId: 1 });
+
+  const status = getLocalAgentStatus(db, { userId: 1 });
+
+  assert.equal(status.jobs.counts.failed, 1);
+  assert.equal(status.jobs.failed[0].itemTitle, 'Agent note');
+  assert.equal(status.jobs.failed[0].lastError, 'embedding timeout');
+  assert.equal(status.nextActions[0].kind, 'retry_failed_jobs');
+  assert.equal(status.nextActions[0].severity, 'high');
+  assert.equal(status.runs.length, 1);
+  assert.equal(status.runs[0].status, 'completed');
+  assert.equal(status.suggestions[0].itemTitle, 'Agent note');
+  assert.equal(status.suggestions[0].itemType, 'file');
+  assert.equal(status.rules[0].sourceSuggestion.id, suggestionId);
+  assert.equal(status.rules[0].sourceItemTitle, 'Agent note');
+}));
+
 test('createTopicSuggestions creates pending suggestions from item topics', () => withDb((db) => {
   initLocalAgentSchema(db);
   db.exec(`

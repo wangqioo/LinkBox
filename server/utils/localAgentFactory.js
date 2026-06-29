@@ -17,6 +17,11 @@ function tableExists(db, table) {
   return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
 }
 
+function columnExists(db, table, column) {
+  if (!tableExists(db, table)) return false;
+  return db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === column);
+}
+
 function suggestionFromRow(row) {
   return {
     ...row,
@@ -27,17 +32,46 @@ function suggestionFromRow(row) {
   };
 }
 
-function jobCounts(db) {
-  const exists = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get();
-  if (!exists) return { queued: 0, running: 0, done: 0, failed: 0 };
+function emptyJobCounts() {
+  return { queued: 0, running: 0, done: 0, failed: 0 };
+}
+
+function jobSnapshot(db, { failedLimit = 5 } = {}) {
+  if (!tableExists(db, 'jobs')) {
+    return { counts: emptyJobCounts(), failed: [] };
+  }
   const rows = db.prepare('SELECT status, COUNT(*) AS count FROM jobs GROUP BY status').all();
-  return {
-    queued: 0,
-    running: 0,
-    done: 0,
-    failed: 0,
+  const counts = {
+    ...emptyJobCounts(),
     ...Object.fromEntries(rows.map(row => [row.status, Number(row.count || 0)])),
   };
+
+  const hasAttempts = columnExists(db, 'jobs', 'attempts');
+  const hasMaxAttempts = columnExists(db, 'jobs', 'max_attempts');
+  const hasUpdatedAt = columnExists(db, 'jobs', 'updated_at');
+  const failed = db.prepare(`
+    SELECT j.id, j.type, j.link_id AS item_id,
+           ${hasAttempts ? 'j.attempts' : '0'} AS attempts,
+           ${hasMaxAttempts ? 'j.max_attempts' : '0'} AS max_attempts,
+           j.last_error, ${hasUpdatedAt ? 'j.updated_at' : "''"} AS updated_at,
+           l.title AS item_title
+    FROM jobs j
+    LEFT JOIN links l ON l.id = j.link_id
+    WHERE j.status = 'failed'
+    ORDER BY datetime(updated_at) DESC, j.id DESC
+    LIMIT ?
+  `).all(Math.max(1, Math.min(50, Number(failedLimit) || 5))).map(row => ({
+    id: row.id,
+    type: row.type,
+    itemId: row.item_id || null,
+    itemTitle: row.item_title || '',
+    attempts: Number(row.attempts || 0),
+    maxAttempts: Number(row.max_attempts || 0),
+    lastError: row.last_error || '',
+    updatedAt: row.updated_at || '',
+  }));
+
+  return { counts, failed };
 }
 
 function pendingSuggestionCount(db, userId) {
@@ -56,8 +90,78 @@ function activeRuleCount(db, userId) {
   `).get(userId)?.count || 0);
 }
 
+function acceptedSuggestionCount(db, userId) {
+  return Number(db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM agent_suggestions
+    WHERE user_id = ? AND status = 'accepted'
+  `).get(userId)?.count || 0);
+}
+
+function buildNextActions({ coverage, jobs, suggestions, rules, latestReport, acceptedSuggestions }) {
+  if (!coverage.total) {
+    return [{
+      kind: 'empty_library',
+      severity: 'low',
+      title: '先收集资料',
+      detail: '资料库里还没有资料，本地 Agent 需要先观察内容。',
+      action: 'add_items',
+    }];
+  }
+
+  const actions = [];
+  if (jobs.counts.failed > 0) {
+    actions.push({
+      kind: 'retry_failed_jobs',
+      severity: 'high',
+      title: '重试失败任务',
+      detail: `${jobs.counts.failed} 个后台任务失败，先处理最近失败的资料加工。`,
+      action: 'retry_jobs',
+    });
+  }
+  if (suggestions > 0) {
+    actions.push({
+      kind: 'review_suggestions',
+      severity: 'medium',
+      title: '确认 Agent 建议',
+      detail: `${suggestions} 条建议等待确认，接受后会沉淀成本地规则。`,
+      action: 'review_suggestions',
+    });
+  }
+  const lowMaturity = Number(coverage.states.raw || 0) + Number(coverage.states.converted || 0);
+  if (lowMaturity > 0) {
+    actions.push({
+      kind: 'improve_maturity',
+      severity: 'medium',
+      title: '补齐资料加工',
+      detail: `${lowMaturity} 条资料还停留在原始或转文本阶段。`,
+      action: 'backfill_processing',
+    });
+  }
+  if (!latestReport) {
+    actions.push({
+      kind: 'generate_report',
+      severity: 'low',
+      title: '生成工作报告',
+      detail: '生成一份当前成熟度、任务、建议和规则快照。',
+      action: 'generate_report',
+    });
+  }
+  if (!rules && acceptedSuggestions > 0) {
+    actions.push({
+      kind: 'learn_rules',
+      severity: 'low',
+      title: '检查已接受建议',
+      detail: `${acceptedSuggestions} 条建议已接受，确认它们是否沉淀为可用规则。`,
+      action: 'review_rules',
+    });
+  }
+
+  return actions;
+}
+
 function buildHeadline({ coverage, jobs, suggestions }) {
-  return `本地 Agent 已观察 ${coverage.total} 条资料，${coverage.ready} 条可检索，${coverage.reviewNeeded + suggestions} 条需要你确认，${jobs.failed} 个任务失败。`;
+  return `本地 Agent 已观察 ${coverage.total} 条资料，${coverage.ready} 条可检索，${coverage.reviewNeeded + suggestions} 条需要你确认，${jobs.counts.failed} 个任务失败。`;
 }
 
 function insertRun(db, { userId, plan }) {
@@ -81,14 +185,22 @@ function completeRun(db, { runId, summary }) {
 export function generateLocalAgentReport(db, { userId = 1, reportType = 'daily' } = {}) {
   initLocalAgentSchema(db);
   const plan = {
-    observe: ['library_maturity', 'jobs', 'suggestions', 'rules'],
+    observe: ['library_maturity', 'jobs', 'suggestions', 'rules', 'next_actions'],
     reportType,
   };
   const runId = insertRun(db, { userId, plan });
   const coverage = getMaturityCoverage(db, { userId });
-  const jobs = jobCounts(db);
+  const jobs = jobSnapshot(db);
   const suggestions = pendingSuggestionCount(db, userId);
   const rules = activeRuleCount(db, userId);
+  const nextActions = buildNextActions({
+    coverage,
+    jobs,
+    suggestions,
+    rules,
+    latestReport: latestLocalAgentReport(db, { userId }),
+    acceptedSuggestions: acceptedSuggestionCount(db, userId),
+  });
   const content = {
     headline: buildHeadline({ coverage, jobs, suggestions }),
     library: {
@@ -97,12 +209,15 @@ export function generateLocalAgentReport(db, { userId = 1, reportType = 'daily' 
       ready: coverage.ready,
       reviewNeeded: coverage.reviewNeeded,
     },
-    jobs,
+    jobs: jobs.counts,
     suggestions: {
       pending: suggestions,
     },
     rules: {
       active: rules,
+    },
+    nextActions: {
+      count: nextActions.length,
     },
     generatedAt: nowIso(),
   };
@@ -120,30 +235,55 @@ export function generateLocalAgentReport(db, { userId = 1, reportType = 'daily' 
 export function listLocalAgentSuggestions(db, { userId = 1, status = 'pending', limit = 20 } = {}) {
   initLocalAgentSchema(db);
   return db.prepare(`
-    SELECT id, user_id, item_id, suggestion_type, status, proposal_json, reason,
-           confidence, evidence_json, created_at, updated_at, resolved_at
-    FROM agent_suggestions
-    WHERE user_id = ? AND status = ?
-    ORDER BY datetime(created_at) DESC, id DESC
+    SELECT s.id, s.user_id, s.item_id, s.suggestion_type, s.status, s.proposal_json, s.reason,
+           s.confidence, s.evidence_json, s.created_at, s.updated_at, s.resolved_at,
+           l.title AS item_title, l.type AS item_type
+    FROM agent_suggestions s
+    LEFT JOIN links l ON l.id = s.item_id
+    WHERE s.user_id = ? AND s.status = ?
+    ORDER BY datetime(s.created_at) DESC, s.id DESC
     LIMIT ?
-  `).all(userId, status, Math.max(1, Math.min(100, Number(limit) || 20))).map(suggestionFromRow);
+  `).all(userId, status, Math.max(1, Math.min(100, Number(limit) || 20))).map(row => ({
+    ...suggestionFromRow(row),
+    itemTitle: row.item_title || '',
+    itemType: row.item_type || '',
+    item_title: undefined,
+    item_type: undefined,
+  }));
 }
 
 export function listLocalAgentRules(db, { userId = 1, limit = 20 } = {}) {
   initLocalAgentSchema(db);
   return db.prepare(`
-    SELECT id, user_id, rule_type, status, title, condition_json, action_json,
-           source_suggestion_id, created_at, updated_at
-    FROM agent_rules
-    WHERE user_id = ?
-    ORDER BY datetime(created_at) DESC, id DESC
+    SELECT r.id, r.user_id, r.rule_type, r.status, r.title, r.condition_json, r.action_json,
+           r.source_suggestion_id, r.created_at, r.updated_at,
+           s.suggestion_type AS source_suggestion_type,
+           s.proposal_json AS source_proposal_json,
+           s.item_id AS source_item_id,
+           l.title AS source_item_title
+    FROM agent_rules r
+    LEFT JOIN agent_suggestions s ON s.id = r.source_suggestion_id
+    LEFT JOIN links l ON l.id = s.item_id
+    WHERE r.user_id = ?
+    ORDER BY datetime(r.created_at) DESC, r.id DESC
     LIMIT ?
   `).all(userId, Math.max(1, Math.min(100, Number(limit) || 20))).map(row => ({
     ...row,
     condition: parseJson(row.condition_json, {}),
     action: parseJson(row.action_json, {}),
+    sourceSuggestion: row.source_suggestion_id ? {
+      id: row.source_suggestion_id,
+      type: row.source_suggestion_type || '',
+      proposal: parseJson(row.source_proposal_json, {}),
+      itemId: row.source_item_id || null,
+    } : null,
+    sourceItemTitle: row.source_item_title || '',
     condition_json: undefined,
     action_json: undefined,
+    source_suggestion_type: undefined,
+    source_proposal_json: undefined,
+    source_item_id: undefined,
+    source_item_title: undefined,
   }));
 }
 
@@ -165,13 +305,48 @@ export function latestLocalAgentReport(db, { userId = 1 } = {}) {
   };
 }
 
+export function listLocalAgentRuns(db, { userId = 1, limit = 5 } = {}) {
+  initLocalAgentSchema(db);
+  return db.prepare(`
+    SELECT id, run_type, status, plan_json, summary_json, started_at, completed_at, created_at
+    FROM agent_runs
+    WHERE user_id = ?
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT ?
+  `).all(userId, Math.max(1, Math.min(20, Number(limit) || 5))).map(row => ({
+    id: row.id,
+    runType: row.run_type,
+    status: row.status,
+    plan: parseJson(row.plan_json, {}),
+    summary: parseJson(row.summary_json, {}),
+    startedAt: row.started_at || '',
+    completedAt: row.completed_at || '',
+    createdAt: row.created_at || '',
+  }));
+}
+
 export function getLocalAgentStatus(db, { userId = 1 } = {}) {
   initLocalAgentSchema(db);
+  const coverage = getMaturityCoverage(db, { userId });
+  const jobs = jobSnapshot(db);
+  const latestReport = latestLocalAgentReport(db, { userId });
+  const suggestions = pendingSuggestionCount(db, userId);
+  const rules = listLocalAgentRules(db, { userId });
   return {
-    coverage: getMaturityCoverage(db, { userId }),
-    latestReport: latestLocalAgentReport(db, { userId }),
+    coverage,
+    jobs,
+    nextActions: buildNextActions({
+      coverage,
+      jobs,
+      suggestions,
+      rules: rules.filter(rule => rule.status === 'active').length,
+      latestReport,
+      acceptedSuggestions: acceptedSuggestionCount(db, userId),
+    }),
+    latestReport,
+    runs: listLocalAgentRuns(db, { userId }),
     suggestions: listLocalAgentSuggestions(db, { userId }),
-    rules: listLocalAgentRules(db, { userId }),
+    rules,
   };
 }
 
