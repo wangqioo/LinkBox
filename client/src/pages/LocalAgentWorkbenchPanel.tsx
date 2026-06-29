@@ -37,6 +37,10 @@ function suggestionTitle(suggestion: LocalAgentSuggestion) {
   return String(proposal.title || proposal.topic || suggestion.reason || suggestionActionLabel(suggestion.suggestion_type));
 }
 
+function suggestionControlLabel(action: '接受' | '拒绝', suggestion: LocalAgentSuggestion) {
+  return `${action}建议：${suggestionTitle(suggestion)}`;
+}
+
 function metric(label: string, value: number | undefined, detail: string) {
   return (
     <div className="rounded-lg border px-3 py-2">
@@ -319,7 +323,7 @@ export default function LocalAgentWorkbenchPanel({
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
-                      aria-label="拒绝建议"
+                      aria-label={suggestionControlLabel('拒绝', suggestion)}
                       className="btn-secondary px-2 py-1"
                       disabled={resolvingSuggestionId === suggestion.id}
                       onClick={() => onResolveSuggestion(suggestion.id, 'reject')}
@@ -328,7 +332,7 @@ export default function LocalAgentWorkbenchPanel({
                     </button>
                     <button
                       type="button"
-                      aria-label="接受建议"
+                      aria-label={suggestionControlLabel('接受', suggestion)}
                       className="btn-primary px-2 py-1"
                       disabled={resolvingSuggestionId === suggestion.id}
                       onClick={() => onResolveSuggestion(suggestion.id, 'accept')}

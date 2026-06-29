@@ -269,7 +269,7 @@ export function listLocalAgentRules(db, { userId = 1, limit = 20 } = {}) {
     FROM agent_rules r
     LEFT JOIN agent_suggestions s ON s.id = r.source_suggestion_id
     LEFT JOIN links l ON l.id = s.item_id
-    WHERE r.user_id = ?
+    WHERE r.user_id = ? AND r.status = 'active'
     ORDER BY datetime(r.created_at) DESC, r.id DESC
     LIMIT ?
   `).all(userId, Math.max(1, Math.min(100, Number(limit) || 20))).map(row => ({

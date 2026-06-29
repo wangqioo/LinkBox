@@ -231,6 +231,24 @@ test('getLocalAgentStatus returns jobs next actions runs and enriched review con
   assert.equal(status.rules[0].sourceItemTitle, 'Agent note');
 }));
 
+test('getLocalAgentStatus only returns active rules', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  seedItem(db, { title: 'Active source' });
+  db.prepare(`
+    INSERT INTO agent_rules (user_id, rule_type, status, title, condition_json, action_json)
+    VALUES (1, 'topic_preference', 'active', 'Active rule', '{}', '{}')
+  `).run();
+  db.prepare(`
+    INSERT INTO agent_rules (user_id, rule_type, status, title, condition_json, action_json)
+    VALUES (1, 'topic_preference', 'disabled', 'Disabled rule', '{}', '{}')
+  `).run();
+
+  const status = getLocalAgentStatus(db, { userId: 1 });
+
+  assert.equal(status.rules.length, 1);
+  assert.equal(status.rules[0].title, 'Active rule');
+}));
+
 test('getLocalAgentStatus tolerates minimal jobs tables in isolated tests', () => withDb((db) => {
   initLocalAgentSchema(db);
   db.exec(`
