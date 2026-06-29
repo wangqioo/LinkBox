@@ -162,6 +162,7 @@ export interface LocalAgentJobs {
     type: string;
     itemId?: number | null;
     itemTitle?: string;
+    itemType?: string;
     attempts?: number;
     maxAttempts?: number;
     lastError?: string;
@@ -179,7 +180,7 @@ export interface LocalAgentNextAction {
 
 export interface LocalAgentRun {
   id: number;
-  runType: string;
+  runType?: string;
   status: string;
   plan?: Record<string, unknown>;
   summary?: Record<string, unknown>;
@@ -263,9 +264,9 @@ export interface LocalAgentStatus {
   latestReport: LocalAgentReport | null;
   suggestions: LocalAgentSuggestion[];
   rules: LocalAgentRule[];
-  jobs?: LocalAgentJobs;
-  nextActions?: LocalAgentNextAction[];
-  runs?: LocalAgentRun[];
+  jobs: LocalAgentJobs;
+  nextActions: LocalAgentNextAction[];
+  runs: LocalAgentRun[];
   autopilot?: LocalAgentAutopilotStatus;
 }
 
