@@ -99,6 +99,10 @@ RKLLM runtime process.
   useful work: maturity coverage, latest local report, pending suggestions,
   learned rules, and failed jobs. This is the primary operational view for the
   "plug it in and let it work" model.
+- The Agent Autopilot action in that workbench can run one bounded local scan:
+  retry failed jobs, queue safe missing summaries or image descriptions,
+  generate topic suggestions, write an autopilot report, and append timeline
+  events so the owner can see what the box did while idle.
 - The adapter exposes `/health` and `/v1/health` with resident demo PID,
   currently bound image, cache counts, request counters, last latency, and last
   error.

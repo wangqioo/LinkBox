@@ -78,5 +78,20 @@ export function initLocalAgentSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_item_maturity_events_item ON item_maturity_events(item_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_item_maturity_events_user ON item_maturity_events(user_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS agent_timeline_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      detail TEXT DEFAULT '',
+      item_id INTEGER,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES links(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_timeline_user ON agent_timeline_events(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_agent_timeline_type ON agent_timeline_events(event_type, created_at);
   `);
 }

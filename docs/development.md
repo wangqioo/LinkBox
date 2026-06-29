@@ -168,6 +168,11 @@ At this checkpoint:
   factory runs/reports/suggestions/rules in additive tables; and can generate
   topic suggestions from deterministic `item_topics` without requiring cloud
   APIs.
+- Agent Autopilot first milestone is available from the Local Agent workbench.
+  It runs a bounded manual scan, retries failed jobs when requested, queues
+  safe missing work such as summaries and image descriptions, creates topic
+  suggestions, generates an autopilot report, and records every action in an
+  `agent_timeline_events` timeline.
 - Desktop item cards use a reusable processing banner derived from the shared
   `processing` contract. Mobile home/day views use the same processing labels
   last-error text, and recovery hints through `mobileProcessingStatus`.

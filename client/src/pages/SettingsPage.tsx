@@ -47,6 +47,7 @@ export default function SettingsPage() {
   const [loadingLocalAgent, setLoadingLocalAgent] = useState(false);
   const [generatingAgentReport, setGeneratingAgentReport] = useState(false);
   const [generatingAgentSuggestions, setGeneratingAgentSuggestions] = useState(false);
+  const [runningAgentAutopilot, setRunningAgentAutopilot] = useState(false);
   const [resolvingSuggestionId, setResolvingSuggestionId] = useState<number | null>(null);
   const [retryingJobs, setRetryingJobs] = useState(false);
   const [retryingJobId, setRetryingJobId] = useState<number | null>(null);
@@ -139,6 +140,28 @@ export default function SettingsPage() {
       toast.error('生成本地 Agent 建议失败', message);
     } finally {
       setGeneratingAgentSuggestions(false);
+    }
+  };
+
+  const handleRunAgentAutopilot = async () => {
+    setRunningAgentAutopilot(true);
+    setLocalAgentMessage('');
+    try {
+      const result = await api.runLocalAgentAutopilot();
+      setLocalAgentStatus(result.status);
+      const actions = result.result?.actions || {};
+      const queued = Array.isArray(actions.enqueued) ? actions.enqueued.length : 0;
+      const retried = Number(actions.retriedFailedJobs || 0);
+      const suggestions = Number(actions.suggestionsCreated || 0);
+      const message = `Autopilot 已完成：排队 ${queued} 个任务，重试 ${retried} 个失败任务，生成 ${suggestions} 条建议`;
+      setLocalAgentMessage(message);
+      toast.success('Autopilot 已完成', message);
+    } catch (e: any) {
+      const message = e.message || '运行 Autopilot 失败';
+      setError(message);
+      toast.error('运行 Autopilot 失败', message);
+    } finally {
+      setRunningAgentAutopilot(false);
     }
   };
 
@@ -456,11 +479,13 @@ export default function SettingsPage() {
         loading={loadingLocalAgent}
         generatingReport={generatingAgentReport}
         generatingSuggestions={generatingAgentSuggestions}
+        runningAutopilot={runningAgentAutopilot}
         resolvingSuggestionId={resolvingSuggestionId}
         message={localAgentMessage}
         onRefresh={refreshLocalAgentStatus}
         onGenerateReport={handleGenerateAgentReport}
         onGenerateSuggestions={handleGenerateAgentSuggestions}
+        onRunAutopilot={handleRunAgentAutopilot}
         onResolveSuggestion={handleResolveAgentSuggestion}
       />
       <DocumentMaintenancePanel

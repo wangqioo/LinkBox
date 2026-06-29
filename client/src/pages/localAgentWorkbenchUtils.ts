@@ -36,3 +36,25 @@ export function suggestionActionLabel(type: string) {
 export function formatPercent(value: number) {
   return `${Math.max(0, Math.min(100, Number(value || 0)))}%`;
 }
+
+export function timelineEventLabel(type: string) {
+  const labels: Record<string, string> = {
+    'autopilot.started': '开始',
+    'autopilot.job_queued': '已排队',
+    'autopilot.failed_jobs_retried': '已重试',
+    'autopilot.suggestions_created': '新建议',
+    'autopilot.completed': '完成',
+  };
+  return labels[type] || 'Agent 事件';
+}
+
+export function autopilotSummary(autopilot: any) {
+  const lastRun = autopilot?.lastRun;
+  if (!lastRun) return '尚未运行 Autopilot';
+  if (lastRun.status && lastRun.status !== 'completed') return `上次运行：${lastRun.status}`;
+  const actions = lastRun.summary?.actions || {};
+  const enqueued = Array.isArray(actions.enqueued) ? actions.enqueued.length : Number(actions.enqueued || 0);
+  const retried = Number(actions.retriedFailedJobs || 0);
+  const suggestions = Number(actions.suggestionsCreated || 0);
+  return `上次运行：排队 ${enqueued} 个任务，重试 ${retried} 个失败任务，生成 ${suggestions} 条建议`;
+}

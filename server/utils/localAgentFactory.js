@@ -49,14 +49,18 @@ function jobSnapshot(db, { failedLimit = 5 } = {}) {
   const hasAttempts = columnExists(db, 'jobs', 'attempts');
   const hasMaxAttempts = columnExists(db, 'jobs', 'max_attempts');
   const hasUpdatedAt = columnExists(db, 'jobs', 'updated_at');
+  const hasLinkId = columnExists(db, 'jobs', 'link_id');
+  const hasLastError = columnExists(db, 'jobs', 'last_error');
   const failed = db.prepare(`
-    SELECT j.id, j.type, j.link_id AS item_id,
+    SELECT j.id, j.type, ${hasLinkId ? 'j.link_id' : 'NULL'} AS item_id,
            ${hasAttempts ? 'j.attempts' : '0'} AS attempts,
            ${hasMaxAttempts ? 'j.max_attempts' : '0'} AS max_attempts,
-           j.last_error, ${hasUpdatedAt ? 'j.updated_at' : "''"} AS updated_at,
-           l.title AS item_title
+           ${hasLastError ? 'j.last_error' : "''"} AS last_error,
+           ${hasUpdatedAt ? 'j.updated_at' : "''"} AS updated_at,
+           ${hasLinkId ? 'l.title' : "''"} AS item_title,
+           ${hasLinkId ? 'l.type' : "''"} AS item_type
     FROM jobs j
-    LEFT JOIN links l ON l.id = j.link_id
+    ${hasLinkId ? 'LEFT JOIN links l ON l.id = j.link_id' : ''}
     WHERE j.status = 'failed'
     ORDER BY datetime(updated_at) DESC, j.id DESC
     LIMIT ?
@@ -65,6 +69,7 @@ function jobSnapshot(db, { failedLimit = 5 } = {}) {
     type: row.type,
     itemId: row.item_id || null,
     itemTitle: row.item_title || '',
+    itemType: row.item_type || '',
     attempts: Number(row.attempts || 0),
     maxAttempts: Number(row.max_attempts || 0),
     lastError: row.last_error || '',

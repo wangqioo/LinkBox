@@ -1,10 +1,12 @@
-import { Bot, Check, RefreshCw, Sparkles, X } from 'lucide-react';
-import type { LocalAgentStatus, LocalAgentSuggestion } from '../api/client';
+import { Bot, Check, Clock3, Play, RefreshCw, Sparkles, X } from 'lucide-react';
+import type { LocalAgentStatus, LocalAgentSuggestion, LocalAgentTimelineEvent } from '../api/client';
 import {
+  autopilotSummary,
   formatPercent,
   maturityPercent,
   maturityRows,
   suggestionActionLabel,
+  timelineEventLabel,
 } from './localAgentWorkbenchUtils';
 
 interface Props {
@@ -12,11 +14,13 @@ interface Props {
   loading: boolean;
   generatingReport: boolean;
   generatingSuggestions: boolean;
+  runningAutopilot: boolean;
   resolvingSuggestionId: number | null;
   message: string;
   onRefresh: () => void;
   onGenerateReport: () => void;
   onGenerateSuggestions: () => void;
+  onRunAutopilot: () => void;
   onResolveSuggestion: (id: number, action: 'accept' | 'reject') => void;
 }
 
@@ -29,16 +33,22 @@ function suggestionTitle(suggestion: LocalAgentSuggestion) {
   return String(proposal.title || proposal.topic || suggestion.reason || suggestionActionLabel(suggestion.suggestion_type));
 }
 
+function eventTime(event: LocalAgentTimelineEvent) {
+  return event.createdAt ? new Date(event.createdAt).toLocaleString() : '';
+}
+
 export default function LocalAgentWorkbenchPanel({
   status,
   loading,
   generatingReport,
   generatingSuggestions,
+  runningAutopilot,
   resolvingSuggestionId,
   message,
   onRefresh,
   onGenerateReport,
   onGenerateSuggestions,
+  onRunAutopilot,
   onResolveSuggestion,
 }: Props) {
   const total = status?.coverage.total || 0;
@@ -91,6 +101,49 @@ export default function LocalAgentWorkbenchPanel({
             <div className="text-lg font-semibold">{number(row.value)}</div>
           </div>
         ))}
+      </div>
+
+      <div className="rounded-lg border px-3 py-3 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium flex items-center gap-2">
+              <Play className="w-4 h-4 text-indigo-500" />
+              Autopilot
+            </div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {autopilotSummary(status?.autopilot)}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onRunAutopilot}
+            disabled={runningAutopilot}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Play className="w-4 h-4" />
+            {runningAutopilot ? '运行中…' : '运行一次'}
+          </button>
+        </div>
+        {(status?.autopilot?.timeline || []).length ? (
+          <div className="space-y-2">
+            {(status?.autopilot?.timeline || []).slice(0, 6).map((event) => (
+              <div key={event.id} className="flex items-start gap-2 rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2">
+                <Clock3 className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm truncate">
+                    <span className="text-xs text-indigo-600 mr-2">{timelineEventLabel(event.eventType)}</span>
+                    {event.title}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">
+                    {[event.detail, eventTime(event)].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-500">暂无 Autopilot 时间线。</div>
+        )}
       </div>
 
       <div className="rounded-lg border px-3 py-3 space-y-2">

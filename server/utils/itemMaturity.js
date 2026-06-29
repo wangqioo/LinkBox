@@ -2,6 +2,11 @@ function tableExists(db, table) {
   return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
 }
 
+function columnExists(db, table, column) {
+  if (!tableExists(db, table)) return false;
+  return db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === column);
+}
+
 function hasRow(db, sql, ...params) {
   return Boolean(db.prepare(sql).get(...params));
 }
@@ -32,6 +37,7 @@ export function deriveItemMaturity(db, itemId) {
   const hasPendingSuggestion = tableExists(db, 'agent_suggestions')
     && hasRow(db, "SELECT id FROM agent_suggestions WHERE item_id = ? AND status = 'pending' LIMIT 1", itemId);
   const hasFailedJob = tableExists(db, 'jobs')
+    && columnExists(db, 'jobs', 'link_id')
     && hasRow(db, "SELECT id FROM jobs WHERE link_id = ? AND status = 'failed' LIMIT 1", itemId);
 
   let state = 'raw';

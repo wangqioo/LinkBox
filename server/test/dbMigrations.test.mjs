@@ -425,9 +425,20 @@ test('runMigrations creates local Agent factory tables', () => withDb((db) => {
     'metadata_json',
     'created_at',
   ]);
+  assert.deepEqual(columnNames(db, 'agent_timeline_events'), [
+    'id',
+    'user_id',
+    'event_type',
+    'title',
+    'detail',
+    'item_id',
+    'metadata_json',
+    'created_at',
+  ]);
   assert.equal(indexNames(db, 'agent_suggestions').includes('idx_agent_suggestions_user_status'), true);
   assert.equal(indexNames(db, 'agent_rules').includes('idx_agent_rules_user_status'), true);
   assert.equal(indexNames(db, 'item_maturity_events').includes('idx_item_maturity_events_item'), true);
+  assert.equal(indexNames(db, 'agent_timeline_events').includes('idx_agent_timeline_user'), true);
 }));
 
 test('runMigrations creates social collaboration tables and indexes', () => withDb((db) => {

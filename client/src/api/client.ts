@@ -193,11 +193,40 @@ export interface LocalAgentRule {
   created_at?: string;
 }
 
+export interface LocalAgentTimelineEvent {
+  id: number;
+  eventType: string;
+  title: string;
+  detail?: string;
+  itemId?: number | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+}
+
+export interface LocalAgentRun {
+  id: number;
+  runType?: string;
+  status: string;
+  plan?: Record<string, unknown>;
+  summary?: Record<string, any>;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt?: string;
+}
+
+export interface LocalAgentAutopilotStatus {
+  enabled: boolean;
+  mode: string;
+  lastRun: LocalAgentRun | null;
+  timeline: LocalAgentTimelineEvent[];
+}
+
 export interface LocalAgentStatus {
   coverage: LocalAgentCoverage;
   latestReport: LocalAgentReport | null;
   suggestions: LocalAgentSuggestion[];
   rules: LocalAgentRule[];
+  autopilot?: LocalAgentAutopilotStatus;
 }
 
 export interface DocumentMaintenanceStats {
@@ -774,6 +803,11 @@ export const api = {
     request('/settings/local-agent/report', { method: 'POST', body: JSON.stringify({ reportType }) }),
   generateLocalAgentSuggestions: (): Promise<{ ok: boolean; created: number; status: LocalAgentStatus }> =>
     request('/settings/local-agent/suggestions/generate', { method: 'POST', body: JSON.stringify({}) }),
+  runLocalAgentAutopilot: (): Promise<{ ok: boolean; result: { actions: Record<string, any> }; status: LocalAgentStatus }> =>
+    request('/settings/local-agent/autopilot/run', {
+      method: 'POST',
+      body: JSON.stringify({ retryFailed: true, limits: { maxItems: 100, maxEnqueue: 20, maxSuggestions: 20 } }),
+    }),
   resolveLocalAgentSuggestion: (id: number, action: 'accept' | 'reject'): Promise<{ ok: boolean; suggestion: LocalAgentSuggestion; status: LocalAgentStatus }> =>
     request(`/settings/local-agent/suggestions/${id}/resolve`, { method: 'POST', body: JSON.stringify({ action }) }),
   retryFailedJobs: (ids?: number[]): Promise<{ ok: boolean; retried: number; queue: QueueStats }> =>

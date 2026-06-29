@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 
 import { initLocalAgentSchema } from '../utils/localAgentSchema.js';
+import {
+  getLocalAgentAutopilotStatus,
+  listLocalAgentTimeline,
+  runLocalAgentAutopilot,
+} from '../utils/localAgentAutopilot.js';
 import { deriveItemMaturity, getMaturityCoverage } from '../utils/itemMaturity.js';
 import {
   createTopicSuggestions,
@@ -31,6 +36,7 @@ function withDb(fn) {
         content TEXT DEFAULT '',
         content_md TEXT DEFAULT '',
         description TEXT DEFAULT '',
+        image_path TEXT DEFAULT '',
         status TEXT DEFAULT '',
         imported_at TEXT DEFAULT (datetime('now'))
       );
@@ -49,7 +55,7 @@ test('initLocalAgentSchema creates local Agent factory tables', () => withDb((db
     SELECT name
     FROM sqlite_master
     WHERE type = 'table'
-      AND name IN ('agent_runs', 'agent_reports', 'agent_suggestions', 'agent_rules', 'item_maturity_events')
+      AND name IN ('agent_runs', 'agent_reports', 'agent_suggestions', 'agent_rules', 'agent_timeline_events', 'item_maturity_events')
     ORDER BY name
   `).all().map(row => row.name);
 
@@ -58,6 +64,7 @@ test('initLocalAgentSchema creates local Agent factory tables', () => withDb((db
     'agent_rules',
     'agent_runs',
     'agent_suggestions',
+    'agent_timeline_events',
     'item_maturity_events',
   ]);
 }));
@@ -224,6 +231,26 @@ test('getLocalAgentStatus returns jobs next actions runs and enriched review con
   assert.equal(status.rules[0].sourceItemTitle, 'Agent note');
 }));
 
+test('getLocalAgentStatus tolerates minimal jobs tables in isolated tests', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL
+    );
+  `);
+  seedItem(db, { title: 'Minimal job fixture' });
+  db.prepare("INSERT INTO jobs (type, status) VALUES ('local.test', 'failed')").run();
+
+  const status = getLocalAgentStatus(db, { userId: 1 });
+
+  assert.equal(status.jobs.counts.failed, 1);
+  assert.equal(status.jobs.failed[0].type, 'local.test');
+  assert.equal(status.jobs.failed[0].itemId, null);
+  assert.equal(status.jobs.failed[0].lastError, '');
+}));
+
 test('createTopicSuggestions creates pending suggestions from item topics', () => withDb((db) => {
   initLocalAgentSchema(db);
   db.exec(`
@@ -285,4 +312,116 @@ test('resolveLocalAgentSuggestion rejects a suggestion without creating a rule',
 
   assert.equal(result.status, 'rejected');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agent_rules').get().count, 0);
+}));
+
+function createQueueSpy() {
+  const enqueued = [];
+  let retried = 0;
+  let drained = 0;
+  return {
+    enqueued,
+    enqueue(type, options) {
+      enqueued.push({ type, ...options });
+      return { id: enqueued.length, type, link_id: options?.linkId || null };
+    },
+    retryFailedJobs() {
+      retried += 1;
+      return 2;
+    },
+    drain() {
+      drained += 1;
+    },
+    stats() {
+      return {
+        concurrency: 1,
+        running: 0,
+        queued: enqueued.length,
+        leased: 0,
+        done: 0,
+        failed: Math.max(0, 2 - retried),
+        retried,
+        drained,
+      };
+    },
+  };
+}
+
+test('runLocalAgentAutopilot enqueues safe missing work and records timeline', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE item_topics (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL, name TEXT NOT NULL, weight REAL DEFAULT 1);
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, link_id INTEGER, payload TEXT DEFAULT '{}', status TEXT NOT NULL, last_error TEXT DEFAULT '');
+  `);
+  const linkId = seedItem(db, { type: 'link', title: 'Article needing summary', contentMd: 'Long markdown without summary' });
+  const imageId = seedItem(db, { type: 'image', title: 'Screenshot', contentMd: '', summary: '', description: '' });
+  db.prepare('UPDATE links SET image_path = ? WHERE id = ?').run('/uploads/screenshot.png', imageId);
+  db.prepare("INSERT INTO item_topics (item_id, user_id, name, weight) VALUES (?, 1, 'Local Agent', 0.9)").run(linkId);
+  db.prepare("INSERT INTO jobs (type, link_id, status, last_error) VALUES ('link.summarize', ?, 'failed', 'temporary')").run(linkId);
+  db.prepare("INSERT INTO jobs (type, link_id, status, last_error) VALUES ('image.describe', ?, 'queued', '')").run(imageId);
+  const queue = createQueueSpy();
+
+  const result = runLocalAgentAutopilot(db, {
+    userId: 1,
+    queue,
+    retryFailed: true,
+    limits: { maxItems: 20, maxEnqueue: 10, maxSuggestions: 5 },
+    uploadsDir: '/var/lib/linkbox/uploads',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.actions.retriedFailedJobs, 2);
+  assert.deepEqual(queue.enqueued.map(job => job.type), ['link.summarize']);
+  assert.equal(result.actions.enqueued.length, 1);
+  assert.equal(result.actions.suggestionsCreated, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agent_reports').get().count, 1);
+  const events = listLocalAgentTimeline(db, { userId: 1, limit: 10 });
+  assert.equal(events.length >= 4, true);
+  assert.equal(events.some(event => event.eventType === 'autopilot.job_queued'), true);
+  assert.equal(events.some(event => event.eventType === 'autopilot.failed_jobs_retried'), true);
+}));
+
+test('runLocalAgentAutopilot maps uploaded image public paths to disk paths', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, link_id INTEGER, payload TEXT DEFAULT '{}', status TEXT NOT NULL, last_error TEXT DEFAULT '');
+  `);
+  const imageId = seedItem(db, { type: 'image', title: 'Screenshot' });
+  db.prepare('UPDATE links SET image_path = ? WHERE id = ?').run('/uploads/screenshot.png', imageId);
+  const queue = createQueueSpy();
+
+  runLocalAgentAutopilot(db, {
+    userId: 1,
+    queue,
+    limits: { maxItems: 20, maxEnqueue: 10 },
+    uploadsDir: '/var/lib/linkbox/uploads',
+  });
+
+  assert.equal(queue.enqueued.length, 1);
+  assert.equal(queue.enqueued[0].type, 'image.describe');
+  assert.equal(queue.enqueued[0].payload.diskPath, '/var/lib/linkbox/uploads/screenshot.png');
+}));
+
+test('getLocalAgentAutopilotStatus returns the latest run and timeline', () => withDb((db) => {
+  initLocalAgentSchema(db);
+  db.exec(`
+    CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, user_id INTEGER NOT NULL);
+    CREATE TABLE document_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+    CREATE TABLE item_understanding_runs (item_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, updated_at TEXT DEFAULT '');
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, link_id INTEGER, payload TEXT DEFAULT '{}', status TEXT NOT NULL, last_error TEXT DEFAULT '');
+  `);
+  seedItem(db, { type: 'text', title: 'Note', contentMd: 'Needs summary' });
+  runLocalAgentAutopilot(db, { userId: 1, queue: createQueueSpy() });
+
+  const status = getLocalAgentAutopilotStatus(db, { userId: 1 });
+
+  assert.equal(status.lastRun.status, 'completed');
+  assert.equal(status.lastRun.summary.ok, true);
+  assert.equal(status.timeline.length > 0, true);
+  assert.equal(status.enabled, false);
 }));

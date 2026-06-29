@@ -23,6 +23,10 @@ import {
   getLocalAgentStatus,
   resolveLocalAgentSuggestion,
 } from '../utils/localAgentFactory.js';
+import {
+  getLocalAgentAutopilotStatus,
+  runLocalAgentAutopilot,
+} from '../utils/localAgentAutopilot.js';
 
 // Only admin (user id=1) can manage settings
 function requireAdmin(req, res, next) {
@@ -273,7 +277,10 @@ router.post('/system/retry-failed-jobs', authMiddleware, requireAdmin, (req, res
 
 // GET /api/settings/local-agent - local Agent factory workbench payload
 router.get('/local-agent', authMiddleware, requireAdmin, (req, res) => {
-  res.json(getLocalAgentStatus(database, { userId: req.userId }));
+  res.json({
+    ...getLocalAgentStatus(database, { userId: req.userId }),
+    autopilot: getLocalAgentAutopilotStatus(database, { userId: req.userId }),
+  });
 });
 
 // POST /api/settings/local-agent/report - generate local Agent report
@@ -285,7 +292,29 @@ router.post('/local-agent/report', authMiddleware, requireAdmin, (req, res) => {
   res.json({
     ok: true,
     report,
-    status: getLocalAgentStatus(database, { userId: req.userId }),
+    status: {
+      ...getLocalAgentStatus(database, { userId: req.userId }),
+      autopilot: getLocalAgentAutopilotStatus(database, { userId: req.userId }),
+    },
+  });
+});
+
+// POST /api/settings/local-agent/autopilot/run - run one bounded local Agent scan
+router.post('/local-agent/autopilot/run', authMiddleware, requireAdmin, (req, res) => {
+  const queue = getQueue();
+  const result = runLocalAgentAutopilot(database, {
+    userId: req.userId,
+    queue,
+    retryFailed: Boolean(req.body?.retryFailed),
+    limits: req.body?.limits || {},
+  });
+  res.json({
+    ok: true,
+    result,
+    status: {
+      ...getLocalAgentStatus(database, { userId: req.userId }),
+      autopilot: getLocalAgentAutopilotStatus(database, { userId: req.userId }),
+    },
   });
 });
 
@@ -298,7 +327,10 @@ router.post('/local-agent/suggestions/generate', authMiddleware, requireAdmin, (
   res.json({
     ok: true,
     ...result,
-    status: getLocalAgentStatus(database, { userId: req.userId }),
+    status: {
+      ...getLocalAgentStatus(database, { userId: req.userId }),
+      autopilot: getLocalAgentAutopilotStatus(database, { userId: req.userId }),
+    },
   });
 });
 
@@ -313,7 +345,10 @@ router.post('/local-agent/suggestions/:id/resolve', authMiddleware, requireAdmin
     res.json({
       ok: true,
       suggestion,
-      status: getLocalAgentStatus(database, { userId: req.userId }),
+      status: {
+        ...getLocalAgentStatus(database, { userId: req.userId }),
+        autopilot: getLocalAgentAutopilotStatus(database, { userId: req.userId }),
+      },
     });
   } catch (e) {
     jsonError(res, httpError(400, e.message || 'Agent 建议处理失败'), 'Agent 建议处理失败');
