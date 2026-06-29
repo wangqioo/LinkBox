@@ -203,6 +203,7 @@ export interface LocalAgentReport {
     jobs?: Record<string, number>;
     suggestions?: { pending?: number };
     rules?: { active?: number };
+    nextActions?: { count?: number };
     generatedAt?: string;
   };
   createdAt?: string;
