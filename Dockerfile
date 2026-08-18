@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 FROM node:20-slim AS client-builder
 WORKDIR /app/client
 RUN npm config set registry https://registry.npmmirror.com
