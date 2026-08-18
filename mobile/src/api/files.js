@@ -8,6 +8,22 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const url = error.config?.url || ''
+    if (error.response?.status === 401 && !url.startsWith('/auth/')) {
+      // Token expired or invalid: drop stale token and send the user to the
+      // login page instead of leaving the app stuck on "登录已过期" errors.
+      localStorage.removeItem('linkbox_token')
+      if (!window.location.pathname.endsWith('/login')) {
+        window.location.href = '/mobile/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
 export async function login(username, password) {
   const { data } = await api.post('/auth/login', { username, password })
   if (data.token) localStorage.setItem('linkbox_token', data.token)

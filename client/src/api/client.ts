@@ -11,6 +11,13 @@ async function request(path: string, options: RequestInit = {}) {
     },
   });
   const data = await res.json();
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    // Token expired or invalid: clear stale auth state and reload so the
+    // login page shows instead of a stuck "登录已过期" UI.
+    localStorage.removeItem('linkbox_token');
+    localStorage.removeItem('linkbox_user');
+    window.location.reload();
+  }
   if (!res.ok) throw new Error(data.error || '请求失败');
   return data;
 }
